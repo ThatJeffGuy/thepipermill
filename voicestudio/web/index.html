@@ -194,7 +194,8 @@ function openReset(v){
   $('#resetKeep').onclick=()=>go(false);$('#resetAll').onclick=()=>go(true);$('#resetCancel').onclick=()=>$('#resetDlg').close();
   $('#resetDlg').showModal();
 }
-function go(name,i){wiz[name]=Math.max(0,Math.min(6,i));render();window.scrollTo(0,0)}
+function go(name,i){const gv=S.voices.find(x=>x.name===name);if(i>=6&&gv&&!gv.train.checkpoints)i=5;   // Listen stays locked until training has saved a checkpoint
+  wiz[name]=Math.max(0,Math.min(6,i));render();window.scrollTo(0,0)}
 function setMode(m){mode=m;try{localStorage.setItem('mode',m)}catch(e){}render()}
 
 let last='';
@@ -280,7 +281,8 @@ function render(){
 
   ()=>`<div class="card">${hd(6,v.exported,'Listen, then use it')}
     <p class="hint">Make a test clip from the latest training and listen. When you like it, download the two voice files.</p>
-    <textarea id="txt">Good evening. This is a test of my new voice, and I hope it sounds like me.</textarea>
+    ${!t.checkpoints?'<p class="hint"><b>Not available yet.</b> Listening unlocks once training has saved its first checkpoint.</p>':''}
+    <textarea id="txt" ${t.checkpoints?'':'disabled'}>Good evening. This is a test of my new voice, and I hope it sounds like me.</textarea>
     <div class="row" style="margin-top:8px">${ADV?'<label>Version <select id="which"><option value="best">Best sounding (recommended)</option><option value="accurate">Most accurate</option><option value="latest">Latest</option></select></label>':''}
     <button id="expBtn" ${(!t.checkpoints||S.busy)?'disabled':''}>Make test clip</button>
     ${jobRun&&v.job.kind==='export'?'<button class="bad stopjob">Stop</button>':''}
@@ -317,8 +319,9 @@ function render(){
       const busyNow=[false,run('speakers'),run('match'),run('prep'),run('trim'),!!t.running,run('export')][i];
       const st=busyNow?(i===stepNo?'cur run':'run'):i===stepNo?(shownDone[i]?'cur ok':'cur'):shownDone[i]?'ok':i<stepNo?(optional[i]?'skip':'warn'):(i===5&&t.checkpoints>0&&!t.running)?'part':'todo';
       const mark=busyNow?'':st.includes('ok')?'✓':st==='skip'?'–':st==='warn'?'!':st==='part'?'…':i+1;
-      const tip={run:'working now','cur run':'working now (you are here)','cur':'you are here','cur ok':'you are here (done)',ok:'done',skip:'skipped',warn:'not finished',part:'started, not finished',todo:'not started yet'}[st];
-      return `<button class="sp ${st}" data-go="${i}" title="${n}: ${tip}" aria-label="${n}: ${tip}" ${i<stepNo||ADV?'':'disabled'} ${i===stepNo?'aria-current="step"':''}><i>${mark}</i><span>${n}</span></button>`}).join('')}</div>
+      const locked=i===6&&!t.checkpoints;
+      const tip=locked?'locked until training has saved a checkpoint':{run:'working now','cur run':'working now (you are here)','cur':'you are here','cur ok':'you are here (done)',ok:'done',skip:'skipped',warn:'not finished',part:'started, not finished',todo:'not started yet'}[st];
+      return `<button class="sp ${st}" data-go="${i}" title="${n}: ${tip}" aria-label="${n}: ${tip}" ${(i<stepNo||ADV)&&!(i===6&&!t.checkpoints)?'':'disabled'} ${i===stepNo?'aria-current="step"':''}><i>${mark}</i><span>${n}</span></button>`}).join('')}</div>
     <div class="hint" style="margin:0 0 8px">Step ${stepNo+1} of ${names.length}</div>
     ${wcards[stepNo]()}
     <div class="nav"><button class="sec" id="prevBtn" ${stepNo>0?'':'disabled'}>‹ Prev</button>
