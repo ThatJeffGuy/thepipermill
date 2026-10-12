@@ -2,7 +2,7 @@
 
 Train your own [Piper](https://github.com/OHF-Voice/piper1-gpl) text-to-speech voice from your own recordings, using a simple web page on your own computer.
 
-1. Drop your recordings in (or point it at a folder).
+1. Point it at a folder of your recordings.
 2. It cuts them into clips and writes down what you said.
 3. You read through the words and fix any mistakes.
 4. It trains on your GPU, with a progress bar.
@@ -37,7 +37,7 @@ Open the page and press **+ New voice**. Pick a starting voice that is close to 
 
 | Step | What to do |
 |---|---|
-| 1. Recordings | Drag audio files in, or paste a folder path ("use a folder") to read them straight from there. 30–60+ minutes works best. |
+| 1. Recordings folder | Choose (Browse…) the folder on your computer that holds your recordings; they are read from there and never copied or changed. 30–60+ minutes works best. |
 | 2. Who is speaking? *(optional)* | Only if your recordings have more than one person (a conversation, a call). Finds each voice, groups the same person across files, and lets you listen to samples and tick whose voice to train on. See below. |
 | 3. Prepare | One click. Splits at pauses and transcribes with Whisper on the GPU. If you picked speakers in step 2, only their parts are used. |
 | 4. Check the words | Press ▶ on a clip, fix the text, remove bad clips (✕), save. **The voice learns exactly what is written here.** |
@@ -72,7 +72,7 @@ voicestudio list | doctor | delete myvoice
 
 ### Where things are
 
-Default data folder: `~/voice-studio-data` with `inbox/` (recordings you dropped in), `data/` (prepared clips), `runs/` (training checkpoints), `out/` (finished voices) and `base/` (starting voices). Change it in the config.
+Default data folder: `~/voice-studio-data` with `data/` (prepared clips), `runs/` (training checkpoints), `out/` (finished voices) and `base/` (starting voices). Change it in the config.
 
 ### Using your voice with Piper
 

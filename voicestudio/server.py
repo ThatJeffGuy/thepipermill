@@ -66,7 +66,7 @@ def tail(path, n=2500):
 
 def info(n):
     m = voices.read(n); src = voices.source_dir(n)
-    files = sorted(p for p in src.glob("*") if p.is_file() and p.suffix.lower() in AUDIO_EXT) if src.exists() else []
+    files = speakers.audio_files(n)
     md = CFG.data / n / "metadata.csv"
     clips = sum(1 for _ in open(md, encoding="utf-8")) if md.exists() else 0
     runs = CFG.runs / n
@@ -80,8 +80,8 @@ def info(n):
     if j: job = {"kind": j["kind"], "running": j["proc"].poll() is None, "rc": j["proc"].poll(), "log": tail(j["log"])}
     sp = speakers.load(n)
     return {"name": n, "base": m.get("base"), "base_used": m.get("base_used"),
-            "people": sp["people"] if sp else None, "keep": m.get("keep_people") or [], "people_stale": speakers.stale(n) if sp else False, "custom_source": m.get("source_dir") or None, "source": str(src),
-            "inbox": [{"name": p.name, "mb": round(p.stat().st_size / 1e6, 1)} for p in files],
+            "people": sp["people"] if sp else None, "keep": m.get("keep_people") or [], "people_stale": speakers.stale(n) if sp else False, "folder": str(src) if src else None, "folder_ok": bool(src and src.is_dir()),
+            "files": [{"name": speakers.rel(n, p), "mb": round(p.stat().st_size / 1e6, 1)} for p in files],
             "clips": clips, "prepared": md.exists(),
             "train": {"running": bool(train_pid(n)), "total": total, "done": max(0, done) if done is not None else None,
                       "mos": float(mos[-1]) if mos else None, "checkpoints": len(ck), "log": tl.split("\n")[-3:] if tl else []},
@@ -159,8 +159,7 @@ class H(BaseHTTPRequestHandler):
             if u.path == "/api/voices":
                 b = busy()
                 return self._json({"voices": [info(n) for n in voices.names()], "bases": {k: v[0] for k, v in base.BASES.items()},
-                                   "busy": {"voice": b[0], "kind": b[1]} if b else None, "install": install.configured(),
-                                   "max_upload_gb": CFG["max_upload_gb"]})
+                                   "busy": {"voice": b[0], "kind": b[1]} if b else None, "install": install.configured()})
             if u.path == "/api/transcript":
                 n = CFG.check_name(q["voice"][0]); md = CFG.data / n / "metadata.csv"; rows = []
                 if md.exists():
@@ -195,9 +194,9 @@ class H(BaseHTTPRequestHandler):
                 if voices.exists(n): raise ValueError(f"'{n}' already exists")
                 if key != base.AUTO: base.ensure(key, log=lambda *_: None)
                 folder = (d.get("folder") or "").strip()
-                if folder and not Path(folder).expanduser().is_dir(): raise ValueError("That folder does not exist.")
-                voices.write(n, base=key, **({"source_dir": str(Path(folder).expanduser())} if folder else {}))
-                (CFG.inbox / n).mkdir(parents=True, exist_ok=True)
+                if not folder: raise ValueError("Choose the folder that has your recordings (use Browse).")
+                if not Path(folder).expanduser().is_dir(): raise ValueError("That folder does not exist.")
+                voices.write(n, base=key, source_dir=str(Path(folder).expanduser().resolve()))
                 return self._json({"ok": True, "license": (base.info(key) or {}).get("license", "") if key != base.AUTO else ""})
             n = CFG.check_name(d.get("voice"))
             if not voices.exists(n): raise ValueError("no such voice")
@@ -220,8 +219,9 @@ class H(BaseHTTPRequestHandler):
                 start_job(n, "export", ["export", n, "--text", (d.get("text") or "")[:400]])
             elif u.path == "/api/source":
                 p = (d.get("path") or "").strip()
-                if p and not Path(p).expanduser().is_dir(): raise ValueError("That folder does not exist.")
-                voices.write(n, source_dir=str(Path(p).expanduser()) if p else None)
+                if not p or not Path(p).expanduser().is_dir(): raise ValueError("That folder does not exist.")
+                voices.write(n, source_dir=str(Path(p).expanduser().resolve()))
+                speakers.result_path(n).unlink(missing_ok=True); voices.write(n, keep_people=[])   # a new folder means new speakers
             elif u.path == "/api/install":
                 if not install.configured(): raise ValueError("Install is not set up. Use the download buttons and copy the two files to your Piper voices folder.")
                 r = subprocess.run([sys.executable, "-m", "voicestudio", "install", n], capture_output=True, text=True, timeout=300)
@@ -236,22 +236,6 @@ class H(BaseHTTPRequestHandler):
         if not self._guard(): return
         u = urlparse(self.path); q = parse_qs(u.query)
         try:
-            if u.path == "/api/upload":
-                n = CFG.check_name(q["voice"][0])
-                if not voices.exists(n): raise ValueError("no such voice")
-                if voices.read(n).get("source_dir"): raise ValueError("This voice reads from your own folder: put the files there.")
-                fn = re.sub(r"[^A-Za-z0-9._ -]", "_", os.path.basename(q["filename"][0]))[:120]
-                if Path(fn).suffix.lower() not in AUDIO_EXT: raise ValueError("not an audio file")
-                size = int(self.headers.get("Content-Length") or 0)
-                if size > CFG["max_upload_gb"] * 2**30: raise ValueError(f"file too large ({CFG['max_upload_gb']} GB max)")
-                dest = CFG.inbox / n / fn; dest.parent.mkdir(parents=True, exist_ok=True); tmp = dest.with_suffix(dest.suffix + ".part")
-                with open(tmp, "wb") as f:
-                    left = size
-                    while left > 0:
-                        c = self.rfile.read(min(1 << 20, left))
-                        if not c: raise ValueError("upload interrupted")
-                        f.write(c); left -= len(c)
-                tmp.replace(dest); return self._json({"ok": True})
             if u.path == "/api/transcript":
                 d = self._body(); n = CFG.check_name(d["voice"]); md = CFG.data / n / "metadata.csv"
                 if not md.exists(): raise ValueError("nothing prepared yet")
@@ -269,9 +253,6 @@ class H(BaseHTTPRequestHandler):
         u = urlparse(self.path); q = parse_qs(u.query)
         try:
             n = CFG.check_name(q["voice"][0])
-            if u.path == "/api/inbox":
-                if voices.read(n).get("source_dir"): raise ValueError("Files in your own folder are never deleted from here.")
-                (CFG.inbox / n / os.path.basename(q["filename"][0])).unlink(missing_ok=True); return self._json({"ok": True})
             if u.path == "/api/voice":
                 if busy(): raise RuntimeError("A job is running. Wait for it or stop it first.")
                 voices.delete(n); return self._json({"ok": True})

@@ -21,8 +21,6 @@ button{background:var(--acc);color:#fff;border:0;border-radius:10px;padding:9px 
 button.sec{background:var(--acc2);color:var(--acc)}button.bad{background:var(--bad)}button:disabled{opacity:.45;cursor:default}
 select,input[type=text],input[type=number],textarea{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
 textarea{width:100%;min-height:64px}
-.drop{border:2px dashed var(--line);border-radius:12px;padding:26px;text-align:center;color:var(--mute);cursor:pointer}
-.drop.on{border-color:var(--acc);background:var(--acc2);color:var(--acc)}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .files{margin:10px 0 0;padding:0;list-style:none;font-size:14px}.files li{display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--line)}
 .files li span:first-child{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -70,7 +68,7 @@ dialog::backdrop{background:#0008}
   <p class="hint">Use your own voice, or the voice of someone who has agreed to it. The new voice is always learned from your recordings. Training begins from a similar-sounding voice to save time; that is chosen for you automatically.</p>
   <p><input type="text" id="newName" placeholder="a short name, e.g. my-voice" style="width:100%" autocomplete="off"></p>
   <details style="margin-bottom:8px"><summary>Advanced: choose the starting voice myself</summary><p><select id="newBase" style="width:100%"></select></p></details>
-  <p class="row"><input type="text" id="newFolder" placeholder="optional: folder with your recordings" style="flex:1;min-width:0" autocomplete="off"><button class="sec" type="button" id="newBrowse">Browse…</button></p>
+  <p class="row"><input type="text" id="newFolder" placeholder="folder with your recordings (required)" style="flex:1;min-width:0" autocomplete="off"><button class="sec" type="button" id="newBrowse">Browse…</button></p>
   <p class="hint">The starting voice has its own dataset licence (usually non-commercial). It is saved next to the file and shown after creation.</p>
   <div class="row" style="justify-content:flex-end"><button class="sec" id="newCancel">Cancel</button><button id="newOk">Create</button></div>
   <div class="msg err" id="newErr"></div>
@@ -80,7 +78,7 @@ dialog::backdrop{background:#0008}
 const $=s=>document.querySelector(s);
 const api=async(path,opt={})=>{const r=await fetch(path,{...opt,headers:{'X-Studio':'1','Content-Type':'application/json',...(opt.headers||{})}});
   const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||r.statusText);return j};
-let S={voices:[],bases:{},busy:null},cur=localStorage.getItem('voice')||'',page=0,rows=null,rowsFor='',dirty=false,uploading=null,flash={};
+let S={voices:[],bases:{},busy:null},cur=localStorage.getItem('voice')||'',page=0,rows=null,rowsFor='',dirty=false,flash={};
 
 function esc(t){return String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function say(key,text,cls){flash[key]={text,cls};render()}
@@ -103,27 +101,25 @@ function render(){
   const v=S.voices.find(x=>x.name===cur);
   if(!v){$('#main').innerHTML=`<div class="card empty"><h2>Welcome</h2><p>Create your first voice to begin. Use your own voice, or the voice of someone who has agreed to it.</p><button onclick="$('#newBtn').click()">+ New voice</button></div>`;return}
   const f=k=>flash[k]?`<div class="msg ${flash[k].cls||''}">${esc(flash[k].text)}</div>`:'';
-  const totalMB=v.inbox.reduce((a,b)=>a+b.mb,0);
+  const totalMB=v.files.reduce((a,b)=>a+b.mb,0);
   const t=v.train, jobRun=v.job&&v.job.running, prepDone=v.prepared;
   const pct=t.total&&t.done!=null?Math.min(100,Math.round(100*t.done/t.total)):0;
   const finished=!t.running&&t.total&&t.done!=null&&t.done>=t.total;
   let mosTxt='';if(t.mos!=null){mosTxt=t.mos>=4?'<span class="pill ok">sounds great</span>':t.mos>=3.4?'<span class="pill">getting good</span>':'<span class="pill warn">still learning</span>'}
   $('#main').innerHTML=`
-  <div class="card"><h2><span class="step ${v.inbox.length?'done':''}">1</span>Your recordings</h2>
-    <p class="hint">Aim for 30–60 minutes of clear, natural speech in a quiet room (wav, mp3, m4a, flac…). Longer files are fine.</p>
-    ${v.custom_source?`<div class="msg">Reading recordings from your folder: <b>${esc(v.custom_source)}</b> <button class="sec" id="clrSrc">Use drop-box instead</button></div>`
-      :`<div class="drop" id="drop">Drag audio files here, or click to choose</div><input type="file" id="fileIn" multiple accept="audio/*,video/mp4,.m4a,.opus" hidden>
-      <div class="row" style="margin-top:10px"><span class="hint" style="margin:0">or use a folder that is already on this computer:</span>
-      <input type="text" id="srcIn" placeholder="/path/to/recordings" style="flex:1;min-width:180px"><button class="sec" id="browseSrc">Browse…</button><button class="sec" id="setSrc">Use this folder</button></div>`}
-    ${uploading?`<div class="msg">Uploading ${esc(uploading)}…</div>`:''}${f('up')}
-    ${v.inbox.length?`<ul class="files">${v.inbox.map(x=>`<li><span>${esc(x.name)}</span><span>${x.mb} MB</span>${v.custom_source?'':`<button class="x" title="Remove" onclick="rmFile('${esc(x.name).replace(/'/g,"\\'")}')">✕</button>`}</li>`).join('')}</ul><div class="hint">${v.inbox.length} file(s), ${totalMB.toFixed(0)} MB</div>`:`<div class="hint">No audio files found yet in ${esc(v.source)}</div>`}
+  <div class="card"><h2><span class="step ${v.files.length?'done':''}">1</span>Your recordings folder</h2>
+    <p class="hint">Choose the folder on this computer that holds your recordings (wav, mp3, m4a, flac…). Subfolders are included. About 30–60 minutes of clear, natural speech in a quiet room works best.</p>
+    <div class="row"><input type="text" id="srcIn" value="${esc(v.folder||'')}" placeholder="/path/to/your/recordings" style="flex:1;min-width:200px"><button class="sec" id="browseSrc">Browse…</button><button id="setSrc">Use this folder</button></div>
+    ${!v.folder?'<div class="msg err">No folder chosen yet.</div>':!v.folder_ok?'<div class="msg err">That folder is not there any more.</div>':''}${f('up')}
+    ${v.files.length?`<div class="hint" style="margin-top:10px">${v.files.length} audio file${v.files.length>1?'s':''}, ${totalMB.toFixed(0)} MB</div>
+      <details><summary>Show the files</summary><ul class="files">${v.files.slice(0,300).map(x=>`<li><span>${esc(x.name)}</span><span>${x.mb} MB</span></li>`).join('')}</ul>${v.files.length>300?`<div class="hint">…and ${v.files.length-300} more</div>`:''}</details>`:(v.folder_ok?'<div class="hint" style="margin-top:10px">No audio files found in that folder yet.</div>':'')}
     <details><summary>Need something to read?</summary><ol class="sent" id="sent">Loading…</ol></details>
   </div>
 
   <div class="card"><h2><span class="step ${v.people?'done':''}">2</span>Who is speaking? <span class="pill">optional</span></h2>
     <p class="hint">Only needed if your recordings have more than one person talking (a conversation, a call…). It finds each voice so you can listen and tick whose voice to train on. Everyone else is left out. Skip this if it is just you.</p>
     <div class="row"><label>How many people talk? <input type="number" id="spNum" min="1" max="20" placeholder="auto" style="width:90px"></label>
-    <button id="spBtn" ${(!v.inbox.length||S.busy)?'disabled':''}>${v.people?'Find them again':'Find the speakers'}</button>${jobRun&&v.job.kind==='speakers'?'<span class="pill warn">working…</span>':''}</div>
+    <button id="spBtn" ${(!v.files.length||S.busy)?'disabled':''}>${v.people?'Find them again':'Find the speakers'}</button>${jobRun&&v.job.kind==='speakers'?'<span class="pill warn">working…</span>':''}</div>
     ${v.job&&v.job.kind==='speakers'?`<pre>${esc(v.job.log)}</pre>`:''}
     ${v.people_stale?'<div class="msg err">Your recordings changed since this scan: find the speakers again.</div>':''}
     ${v.people?(v.people.length?`<ul class="files" style="margin-top:12px">${v.people.map(p=>`<li style="align-items:center;padding:8px 0"><label style="flex:1"><input type="checkbox" class="pk" value="${p.id}" ${(v.keep||[]).includes(p.id)?'checked':''}> <b>Person ${p.id}</b> <span class="hint" style="margin:0">${p.minutes} min · ${p.files} file(s)</span></label>${p.samples.map((sm,i)=>`<button class="sec" onclick="playS('${esc(v.name)}','${sm}')">▶ ${i+1}</button>`).join(' ')}</li>`).join('')}</ul>
@@ -133,7 +129,7 @@ function render(){
 
   <div class="card"><h2><span class="step ${prepDone?'done':''}">3</span>Prepare</h2>
     <p class="hint">Cuts the recordings into short clips and writes down what you said (using the GPU). A few minutes.${(v.keep||[]).length?` Only the parts where ${v.keep.map(i=>'Person '+i).join(', ')} speak will be used.`:''}</p>
-    <div class="row"><button id="prepBtn" ${(!v.inbox.length||S.busy)?'disabled':''}>${prepDone?'Prepare again':'Prepare my recordings'}</button>
+    <div class="row"><button id="prepBtn" ${(!v.files.length||S.busy)?'disabled':''}>${prepDone?'Prepare again':'Prepare my recordings'}</button>
     ${prepDone?`<span class="pill ok">${v.clips} clips ready</span>`:''}${jobRun&&v.job.kind==='prep'?'<span class="pill warn">working…</span>':''}</div>
     ${v.job&&v.job.kind==='prep'?`<pre>${esc(v.job.log)}</pre>`:''}${f('prep')}
   </div>
@@ -172,14 +168,9 @@ function render(){
 }
 
 function wire(v){
-  const drop=$('#drop'),fin=$('#fileIn');
-  drop.onclick=()=>fin.click();fin.onchange=()=>upload(v.name,[...fin.files]);
-  drop.ondragover=e=>{e.preventDefault();drop.classList.add('on')};drop.ondragleave=()=>drop.classList.remove('on');
-  drop.ondrop=e=>{e.preventDefault();drop.classList.remove('on');upload(v.name,[...e.dataTransfer.files])};
-  const b=(id,fn)=>{const el=$(id);if(el)el.onclick=fn};
+  const b=(id,fn)=>{const el=$(id);if(el)el.onclick=fn};   // skips buttons that are not on the page right now
   b('#browseSrc',()=>pickFolder($('#srcIn').value,p=>{$('#srcIn').value=p}));
   b('#setSrc',async()=>{try{await api('/api/source',{method:'POST',body:JSON.stringify({voice:v.name,path:$('#srcIn').value})});refresh(true)}catch(e){say('up',e.message,'err')}});
-  b('#clrSrc',async()=>{await api('/api/source',{method:'POST',body:JSON.stringify({voice:v.name,path:''})});refresh(true)});
   b('#delBtn',async()=>{if(!confirm(`Delete "${v.name}" and its working files (prepared clips, training progress, exported voice)?\n\nRecordings in your own folder are never deleted.`))return;
     try{await api(`/api/voice?voice=${v.name}`,{method:'DELETE'});rows=null;cur='';refresh(true)}catch(e){say('exp',e.message,'err')}});
   b('#prepBtn',()=>act('/api/prep',{voice:v.name},'prep'));
@@ -196,18 +187,6 @@ function wire(v){
 }
 
 async function act(path,body,key){delete flash[key];try{await api(path,{method:'POST',body:JSON.stringify(body)});if(key==='prep'){rows=null}}catch(e){say(key,e.message,'err')}refresh(true)}
-async function rmFile(n){await api(`/api/inbox?voice=${cur}&filename=${encodeURIComponent(n)}`,{method:'DELETE'});refresh(true)}
-
-async function upload(name,files){
-  delete flash.up;
-  for(const f of files){
-    uploading=f.name;render();
-    try{await fetch(`/api/upload?voice=${encodeURIComponent(name)}&filename=${encodeURIComponent(f.name)}`,{method:'PUT',headers:{'X-Studio':'1'},body:f}).then(async r=>{if(!r.ok)throw new Error((await r.json()).error)})}
-    catch(e){say('up',`${f.name}: ${e.message}`,'err')}
-  }
-  uploading=null;refresh(true);
-}
-
 async function loadRows(name){
   const j=await api(`/api/transcript?voice=${name}`);rows=j.rows;rowsFor=name;page=0;dirty=false;render();
 }
@@ -250,7 +229,7 @@ $('#newOk').onclick=async()=>{const b=$('#newOk');b.disabled=true;b.textContent=
   try{const r=await api('/api/voices',{method:'POST',body:JSON.stringify({name:$('#newName').value.trim().toLowerCase(),base:$('#newBase').value,folder:$('#newFolder').value.trim()})});cur=$('#newName').value.trim().toLowerCase();localStorage.setItem('voice',cur);$('#newDlg').close();$('#newName').value='';$('#newFolder').value='';if(r.license)alert('Licence of the starting voice (its original dataset):\n\n'+r.license.slice(0,600))}
   catch(e){$('#newErr').textContent=e.message}b.disabled=false;b.textContent='Create';refresh(true)};
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});
-refresh(true);setInterval(()=>{if(!uploading)refresh()},4000);
+refresh(true);setInterval(()=>refresh(),4000);
 </script>
 </body>
 </html>

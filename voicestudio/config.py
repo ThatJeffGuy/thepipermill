@@ -15,7 +15,6 @@ DEFAULTS = {
     "espeak_voice": "en-us",                 # language of your recordings (espeak-ng voice name)
     "whisper_model": "openai/whisper-large-v3-turbo",   # used to write down what you said
     "batch_size": 0,                         # 0 = choose from your GPU memory
-    "max_upload_gb": 4,
     "hf_token": "",                          # Hugging Face read token (only for the speaker-finding model, which is gated)
     "diarization_model": "pyannote/speaker-diarization-community-1",
     "speaker_match_distance": 0.55,          # lower = stricter about calling two voices the same person
@@ -48,13 +47,13 @@ class Config:
             with open(self.path, "rb") as f: _merge(d, tomllib.load(f))
         self.d = d
         self.home = Path(os.path.expanduser(d["home"])).resolve()
-        for n in ("inbox", "data", "runs", "out", "base", "voices", "cache"):
+        for n in ("data", "runs", "out", "base", "voices", "cache"):
             setattr(self, n, self.home / n)
 
     def __getitem__(self, k): return self.d[k]
 
     def ensure_dirs(self):
-        for n in ("inbox", "data", "runs", "out", "base", "voices", "cache"): getattr(self, n).mkdir(parents=True, exist_ok=True)
+        for n in ("data", "runs", "out", "base", "voices", "cache"): getattr(self, n).mkdir(parents=True, exist_ok=True)
 
     def check_name(self, n):
         n = (n or "").strip()

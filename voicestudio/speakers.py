@@ -22,7 +22,7 @@ MIN_SAMPLE_S, MAX_SAMPLE_S = 3.0, 8.0
 
 def audio_files(name):
     src = voices.source_dir(name)
-    return sorted(p for p in src.rglob("*") if p.is_file() and p.suffix.lower() in EXTS) if src.exists() else []
+    return sorted(p for p in src.rglob("*") if p.is_file() and p.suffix.lower() in EXTS) if src and src.exists() else []
 
 
 def rel(name, f): return f.relative_to(voices.source_dir(name)).as_posix()
@@ -101,7 +101,7 @@ def _samples(name, people, per_file, log):
 
 def run(name, num_speakers=None, log=print, pipeline=None):
     files = audio_files(name)
-    if not files: raise SystemExit(f"No audio files found in {voices.source_dir(name)}")
+    if not files: raise SystemExit(f"No audio files found in {voices.source_dir(name) or 'a folder (choose your recordings folder first)'}")
     pipe = pipeline or _load_pipeline()
     cache = CFG.runs / name / "diar"; per_file = {}; fps = []     # fps: (file key, label, embedding)
     for i, f in enumerate(files, 1):

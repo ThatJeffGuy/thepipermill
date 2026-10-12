@@ -39,7 +39,7 @@ def run(name, top_db=35.0, min_s=1.5, max_s=15.0, join_gap=0.45, log=print):
     from transformers import pipeline
     src = voices.source_dir(name)
     files = speakers.audio_files(name)
-    if not files: raise SystemExit(f"No audio files found in {src}")
+    if not files: raise SystemExit(f"No audio files found in {src or 'a folder (choose your recordings folder first)'}")
     chosen = voices.read(name).get("keep_people")
     if chosen:
         if speakers.stale(name): log("NOTE: the recordings changed since the speakers were found; press 'Find the speakers' again.")

@@ -1,5 +1,6 @@
 """Command line:  python -m voicestudio <command>   (or just `voicestudio` once installed)"""
 import argparse, sys
+from pathlib import Path
 from . import voices
 from .config import CFG
 
@@ -10,7 +11,7 @@ def main(argv=None):
     sub.add_parser("serve", help="start the web page")
     sub.add_parser("doctor", help="check the GPU and tools")
     sub.add_parser("list", help="list voices")
-    p = sub.add_parser("new", help="create a voice"); p.add_argument("name"); p.add_argument("--base", default="auto", help="auto (matched to your recordings) or: ryan, amy, lessac, joe, john"); p.add_argument("--folder", help="use recordings from this folder (instead of copying files in)")
+    p = sub.add_parser("new", help="create a voice"); p.add_argument("name"); p.add_argument("--base", default="auto", help="auto (matched to your recordings) or: ryan, amy, lessac, joe, john"); p.add_argument("--folder", required=True, help="the folder with your recordings")
     p = sub.add_parser("prep", help="recordings -> dataset"); p.add_argument("name"); p.add_argument("--top-db", type=float, default=35.0)
     p = sub.add_parser("speakers", help="find who is speaking in the recordings"); p.add_argument("name"); p.add_argument("--num", type=int, default=None, help="how many people talk (default: detect)")
     p = sub.add_parser("keep", help="choose which people to train on"); p.add_argument("name"); p.add_argument("ids", nargs="*", type=int); p.add_argument("--all", action="store_true", help="use everyone (no filtering)")
@@ -39,9 +40,10 @@ def main(argv=None):
         n = CFG.check_name(a.name)
         if voices.exists(n): sys.exit(f"'{n}' already exists")
         if a.base != "auto": base.ensure(a.base)
-        voices.write(n, base=a.base, **({"source_dir": str(a.folder)} if a.folder else {}))
-        (CFG.inbox / n).mkdir(parents=True, exist_ok=True)
-        print(f"Created '{n}'. Recordings go in: {voices.source_dir(n)}"); return
+        folder = Path(a.folder).expanduser()
+        if not folder.is_dir(): sys.exit(f"Not a folder: {folder}")
+        voices.write(n, base=a.base, source_dir=str(folder.resolve()))
+        print(f"Created '{n}', reading recordings from {folder.resolve()}"); return
     n = CFG.check_name(a.name)
     if not voices.exists(n): sys.exit(f"No voice '{n}'. Create it first:  voicestudio new {n}")
     if a.cmd == "prep":
