@@ -118,6 +118,24 @@ def _read_metrics(n, m):
     finally: m["t"] = time.time(); m["busy"] = False
 
 
+_GPU = {"t": 0.0, "v": None}
+
+
+def gpu_stats():
+    """GPU 0 as reported by nvidia-smi: name, utilisation %, memory used/total (MiB), temperature (C), power (W). Cached for a second."""
+    if time.time() - _GPU["t"] < 1.0: return _GPU["v"]
+    v = None
+    try:
+        r = subprocess.run(["nvidia-smi", "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,power.limit,fan.speed",
+                            "--format=csv,noheader,nounits", "-i", "0"], capture_output=True, text=True, timeout=3)
+        if r.returncode == 0 and r.stdout.strip():
+            f = [x.strip() for x in r.stdout.strip().splitlines()[0].split(",")]
+            num = lambda x: float(x) if x.replace(".", "", 1).isdigit() else None        # "[N/A]" -> None
+            v = {"name": f[0], "util": num(f[1]), "mem_used": num(f[2]), "mem_total": num(f[3]), "temp": num(f[4]), "power": num(f[5]), "power_limit": num(f[6]), "fan": num(f[7])}
+    except (OSError, subprocess.TimeoutExpired, IndexError, ValueError): v = None
+    _GPU.update(t=time.time(), v=v); return v
+
+
 def _size(p):
     """File size, or 0 if the file has just been deleted (training removes old checkpoints while the page is reading)."""
     try: return p.stat().st_size
@@ -291,6 +309,7 @@ class H(BaseHTTPRequestHandler):
         try:
             if u.path == "/": return self._file(WEB / "index.html", "text/html; charset=utf-8")
             if u.path == "/api/browse": return self._json(browse(q.get("path", [""])[0]))
+            if u.path == "/api/gpu": return self._json(gpu_stats() or {"error": "no GPU information available"})
             if u.path == "/api/voices":
                 b = busy()
                 return self._json({"voices": [info(n) for n in voices.names()], "bases": {k: v[0] for k, v in base.BASES.items()},

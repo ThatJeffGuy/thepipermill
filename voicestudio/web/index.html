@@ -48,6 +48,10 @@ dialog::backdrop{background:#0008}
 footer.foot{margin:36px 0 0;padding-top:14px;border-top:1px solid var(--line);text-align:center;color:var(--mute);font-size:13px;line-height:1.7}
 footer.foot a{color:var(--acc);text-decoration:none}footer.foot a:hover{text-decoration:underline}footer.foot b{color:var(--ink)}
 .empty{text-align:center;padding:40px 10px;color:var(--mute)}
+.gpu{display:flex;gap:14px 22px;flex-wrap:wrap;margin:12px 0 4px;padding:10px 12px;background:var(--bg);border:1px solid var(--line);border-radius:10px;font-size:13px}
+.gm{display:flex;align-items:center;gap:8px;min-width:190px;flex:1}.gm:last-child b{min-width:150px}.gm span{color:var(--mute);width:62px}.gm b{min-width:92px;text-align:right;font-variant-numeric:tabular-nums}
+.mbar{flex:1;height:8px;background:var(--acc2);border-radius:6px;overflow:hidden}.mbar i{display:block;height:100%;width:0;background:var(--acc);transition:width .5s}
+.gm.warn .mbar i{background:var(--warn)}.gm.hot .mbar i{background:var(--bad)}.gm.warn b{color:var(--warn)}.gm.hot b{color:var(--bad)}
 .mos{cursor:help;border-bottom:1px dotted var(--mute)}.mos b{color:var(--ink)}
 .advbtn.on{background:var(--acc);color:#fff}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
@@ -235,7 +239,7 @@ function render(){
   const sel=$('#voiceSel');sel.innerHTML=S.voices.map(v=>`<option ${v.name===cur?'selected':''}>${esc(v.name)}</option>`).join('')||'<option>(no voices yet)</option>';
   $('#busyBar').innerHTML=S.busy&&S.busy.voice!==cur?`<div class="card" style="padding:10px 16px">${live('Busy')} <b>${esc(S.busy.voice)}</b>: the GPU is busy with ${jobName(S.busy.kind)}. Other jobs wait until it finishes.</div>`:'';
   const v=S.voices.find(x=>x.name===cur);
-  if(!v){$('#main').innerHTML=`<div class="card empty"><h2>Welcome</h2><p>Create your first voice to begin. Use your own voice, or the voice of someone who has agreed to it.</p><button onclick="$('#newBtn').click()">+ New voice</button></div>`;return}
+  if(!v){$('#main').innerHTML=`<div class="card empty"><h2>Welcome</h2><p>Create your first voice to begin. Use your own voice, or the voice of someone who has agreed to it.</p><button onclick="$('#newBtn').click()">+ New voice</button></div>`;syncGpu(false);return}
   const f=k=>flash[k]?`<div class="msg ${flash[k].cls||''}">${esc(flash[k].text)}</div>`:'';
   const totalMB=v.files.reduce((a,b)=>a+b.mb,0);
   const t=v.train, jobRun=v.job&&v.job.running, prepDone=v.prepared;
@@ -296,6 +300,7 @@ function render(){
     ${t.running?'':finished?'<span class="pill ok">finished</span>':''}</div>
     ${(t.running||t.done!=null)?`<div class="bar"><div style="width:${pct}%"></div></div>
       <div class="hint">${t.done!=null?`${t.done} of ${t.total} rounds (${pct}%)`:'starting…'} ${t.mos!=null?` · ${mosTxt}`:''}</div>`:''}
+    ${ADV?`<div class="gpu" id="gpuBox"><div class="gm" id="gmU" title="How busy the graphics chip is right now"><span>GPU</span><div class="mbar"><i></i></div><b>–</b></div><div class="gm" id="gmM" title="Video memory in use, out of the card's total"><span>Memory</span><div class="mbar"><i></i></div><b>–</b></div><div class="gm" id="gmT" title="GPU temperature, fan speed and power draw. Under 70 °C is comfortable; above 83 °C the card slows itself down. A fan reading of 0 % is normal when the card is cool: the fans stop below about 50 to 60 °C and speed up on their own as it heats"><span>Temp</span><div class="mbar"><i></i></div><b>–</b></div></div>`:''}
     ${t.running?'<p class="hint" style="margin:8px 0 0"><b>Note:</b> the progress bar can take 10–20 minutes to update for the first time, and it only moves when training saves a new checkpoint. Please do not stop training until the bar has updated at least once.</p>':''}
     ${t.log.length?`${logBox(t.log.join('\n'))}`:''}${f('train')}
   </div>`,
@@ -354,7 +359,7 @@ function render(){
       <p style="margin:8px 0"><button class="sec" id="renameBtn" ${S.busy?'disabled':''}>Rename this voice…</button> <span class="hint" style="margin:0">Capital letters count: Joe and joe are different names.</span></p>
       <button class="sec bad" id="delBtn" style="color:#fff">Delete this voice…</button></details>`:''}`;
   if(keep.sp&&$('#spNum'))$('#spNum').value=keep.sp;if(keep.wh&&$('#which'))$('#which').value=keep.wh;if(keep.txt!=null&&$('#txt'))$('#txt').value=keep.txt;if(keep.ep!=null&&$('#ep'))$('#ep').value=keep.ep;
-  wire(v);if(rows&&rowsFor===v.name&&$('#tbl'))drawRows();
+  wire(v);syncGpu(ADV&&stepNo===5);if(rows&&rowsFor===v.name&&$('#tbl'))drawRows();
   // opening the Words step shows your clips straight away (no need to press "Show my clips" after a refresh)
   if(stepNo===4&&v.prepared&&!(rows&&rowsFor===v.name)&&!autoRows[v.name+':'+v.clips]){autoRows[v.name+':'+v.clips]=1;loadRows(v.name).catch(()=>{})}
 }
@@ -405,6 +410,17 @@ async function loadRows(name){
   render();
 }
 const autoRows={};
+// GPU meters (Advanced, Train step): polled every 2 s, updating the numbers in place so nothing redraws
+let gpuTimer=null,gpuLast=null;
+function paintGpu(g){
+  const set=(id,pct,txt,cls)=>{const el=$(id);if(!el)return;el.className='gm'+(cls?' '+cls:'');el.querySelector('i').style.width=Math.max(0,Math.min(100,pct||0))+'%';el.querySelector('b').textContent=txt};
+  if(!g||g.error){set('#gmU',0,'n/a');set('#gmM',0,'n/a');set('#gmT',0,'n/a');return}
+  set('#gmU',g.util,g.util==null?'n/a':Math.round(g.util)+' %');
+  const mp=g.mem_total?100*g.mem_used/g.mem_total:0;set('#gmM',mp,g.mem_used==null?'n/a':(g.mem_used/1024).toFixed(1)+' / '+(g.mem_total/1024).toFixed(1)+' GB',mp>92?'warn':'');
+  set('#gmT',g.temp==null?0:100*g.temp/100,g.temp==null?'n/a':Math.round(g.temp)+' °C'+(g.fan!=null?' · fan '+Math.round(g.fan)+' %':'')+(g.power!=null?' · '+Math.round(g.power)+' W':''),g.temp>=83?'hot':g.temp>=70?'warn':'');
+}
+async function pollGpu(){if(document.hidden)return;try{gpuLast=await api('/api/gpu');paintGpu(gpuLast)}catch(e){}}
+function syncGpu(on){if(on&&!gpuTimer){pollGpu();gpuTimer=setInterval(pollGpu,2000)}else if(!on&&gpuTimer){clearInterval(gpuTimer);gpuTimer=null}if(on&&gpuLast)paintGpu(gpuLast)}
 function drawRows(){
   const per=25,n=Math.ceil(rows.length/per)||1;page=Math.min(page,n-1);
   const slice=rows.slice(page*per,page*per+per);
