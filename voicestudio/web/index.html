@@ -65,6 +65,7 @@ td.len{color:var(--mute);font-size:12.5px;white-space:nowrap;padding:0 6px;width
 tr.playing td{background:var(--acc2)}
 .player{display:flex;gap:10px;align-items:center;padding:8px 10px;margin:8px 0;background:var(--bg);border:1px solid var(--line);border-radius:12px}
 .player audio{flex:1;min-width:0;height:36px}.player .pname{max-width:34%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:var(--mute)}.player .pstop{padding:6px 14px}
+@media (max-width:520px){.player .pname{display:none}}
 .pslot:empty{display:none}.pslot.sticky{position:sticky;top:0;z-index:5;background:var(--card)}
 .seg2{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}.seg2 button{background:var(--card);color:var(--mute);border-radius:0;padding:8px 16px;font-size:14px}.seg2 button.on{background:var(--acc);color:#fff}
 .chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:12px 0 8px}.chip{background:var(--card);color:var(--mute);border:1px solid var(--line);padding:4px 12px;border-radius:99px;font-size:13px;font-weight:500}.chip.on{background:var(--acc2);color:var(--acc);border-color:var(--acc)}
@@ -185,7 +186,7 @@ function watchJobs(n){
   if(notifyOn&&prevRun)Object.keys(run).forEach(k=>{const was=prevRun[k];if(was&&run[k]!==was){const v=n.voices.find(x=>x.name===k.split('|')[0]);if(!v)return;
     const j=v.job&&v.job.kind===was?v.job:null,how=j&&j.rc?(j.rc<0?'was stopped':'did not finish'):'finished';tell(`${v.name}: ${jobName(was)} ${how}`)}});
   prevRun=run}
-const JOBNAME={score:'checking your clips',speakers:'speaker identification',match:'matching your voice',prep:'preparing your recordings',trim:'reprocessing clips',export:'making the test clip',training:'training'};
+const JOBNAME={compare:'comparing versions',score:'checking your clips',speakers:'speaker identification',match:'matching your voice',prep:'preparing your recordings',trim:'reprocessing clips',export:'making the test clip',training:'training'};
 const jobName=k=>JOBNAME[k]||k;
 const logBox=t=>mode==='advanced'?`<pre>${esc(t)}</pre>`:'';          // the console is an Advanced extra
 // Beginner mode has no console: a job that failed gets one plain line instead (a job you stopped says so)
@@ -362,10 +363,13 @@ function render(){
     <textarea id="txt" ${t.checkpoints?'':'disabled'}>Good evening. This is a test of my new voice, and I hope it sounds like me.</textarea>
     <div class="row" style="margin-top:8px">${ADV?'<label>Version <select id="which"><option value="best">Best sounding (recommended; skips the first rounds)</option><option value="accurate">Most accurate</option><option value="latest">Latest</option></select></label>':''}
     <button id="expBtn" ${(!t.checkpoints||S.busy)?'disabled':''}>Make test clip</button>
+    <button class="sec" id="cmpBtn" title="Makes the same sentence with each version of your voice so you can listen and choose" ${(!t.checkpoints||S.busy)?'disabled':''}>Compare versions</button>${jobRun&&v.job.kind==='compare'?'<button class="bad stopjob">Stop</button>':''}
     ${jobRun&&v.job.kind==='export'?'<button class="bad stopjob">Stop</button>':''}
     </div>
     ${v.exported?`${ADV?`<div class="row" style="margin-top:10px"><a href="/download/${esc(v.name)}.onnx"><button class="sec">⬇ ${esc(v.name)}.onnx</button></a><a href="/download/${esc(v.name)}.onnx.json"><button class="sec">⬇ ${esc(v.name)}.onnx.json</button></a></div>`:''}
       <p class="hint">${ADV?'Put both files in your Piper voices folder. They must keep the same name. Or press <b>Download</b> below for both in one zip.':'Press <b>Download</b> below to get your voice as a zip. Unzip it and put both files in your Piper voices folder: they must keep the same name.'}</p>`:''}
+    ${pbar(v.job&&v.job.kind==='compare'?v.job:null)}${jobNote(v,'compare')}
+    ${v.compare?cmpHtml(v):''}
     ${v.exported&&v.export_what?`<p class="hint" style="margin:6px 0 0">This is the <b>${esc(v.export_what)}</b>.</p>`:''}
     ${t.mos!=null&&t.mos<3?`<p class="hint" style="margin:6px 0 0;color:var(--warn)">The quality score is low (${t.mos.toFixed(2)} out of 5). If the clip does not sound like you, turn on <b>Advanced</b> and make another test clip with the <b>Latest</b> or <b>Most accurate</b> version.</p>`:''}
     ${v.exported?`<p><audio controls src="/out/${esc(v.name)}-test.wav?t=${Date.now()>>14}" style="width:100%"></audio></p>`:''}
@@ -391,11 +395,11 @@ function render(){
       t.running?`${v.name} is training on the GPU…`:!t.checkpoints?'Start training to continue.':'',
       ''];
     const working=[null,run('speakers')?'Finding the speakers… please wait.':null,run('match')?'Finding more like your ticked clips… please wait.':null,run('prep')?'Preparing… please wait.':null,run('trim')?'Reprocessing… please wait.':run('score')?'Checking your clips… please wait.':null,
-      t.running?`${v.name} is training on the GPU…`:null,run('export')?'Making the test clip… please wait.':null];
+      t.running?`${v.name} is training on the GPU…`:null,run('export')?'Making the test clip… please wait.':run('compare')?'Making a sample of each version… please wait.':null];
     const stepNo=wizStep(v,{prepDone,finished});
     $('#main').innerHTML=`
     <div class="strip">${names.map((n,i)=>{
-      const busyNow=[false,run('speakers'),run('match'),run('prep'),run('trim')||run('score'),!!t.running,run('export')][i];
+      const busyNow=[false,run('speakers'),run('match'),run('prep'),run('trim')||run('score'),!!t.running,run('export')||run('compare')][i];
       const st=busyNow?(i===stepNo?'cur run':'run'):i===stepNo?(shownDone[i]?'cur ok':'cur'):shownDone[i]?'ok':i<stepNo?(optional[i]?'skip':'warn'):(i===5&&t.checkpoints>0&&!t.running)?'part':'todo';
       const mark=busyNow?'':st.includes('ok')?'✓':st==='skip'?'–':st==='warn'?'!':st==='part'?'…':i+1;
       const locked=i===6&&!t.checkpoints;
@@ -452,6 +456,9 @@ function wire(v){
   b('#spBtn',()=>act('/api/speakers',{voice:v.name,num:($('#spNum')||{}).value||''},'sp'));
   b('#keepBtn',async()=>{const ids=[...document.querySelectorAll('.pk:checked')].map(x=>+x.value);
     try{await api('/api/keep',{method:'POST',body:JSON.stringify({voice:v.name,ids})});say('sp',ids.length?`Saved. Prepare will use only ${ids.map(i=>pn(v,i)).join(', ')}.`:'Saved. All speech will be used.','ok');refresh(true)}catch(e){say('sp',e.message,'err')}});
+  b('#cmpBtn',()=>act('/api/compare',{voice:v.name,text:$('#txt').value},'exp'));
+  document.querySelectorAll('[data-cmp-play]').forEach(el=>el.onclick=()=>playIn('/out/'+el.dataset.cmpPlay+'?t='+Date.now(),el.dataset.cmpLabel,''));
+  document.querySelectorAll('[data-cmp-use]').forEach(el=>el.onclick=()=>act('/api/export',{voice:v.name,text:$('#txt').value,which:el.dataset.cmpUse},'exp'));
   b('#scoreBtn',()=>act('/api/score',{voice:v.name},'tr'));
   b('#vReview',()=>{wView='review';rvKey='';render()});b('#vList',()=>{wView='list';render()});
   const ws=$('#wSort');if(ws){ws.value=wSort;ws.onchange=()=>{wSort=ws.value;page=0;if(rows)drawRows()}}
@@ -495,6 +502,8 @@ const toolsHtml=(v,loaded)=>`<details class="vs tools" ${toolsOpen?'open':''} on
   <div class="vsrow"><div class="t"><b>List order</b><div class="hint">How the List view is sorted.</div></div><select id="wSort" ${v.scored?'':'disabled'} style="width:150px"><option value="order">As recorded</option><option value="match">Least like my voice first</option></select></div>
   ${loaded?`<div class="vsrow"><div class="t"><b>Reload the clips</b><div class="hint">Throws away unsaved edits and loads the clips from disk again.</div></div><button class="sec" id="loadRows">Reload</button></div>`:''}
 </details>`;
+const cmpHtml=v=>`<div class="sub"><b>Compare versions</b><div class="hint">The same sentence made with each version of your voice. Listen, then press <b>Use this version</b> for the one you like: that becomes the voice you download.${v.compare.items.length<3?' (Some versions are the same checkpoint, so they share a sample.)':''}</div><div class="pslot"></div>
+  ${v.compare.items.map(it=>`<div class="vsrow"><div class="t"><b>${it.versions.map(x=>esc(x.label)).join(' · ')}</b><div class="hint">${esc(it.versions[0].what)}</div></div><button class="sec" data-cmp-play="${esc(it.file)}" data-cmp-label="${esc(it.versions.map(x=>x.label).join(' / '))}">▶ Listen</button><button class="sec" data-cmp-use="${it.versions[0].which}">Use this version</button></div>`).join('')}</div>`;
 function chipsHtml(){const f=curFilter(),need=rows.filter(flagged).length,ed=rows.filter(isEdited).length;
   return `<div class="chips"><span class="hint" style="margin:0">Show</span><button class="chip ${f==='all'?'on':''}" data-f="all">All ${rows.length}</button><button class="chip ${f==='needs'?'on':''}" data-f="needs" title="${rowsScored?'Clips that sound unlike the rest, or whose text looks wrong for their length':'Clips whose text looks wrong for their length. Press Check clips to also find other speakers'}">Needs attention ${need}</button><button class="chip ${f==='edited'?'on':''}" data-f="edited">Edited ${ed}</button></div>`}
 function drawWords(){

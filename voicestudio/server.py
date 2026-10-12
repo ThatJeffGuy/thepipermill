@@ -7,7 +7,7 @@ import json, os, re, shutil, signal, subprocess, sys, tempfile, threading, time,
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote
-from . import base, progress, speakers, train as train_mod, trim, voices
+from . import base, compare, progress, speakers, train as train_mod, trim, voices
 from .config import CFG
 
 WEB = Path(__file__).parent / "web"
@@ -31,7 +31,7 @@ def train_pid(n):
         return None
 
 
-JOB_KINDS = ("speakers", "match", "score", "prep", "trim", "export")
+JOB_KINDS = ("speakers", "match", "score", "prep", "trim", "export", "compare")
 
 
 def job_pids(n):
@@ -140,7 +140,7 @@ def gpu_stats():
 
 
 _NOTE = {}      # (voice, job) -> was it running when we last looked
-JOBWORDS = {"speakers": "speaker identification", "match": "matching your voice", "score": "checking your clips", "prep": "preparing your recordings",
+JOBWORDS = {"compare": "comparing versions", "speakers": "speaker identification", "match": "matching your voice", "score": "checking your clips", "prep": "preparing your recordings",
             "trim": "reprocessing clips", "export": "making the test clip", "training": "training"}
 
 
@@ -195,6 +195,13 @@ def _watch():
         try: notify_tick()
         except Exception: pass
         time.sleep(3)
+
+
+def _compare_info(n):
+    try: m = json.loads(compare.meta_path(n).read_text())
+    except (OSError, ValueError): return None
+    for i, it in enumerate(m["items"]): it["file"] = compare.clip_path(n, i).name
+    return m
 
 
 def _size(p):
@@ -282,7 +289,8 @@ def info(n):
             "train": {"running": bool(train_pid(n)), "total": total, "done": max(0, done) if done is not None else None,
                       "mos": met["mos"] if met["mos"] is not None else (float(mos[-1]) if mos else None), "mos_first": met["first"], "eta": (round((total - done) / met["rate"] * 60) if (train_pid(n) and met["rate"] and total and done is not None and total > done) else None), "checkpoints": len(ck), "disk_gb": round(sum(_size(p) for p in ck) / 2**30, 1), "log": tl.split("\n")[-3:] if tl else []},
             "job": job, "exported": (CFG.out / f"{n}.onnx").exists(), "exported_at": (CFG.out / f"{n}.onnx").stat().st_mtime if (CFG.out / f"{n}.onnx").exists() else None,
-            "export_what": ((CFG.out / f"{n}.version.txt").read_text() if (CFG.out / f"{n}.version.txt").exists() else None)}
+            "export_what": ((CFG.out / f"{n}.version.txt").read_text() if (CFG.out / f"{n}.version.txt").exists() else None),
+            "compare": _compare_info(n)}
 
 
 def browse(path):
@@ -449,6 +457,9 @@ class H(BaseHTTPRequestHandler):
             elif u.path == "/api/score":
                 if not (CFG.data / n / "metadata.csv").exists(): raise ValueError("Prepare the recordings first.")
                 start_job(n, "score", ["score", n])
+            elif u.path == "/api/compare":
+                if not train_mod.all_ckpts(n): raise ValueError("Train first: there is nothing to compare yet.")
+                start_job(n, "compare", ["compare", n, "--text", (d.get("text") or "")[:400]])
             elif u.path == "/api/match":
                 def ranges(v):
                     out = []

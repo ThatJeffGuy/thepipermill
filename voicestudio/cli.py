@@ -19,6 +19,7 @@ def main(argv=None):
     p = sub.add_parser("keep", help="choose which people to train on"); p.add_argument("name"); p.add_argument("ids", nargs="*", type=int); p.add_argument("--all", action="store_true", help="use everyone (no filtering)")
     p = sub.add_parser("trim", help="reprocess: cut clips down to the words you kept when editing"); p.add_argument("name")
     p = sub.add_parser("train", help="fine-tune (resumable)"); p.add_argument("name"); p.add_argument("epochs", nargs="?", type=int, default=1000); p.add_argument("batch", nargs="?", type=int, default=0)
+    p = sub.add_parser("compare", help="make the same test sentence with each version of the voice"); p.add_argument("name"); p.add_argument("--text", default=None)
     p = sub.add_parser("export", help="make the .onnx/.json and a test clip"); p.add_argument("name"); p.add_argument("--text", default=None); p.add_argument("--which", choices=["best", "accurate", "latest"], default="best", help="best = best-sounding by quality score (default)")
     p = sub.add_parser("clean", help="free disk space: keep only the best and latest training checkpoints"); p.add_argument("name")
     p = sub.add_parser("delete", help="delete a voice and its working files"); p.add_argument("name")
@@ -67,6 +68,8 @@ def main(argv=None):
         from . import trim; trim.run(n)
     elif a.cmd == "train":
         from . import train; train.run(n, a.epochs, a.batch)
+    elif a.cmd == "compare":
+        from . import compare, export; compare.run(n, a.text or export.DEFAULT_TEXT)
     elif a.cmd == "export":
         from . import export; export.run(n, a.text or export.DEFAULT_TEXT, "last" if a.which == "latest" else a.which)
     elif a.cmd == "clean":
