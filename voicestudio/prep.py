@@ -98,14 +98,13 @@ def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
     if mm.get("use_match"): log("Using only the parts that sound like the clips you ticked ('find more like these').")
     prog = Progress(name, "prep")
     root = CFG.data / name; wavs = root / "wavs"
+    (CFG.runs / name / "prep.approved.json").unlink(missing_ok=True)      # new clips: earlier approvals no longer apply
     for old in wavs.glob("*.wav"): old.unlink()                      # re-preparing starts clean
     wavs.mkdir(parents=True, exist_ok=True)
     shutil.rmtree(CFG.cache / name, ignore_errors=True)               # Piper's cache is keyed by row+text: never reuse it for new clips
 
-    sep = None
-    if voices.read(name).get("clean_voice"):
-        log("Removing music and background noise from the parts that are kept (only your voice is left in)...")
-        sep = clean.Separator(log)
+    log("Removing music and background noise from the parts that are kept (only the voice is left in)...")
+    sep = clean.Separator(log)
     clips, n, skipped, noisy, silent = [], 0, [], [], []
     with tempfile.TemporaryDirectory() as td:
         for i, f in enumerate(files, 1):
@@ -173,8 +172,6 @@ def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
         if len(skipped) > 25: log(f"  ... and {len(skipped) - 25} more")
     if silent:
         log(f"\n{len(silent)} file(s) had no usable speech: {', '.join(silent[:6])}{' ...' if len(silent) > 6 else ''}")
-    if noisy:
-        u = sorted(set(noisy)); log(f"\nNOTE: {len(u)} recording(s) look noisy (background noise close to the speech level), e.g. {u[0]}. Cleaner audio gives a clearer voice.")
     if mins < 20: log("NOTE: under 20 minutes. Fine-tuning works best with 30-60+ minutes of clean speech.")
     log("Next: check the words, then train.")
     prog.finish(f"{len(rows)} clips ready")

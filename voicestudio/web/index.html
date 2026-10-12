@@ -49,7 +49,7 @@ footer.foot{margin:36px 0 0;padding-top:14px;border-top:1px solid var(--line);te
 footer.foot a{color:var(--acc);text-decoration:none}footer.foot a:hover{text-decoration:underline}footer.foot b{color:var(--ink)}
 .empty{text-align:center;padding:40px 10px;color:var(--mute)}
 .gpu{display:flex;gap:14px 22px;flex-wrap:wrap;margin:12px 0 4px;padding:10px 12px;background:var(--bg);border:1px solid var(--line);border-radius:10px;font-size:13px}
-.gm{display:flex;align-items:center;gap:8px;min-width:190px;flex:1}.gm:last-child b{min-width:150px}.gm span{color:var(--mute);width:62px}.gm b{min-width:92px;text-align:right;font-variant-numeric:tabular-nums}
+.gm{display:flex;align-items:center;gap:8px;min-width:190px;flex:1}.gm span{color:var(--mute);width:62px}.gm b{min-width:112px;white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums}
 .mbar{flex:1;height:8px;background:var(--acc2);border-radius:6px;overflow:hidden}.mbar i{display:block;height:100%;width:0;background:var(--acc);transition:width .5s}
 .gm.warn .mbar i{background:var(--warn)}.gm.hot .mbar i{background:var(--bad)}.gm.warn b{color:var(--warn)}.gm.hot b{color:var(--bad)}
 .vs{margin-top:14px;border:1px solid var(--line);border-radius:12px;background:var(--card);padding:0 16px}
@@ -60,7 +60,7 @@ footer.foot a{color:var(--acc);text-decoration:none}footer.foot a:hover{text-dec
 button.dng{background:transparent;color:var(--bad)}.vsrow button.dng{border-color:var(--bad)}button.dng:hover:not(:disabled){background:color-mix(in srgb,var(--bad) 12%,transparent)}
 @media (max-width:520px){.vsrow{flex-wrap:wrap}.vsrow button{width:100%}}
 .vdot{display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle}.vdot.l0{background:var(--ok)}.vdot.l1{background:var(--warn)}.vdot.l2{background:var(--bad)}
-td.len{color:var(--mute);font-size:12.5px;white-space:nowrap;padding:0 6px;width:48px}tr.flag input{border-color:var(--bad)}.warnic{color:var(--warn);cursor:help}
+td.len{color:var(--mute);font-size:12.5px;white-space:nowrap;padding:0 6px;width:48px}tr.flag input{border-color:var(--bad)}.okb{color:var(--ok)!important}.rvbtns button.ok{background:var(--ok);color:#fff}.warnic{color:var(--warn);cursor:help}
 .linkbtn{background:none;color:var(--acc);padding:2px 4px;font-size:13px;font-weight:500;border-radius:6px}.linkbtn:hover{text-decoration:underline}
 tr.playing td{background:var(--acc2)}
 .player{display:flex;gap:10px;align-items:center;padding:8px 10px;margin:8px 0;background:var(--bg);border:1px solid var(--line);border-radius:12px}
@@ -92,9 +92,14 @@ textarea.cell{width:100%;min-height:38px;resize:none;overflow:hidden;padding:8px
 @media (prefers-reduced-motion:reduce){.sp.run i,.sp.run i::after{animation:none}}
 .nav{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-top:4px}.nav .nm{margin:0;flex:1;min-width:140px;text-align:center}
 @media (max-width:520px){.sp span{display:none}.sp.cur span{display:inline}}
-.smp{display:inline-flex;align-items:center;gap:2px}
-.mk{display:inline-flex;gap:2px}.mk button{padding:5px 8px;background:var(--acc2);color:var(--mute);font-size:13px}
-.mk button[data-v=y].on{background:var(--ok);color:#fff}.mk button[data-v=n].on{background:var(--bad);color:#fff}
+.smp{display:flex;flex:1 1 0;min-width:0;align-items:stretch;border-radius:8px;overflow:hidden;background:var(--acc2)}
+.smp>button{border:0;border-radius:0;margin:0;padding:10px 6px;font-size:14px}.smp>button.pl{flex:1;background:transparent;color:var(--ink);white-space:nowrap}
+.smp>button.st{flex:none;width:42px;font-size:17px;font-weight:700;background:var(--line);color:var(--mute)}
+.smp.y>button.st{background:var(--ok);color:#fff}.smp.n>button.st{background:var(--bad);color:#fff}
+.smp.y{box-shadow:inset 0 0 0 2px var(--ok)}.smp.n{box-shadow:inset 0 0 0 2px var(--bad)}
+.pager{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;flex-wrap:wrap}.pager span{color:var(--mute);font-size:14px}
+.samples.multi{flex-wrap:wrap}.samples.multi .smp{flex:1 1 150px}
+.samples{display:flex;gap:6px;margin-top:8px;width:100%}
 .sub{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
 </style>
 </head>
@@ -158,7 +163,7 @@ textarea.cell{width:100%;min-height:38px;resize:none;overflow:hidden;padding:8px
 const $=s=>document.querySelector(s);
 const api=async(path,opt={})=>{const r=await fetch(path,{...opt,headers:{'X-Studio':'1','Content-Type':'application/json',...(opt.headers||{})}});
   const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||r.statusText);return j};
-let spSort=(()=>{try{return localStorage.getItem('spSort')==='first'?'first':'minutes'}catch(e){return'minutes'}})(),spTicks=null;
+let spSort=(()=>{try{return localStorage.getItem('spSort')==='first'?'first':'minutes'}catch(e){return'minutes'}})(),spSel=null,spPage=0;const PER_PAGE=5,selSet=v=>spSel||new Set(v.keep||[]);
 let marks={},vsOpen=false,filesOpen=false,wSort='order',rowsScored=false,wView=null,wFilter=null,rvList=[],rvIdx=0,rvKey='',toolsOpen=false,autoPlay=(()=>{try{return localStorage.getItem('autoplay')!=='0'}catch(e){return true}})();      // open/closed state of the collapsible sections, so a redraw does not close them
 let mode=(()=>{try{return localStorage.getItem('mode')==='advanced'?'advanced':'beginner'}catch(e){return'beginner'}})(),wiz={};
 let S={voices:[],bases:{},busy:null},cur=localStorage.getItem('voice')||'',page=0,rows=null,rowsFor='',dirty=false,flash={};
@@ -204,12 +209,23 @@ const pitchTag=hz=>hz==null?'':(hz<150?'lower':hz>170?'higher':'mid-range')+' vo
 // clips you tick (✓ my speaker) or cross (✗ not them): remembered per voice, sent with "Find more like these"
 function marksFor(v){if(!marks[v.name]){marks[v.name]={};(v.ref_yes||[]).forEach(r=>marks[v.name][r.join('|')]='y');(v.ref_no||[]).forEach(r=>marks[v.name][r.join('|')]='n')}return marks[v.name]}
 function markRanges(v,val){return Object.entries(marksFor(v)).filter(([,x])=>x===val).map(([id])=>{const p=id.split('|');const b=+p.pop(),a=+p.pop();return[p.join('|'),a,b]})}
+const MKI={y:'✓',n:'✗','':'?'},MKT={y:'This is only my speaker',n:'This is not my speaker','':'Unsure, or more than one person talking: left out of the match'};
+const nextOnes=v=>(v.people||[]).filter(p=>v.people_names&&v.people_names[p.id]&&!(v.keep||[]).includes(p.id)&&!(v.people_voices||{})[p.id]);
+function nextHtml(v){if(v.imported||!v.people)return'';const todo=nextOnes(v),made=Object.entries(v.people_voices||{}).filter(([i])=>(v.people||[]).some(p=>p.id==i));
+  if(!todo.length&&!made.length)return'';
+  return `<div class="sub"><b>Next voice from this recording</b><div class="hint">You named other people in this recording. Their voices can be made from the same scan, with no need to find the speakers again.</div>`
+   +todo.map(p=>`<div class="row" style="margin-top:6px"><button class="sec" data-next="${p.id}">Start a voice for ${esc(pn(v,p.id))} →</button><span class="hint" style="margin:0">${p.minutes} min of speech</span></div>`).join('')
+   +made.map(([i,n])=>`<div class="hint" style="margin:6px 0 0">✓ ${esc(pn(v,+i))}: voice <b>${esc(n)}</b> started</div>`).join('')+`</div>`}
+function spPages(v){const all=[...v.people].sort((a,b)=>spSort==='first'?((a.first??1e12)-(b.first??1e12)||a.id-b.id):(b.minutes-a.minutes||a.id-b.id));
+  const n=Math.max(1,Math.ceil(all.length/PER_PAGE));spPage=Math.min(Math.max(0,spPage),n-1);return{n,list:all.slice(spPage*PER_PAGE,spPage*PER_PAGE+PER_PAGE),total:all.length}}
+function spPager(v){const {n,total}=spPages(v);if(n<2)return'';
+  return `<div class="pager"><button class="sec" data-pg="-1" ${spPage<=0?'disabled':''}>◀ Prev</button><span>People ${spPage*PER_PAGE+1}–${Math.min(total,spPage*PER_PAGE+PER_PAGE)} of ${total} · page ${spPage+1} of ${n}</span><button class="sec" data-pg="1" ${spPage>=n-1?'disabled':''}>Next ▶</button></div>`}
 function smp(v,file,time,range,label){
-  const id=range?range.join('|'):'',m=range?marksFor(v)[id]:null;
-  return `<span class="smp"><button class="sec" title="${time!=null?'from '+mmss(time)+' in the recording':''}" onclick="playS('${esc(v.name)}','${file}')">▶ ${label}</button>${range?`<span class="mk"><button data-mk="${esc(id)}" data-v="y" class="${m==='y'?'on':''}" title="This is my speaker">✓</button><button data-mk="${esc(id)}" data-v="n" class="${m==='n'?'on':''}" title="Not my speaker">✗</button></span>`:''}</span>`}
+  const id=range?range.join('|'):'',m=range?(marksFor(v)[id]||''):'';
+  return `<span class="smp ${m}"><button class="pl" title="${time!=null?'from '+mmss(time)+' in the recording':''}" onclick="playS('${esc(v.name)}','${file}')">▶ ${label}</button>${range?`<button class="st" data-mk="${esc(id)}" title="${MKT[m]}">${MKI[m]}</button>`:''}</span>`}
 function syncMarks(){
   const v=S.voices.find(x=>x.name===cur);if(!v)return;const mm=marksFor(v);
-  document.querySelectorAll('[data-mk]').forEach(el=>el.classList.toggle('on',mm[el.dataset.mk]===el.dataset.v));
+  document.querySelectorAll('[data-mk]').forEach(el=>{const m=mm[el.dataset.mk]||'';el.parentNode.className='smp '+m;el.textContent=MKI[m];el.title=MKT[m]});
   const y=markRanges(v,'y').length,n=markRanges(v,'n').length,c=$('#markCount'),b=$('#matchBtn');
   if(c)c.textContent=`${y} ✓ · ${n} ✗`;if(b)b.disabled=!y||!!S.busy}
 function matchHtml(v,jobRun,short){
@@ -218,14 +234,14 @@ function matchHtml(v,jobRun,short){
   const unchanged=!!M&&!M.settled&&!running&&same(ys,v.ref_yes||[])&&same(ns,v.ref_no||[])&&(window._mStrict||v.strict||'normal')===(M.strict||'normal');
   const lbl={strict:'strict',normal:'normal',loose:'loose'};
   return `<div class="${short?'':'sub'}">${short?'':'<b>Find more like my voice</b>'}
-    ${short?'':`<p class="hint">Hear your speaker in some clips of a person but not others? Press <b>✓</b> on the clips that are your voice (and <b>✗</b> on ones that are not), then press the button. It compares every stretch of speech in the whole recording with your ticked clips, across all the people found. Two or more ticked clips work best. Repeat with the new samples to improve it.</p>`}
+    ${short?'':`<p class="hint">Hear your speaker in some clips of a person but not others? Click the coloured square on each clip: once for <b>green ✓</b> (your voice), again for <b>red ✗</b> (not them), again to go back to <b>grey ?</b> (undecided). Then press the button. It compares every stretch of speech in the whole recording with your ticked clips, across all the people found. Two or more ticked clips work best. Repeat with the new samples to improve it.</p>`}
     ${short&&!y&&!M?'<p class="hint">You have not ticked any clips yet. Go back, press ✓ on a few clips of your speaker, then come here.</p>':''}
     <div class="row"><label>How close <select id="mStrict"><option value="strict">Strict</option><option value="normal">Normal</option><option value="loose">Loose</option></select></label>
     <button id="matchBtn" ${(!y||S.busy)?'disabled':''}>Find more like these (<span id="markCount">${y} ✓ · ${n} ✗</span>)</button>${running?'<button class="bad stopjob">Stop</button>':''}</div>
     ${v.job&&v.job.kind==='match'?pbar(v.job)+`${logBox(v.job.log)}`:''}${jobNote(v,'match')}
     ${unchanged?'<div class="hint">Nothing has changed since the last round, so the result would be identical. Tick or cross some more clips first.</div>':''}
-    ${M?`<div class="pslot"></div><div class="hint" style="margin:12px 0 4px"><b>Matched ${M.minutes} min</b> of speech in ${M.stretches} stretches (${lbl[M.strict]||M.strict}).${M.history&&M.history.length>1?' Rounds so far: '+M.history.join(' → ')+' min.':''} Check these samples; the ones marked ? are the least sure:</div>
-      <div class="row">${M.samples.map(x=>smp(v,x.file,x.time,x.range,mmss(x.time)+(x.border?' ?':''))).join(' ')}</div>
+    ${M?`<div class="hint" style="margin:12px 0 4px"><b>Matched ${M.minutes} min</b> of speech in ${M.stretches} stretches (${lbl[M.strict]||M.strict}).${M.history&&M.history.length>1?' Rounds so far: '+M.history.join(' → ')+' min.':''} Check these samples; the ones marked ? are the least sure:</div>
+      <div class="samples multi">${M.samples.map(x=>smp(v,x.file,x.time,x.range,mmss(x.time)+(x.border?' ?':''))).join('')}</div>
       ${M.settled&&!running?'<div class="msg ok" style="margin-top:8px"><b>Nothing new found.</b> Your voice has settled: running it again will not change anything. Go on to the next step.</div>':''}
       <div class="row" style="margin-top:8px"><label><input type="radio" name="useSrc" value="match" ${v.use_match?'checked':''}> Train on the matched voice</label><label><input type="radio" name="useSrc" value="people" ${!v.use_match?'checked':''}> Train on the ticked people instead</label></div>`:''}
     ${flash.match?`<div class="msg ${flash.match.cls||''}">${esc(flash.match.text)}</div>`:''}</div>`}
@@ -320,17 +336,15 @@ function render(){
     <button id="spBtn" ${(!v.files.length||S.busy)?'disabled':''}>${v.people?'Find them again':'Find the speakers'}</button>${jobRun&&v.job.kind==='speakers'?'<button class="bad stopjob">Stop</button>':''}</div>
     ${v.job&&v.job.kind==='speakers'?pbar(v.job)+`${logBox(v.job.log)}`:''}${jobNote(v,'speakers')}
     ${v.people_stale?'<div class="msg err">Your recordings changed since this scan: find the speakers again.</div>':''}
-    ${v.people&&v.people.length?'<div class="pslot sticky"></div>':''}
-    ${v.people?(v.people.length?`<div class="row" style="margin-top:12px"><label class="hint" style="margin:0">Sort by <select id="spSort"><option value="minutes" ${spSort==='minutes'?'selected':''}>Most speech</option><option value="first" ${spSort==='first'?'selected':''}>First heard</option></select></label></div><ul class="files" style="margin-top:6px">${[...v.people].sort((a,b)=>spSort==='first'?((a.first??1e12)-(b.first??1e12)||a.id-b.id):(b.minutes-a.minutes||a.id-b.id)).map(p=>{const fit=fitsJS(v.voice_type,p.pitch);return `<li style="align-items:center;padding:8px 0;flex-wrap:wrap${fit?'':';opacity:.5'}"><label style="flex:1;min-width:200px"><input type="checkbox" class="pk" value="${p.id}" ${(v.keep||[]).includes(p.id)?'checked':''}> <b>${esc(pn(v,p.id))}</b><button class="x pedit" data-pid="${p.id}" title="Give this person a name (optional)">✎</button> <span class="hint" style="margin:0">${p.minutes} min${p.first!=null?' · first heard at '+mmss(p.first):''}${p.files>1?' · '+p.files+' file(s)':''}${p.pitch!=null?' · '+pitchTag(p.pitch):''}${fit?'':' · probably not a '+v.voice_type+' voice'}</span></label>${p.samples.map((sm,i)=>smp(v,sm,p.sample_times?p.sample_times[i]:null,p.sample_ranges?p.sample_ranges[i]:null,p.sample_times?mmss(p.sample_times[i]):i+1)).join(' ')}</li>`}).join('')}</ul>
-      <div class="row" style="margin-top:8px"><button id="keepBtn">Save my choice</button><span class="hint" style="margin:0">${v.use_match&&v.match?`Training on: your matched voice (${v.match.minutes} min)`:(v.keep||[]).length?`Training on: ${v.keep.map(i=>esc(pn(v,i))).join(', ')}`:'Nothing ticked: all speech is used'}</span></div><p class="hint" style="margin-top:12px">Pressed ✓ on some clips of your speaker? Press <b>Next</b> to find more like them across the whole recording.</p>`:'<p class="hint">No speech found.</p>'):''}
+    
+    ${v.people?(v.people.length?`<div class="row" style="margin-top:12px;gap:18px"><label class="hint" style="margin:0">Sort by <select id="spSort"><option value="minutes" ${spSort==='minutes'?'selected':''}>Most speech</option><option value="first" ${spSort==='first'?'selected':''}>First heard</option></select></label><span class="hint" style="margin:0">Press ▶ to listen. Press the square to mark it: <b style="color:var(--ok)">✓</b> only my speaker, <b style="color:var(--bad)">✗</b> not my speaker, <b>?</b> unsure, or more than one person talking (it is left out, so it can't mislead the match).</span></div><ul class="files" style="margin-top:6px">${spPages(v).list.map(p=>{const fit=fitsJS(v.voice_type,p.pitch);return `<li style="display:block;padding:12px 0${fit?'':';opacity:.5'}"><div style="display:flex;align-items:center;gap:12px"><label style="flex:1;min-width:0;font-size:17px"><input type="checkbox" class="pk" value="${p.id}" ${selSet(v).has(p.id)?'checked':''}> <b>${esc(pn(v,p.id))}</b><button class="x pedit" data-pid="${p.id}" title="Give this person a name (optional)">✎</button> ${(v.people_voices||{})[p.id]?`<span class="pill" title="A voice was started for this person">voice: ${esc(v.people_voices[p.id])}</span> `:''}<span style="font-size:15px;font-weight:600">${p.minutes} min</span> <span class="hint" style="margin:0;font-size:14px">${p.first!=null?' · first heard at '+mmss(p.first):''}${p.files>1?' · '+p.files+' file(s)':''}${p.pitch!=null?' · '+pitchTag(p.pitch):''}${fit?'':' · probably not a '+v.voice_type+' voice'}</span></label></div><div class="samples">${p.samples.map((sm,i)=>smp(v,sm,p.sample_times?p.sample_times[i]:null,p.sample_ranges?p.sample_ranges[i]:null,p.sample_times?mmss(p.sample_times[i]):i+1)).join('')}</div></li>`}).join('')}</ul>${spPager(v)}
+      <div class="row" style="margin-top:8px"><button id="keepBtn">Save my choice</button><span class="hint" style="margin:0">${v.use_match&&v.match?`Training on: your matched voice (${v.match.minutes} min)`:(v.keep||[]).length?`Training on: ${v.keep.map(i=>esc(pn(v,i))).join(', ')}`:'Nothing ticked: all speech is used'}</span></div>${nextHtml(v)}<p class="hint" style="margin-top:12px">Pressed ✓ on some clips of your speaker? Press <b>Next</b> to find more like them across the whole recording.</p>`:'<p class="hint">No speech found.</p>'):''}
     ${f('sp')}
   </div>`,
 
   ()=>`<div class="card">${hd(3,prepDone,'Prepare')}
     <p class="hint">Cuts the recordings into short clips and writes down what you said (using the GPU). A few minutes.${v.use_match&&v.match?' Only the parts that sound like your ticked clips will be used.':(v.keep||[]).length?` Only the parts where ${v.keep.map(i=>esc(pn(v,i))).join(', ')} speak will be used.`:''}</p>
     ${v.imported?'<div class="msg">This voice was started from a prepared dataset, so there is nothing to prepare.</div>':''}
-    <div class="row" style="margin-bottom:10px" ${v.imported?'hidden':''}><label><input type="checkbox" id="cleanChk" ${v.clean_voice?'checked':''}> Remove music and background noise (keep only the voices)</label></div>
-    <p class="hint" style="margin:-4px 0 10px">Recommended for films, videos or noisy recordings; not needed for a clean recording. It only cleans the parts being kept, so it adds little time. The first use downloads a small model (about 80 MB).</p>
     <div class="row"><button id="prepBtn" ${(!v.files.length||S.busy)?'disabled':''}>${prepDone?'Prepare again':'Prepare my recordings'}</button>
     ${prepDone?`<span class="pill ok">${v.clips} clips · ${v.clip_minutes} min</span>`:''}${jobRun&&v.job.kind==='prep'?'<button class="bad stopjob">Stop</button>':''}</div>
     ${pbar(v.job&&v.job.kind==='prep'?v.job:null)}${jobNote(v,'prep',true)}${dataNote(v)}${f('prep')}
@@ -360,7 +374,7 @@ function render(){
     ${t.running?'':finished?'<span class="pill ok">finished</span>':''}</div>
     ${(t.running||t.done!=null)?`<div class="bar"><div style="width:${pct}%"></div></div>
       <div class="hint">${t.done!=null?`${t.done} of ${t.total} rounds (${pct}%)${t.eta!=null?' · about '+fmt(t.eta)+' left':''}`:'starting…'} ${t.mos!=null?` · ${mosTxt}`:''}</div>`:''}
-    ${ADV?`<div class="gpu" id="gpuBox"><div class="gm" id="gmU" title="How busy the graphics chip is right now"><span>GPU</span><div class="mbar"><i></i></div><b>–</b></div><div class="gm" id="gmM" title="Video memory in use, out of the card's total"><span>Memory</span><div class="mbar"><i></i></div><b>–</b></div><div class="gm" id="gmT" title="GPU temperature, fan speed and power draw. Under 70 °C is comfortable; above 83 °C the card slows itself down. A fan reading of 0 % is normal when the card is cool: the fans stop below about 50 to 60 °C and speed up on their own as it heats"><span>Temp</span><div class="mbar"><i></i></div><b>–</b></div></div>`:''}
+    ${true?`<div class="gpu" id="gpuBox"><div class="gm" id="gmU" title="How busy the graphics chip is right now"><span>GPU</span><div class="mbar"><i></i></div><b>–</b></div><div class="gm" id="gmM" title="Video memory in use, out of the card's total"><span>Memory</span><div class="mbar"><i></i></div><b>–</b></div><div class="gm" id="gmT" title="GPU temperature and power draw. Under 70 °C is comfortable; above 83 °C the card slows itself down"><span>Temp</span><div class="mbar"><i></i></div><b>–</b></div></div>`:''}
     ${t.mos!=null&&t.mos_first!=null&&t.mos<3&&t.mos<0.5*t.mos_first?`<div class="msg" style="color:var(--warn)">The quality score has fallen from <b>${t.mos_first.toFixed(2)}</b> to <b>${t.mos.toFixed(2)}</b>. With very little audio this can happen as the model fits your clips. It is reasonable to stop here and listen using the <b>Most accurate</b> or <b>Latest</b> version (turn on Advanced to choose).</div>`:''}
     ${dataNote(v)}
     ${t.running?'<p class="hint" style="margin:8px 0 0"><b>Note:</b> the progress bar can take 10–20 minutes to update for the first time, and it only moves when training saves a new checkpoint. Please do not stop training until the bar has updated at least once.</p>':''}
@@ -384,6 +398,7 @@ function render(){
     ${t.mos!=null&&t.mos<3?`<p class="hint" style="margin:6px 0 0;color:var(--warn)">The quality score is low (${t.mos.toFixed(2)} out of 5). If the clip does not sound like you, turn on <b>Advanced</b> and make another test clip with the <b>Latest</b> or <b>Most accurate</b> version.</p>`:''}
     ${v.exported?`<p><audio controls src="/out/${esc(v.name)}-test.wav?t=${Date.now()>>14}" style="width:100%"></audio></p>`:''}
     ${v.job&&v.job.kind==='export'&&v.job.rc?`${logBox(v.job.log)}`:''}${jobNote(v,'export')}${f('exp')}
+    ${t.checkpoints?nextHtml(v):''}
   </div>`];
   const ab=$('#advBtn');ab.classList.toggle('on',ADV);ab.setAttribute('aria-pressed',ADV);
     // wizard: one step at a time, Prev / Next, and Skip on the optional steps
@@ -431,7 +446,7 @@ function render(){
     </details>`:''}`;
   if(keep.sp&&$('#spNum'))$('#spNum').value=keep.sp;if(keep.ff!=null&&$('#frFind')){$('#frFind').value=keep.ff;$('#frRep').value=keep.fr;$('#frCase').checked=!!keep.fc}if(keep.wh&&$('#which'))$('#which').value=keep.wh;if(keep.txt!=null&&$('#txt'))$('#txt').value=keep.txt;if(keep.ep!=null&&$('#ep'))$('#ep').value=keep.ep;
   if(rows&&rowsFor===v.name){if(v.scored&&!rowsScored&&!dirty){rowsScored=true;loadRows(v.name).catch(()=>{})}else if(!v.scored&&rowsScored){rows.forEach(r=>r.score=null);rowsScored=false}}
-  wire(v);syncGpu(ADV&&stepNo===5);if(rows&&rowsFor===v.name&&$('#wbody'))drawWords();placePlayer();
+  wire(v);syncGpu(stepNo===5);if(rows&&rowsFor===v.name&&$('#wbody'))drawWords();placePlayer();
   // opening the Words step shows your clips straight away (no need to press "Show my clips" after a refresh)
   if(stepNo===4&&v.prepared&&!(rows&&rowsFor===v.name)&&!autoRows[v.name+':'+v.clips]){autoRows[v.name+':'+v.clips]=1;loadRows(v.name).catch(()=>{})}
 }
@@ -444,8 +459,10 @@ function wire(v){
     let done=false;const finish=async save=>{if(done)return;done=true;if(save&&inp.value.trim()!==cur0){try{await api('/api/personname',{method:'POST',body:JSON.stringify({voice:v.name,id,name:inp.value})})}catch(e){say('sp',e.message,'err')}}refresh(true)};
     inp.onkeydown=e=>{if(e.key==='Enter')finish(true);else if(e.key==='Escape')finish(false)};inp.onblur=()=>finish(true);
     label.replaceWith(inp);el.remove();inp.focus();inp.select()});
-  const ss=$('#spSort');if(ss)ss.onchange=()=>{spSort=ss.value;try{localStorage.setItem('spSort',spSort)}catch(e){}spTicks=[...document.querySelectorAll('.pk:checked')].map(x=>+x.value);render()};   // keep ticks you have not saved yet
-  if(spTicks){document.querySelectorAll('.pk').forEach(c=>c.checked=spTicks.includes(+c.value));spTicks=null}
+  const ss=$('#spSort');if(ss)ss.onchange=()=>{spSort=ss.value;try{localStorage.setItem('spSort',spSort)}catch(e){}spPage=0;render()};
+  document.querySelectorAll('.pk').forEach(c=>c.onchange=()=>{const s=new Set(selSet(v));c.checked?s.add(+c.value):s.delete(+c.value);spSel=s});   // unsaved ticks survive paging and refreshes
+  document.querySelectorAll('[data-next]').forEach(x=>x.onclick=async()=>{x.disabled=true;try{const j=await api('/api/nextvoice',{method:'POST',body:JSON.stringify({voice:v.name,id:+x.dataset.next})});cur=j.name;try{localStorage.setItem('voice',cur)}catch(e){}spSel=null;spPage=0;rows=null;refresh(true)}catch(e){x.disabled=false;alert(e.message)}});
+  document.querySelectorAll('[data-pg]').forEach(x=>x.onclick=()=>{spPage+=+x.dataset.pg;render()});
   b('#resetBtn',()=>openReset(v));b('#bkBtn',()=>{location.href=`/backup/${encodeURIComponent(v.name)}.zip?ckpt=${$('#bkCk')&&$('#bkCk').checked?1:0}`});b('#renameBtn',()=>openRename(v));
   b('#prevBtn',()=>go(v.name,wiz[v.name]-1));b('#nextBtn',()=>go(v.name,wiz[v.name]+1));b('#skipBtn',()=>go(v.name,wiz[v.name]+1));
   document.querySelectorAll('.sp[data-go]').forEach(el=>el.onclick=()=>go(v.name,+el.dataset.go));
@@ -455,9 +472,9 @@ function wire(v){
   b('#cleanBtn',async()=>{try{const r=await api('/api/clean',{method:'POST',body:JSON.stringify({voice:v.name})});say('exp',`Freed ${r.freed_gb} GB.`,'ok');refresh(true)}catch(e){say('exp',e.message,'err')}});
   b('#delBtn',async()=>{if(!confirm(`Delete "${v.name}" and its working files (prepared clips, training progress, exported voice)?\n\nRecordings in your own folder are never deleted.`))return;
     try{await api(`/api/voice?voice=${v.name}`,{method:'DELETE'});rows=null;cur='';refresh(true)}catch(e){say('exp',e.message,'err')}});
-  b('#prepBtn',async()=>{try{await api('/api/prepopts',{method:'POST',body:JSON.stringify({voice:v.name,clean:$('#cleanChk').checked})})}catch(e){return say('prep',e.message,'err')}act('/api/prep',{voice:v.name},'prep')});
+  b('#prepBtn',async()=>{act('/api/prep',{voice:v.name},'prep')});
   document.querySelectorAll('.stopjob').forEach(el=>el.onclick=async()=>{el.disabled=true;el.textContent='Stopping…';try{await api('/api/job/stop',{method:'POST',body:JSON.stringify({voice:v.name})})}catch(e){say('prep',e.message,'err')}setTimeout(()=>refresh(true),800)});
-  document.querySelectorAll('[data-mk]').forEach(el=>el.onclick=()=>{const mm=marksFor(v),id=el.dataset.mk;if(mm[id]===el.dataset.v)delete mm[id];else mm[id]=el.dataset.v;syncMarks()});
+  document.querySelectorAll('[data-mk]').forEach(el=>el.onclick=()=>{const mm=marksFor(v),id=el.dataset.mk,c=mm[id]||'';if(c==='')mm[id]='y';else if(c==='y')mm[id]='n';else delete mm[id];syncMarks()});
   const ms=$('#mStrict');if(ms){ms.value=window._mStrict||v.strict||'normal';ms.onchange=()=>{window._mStrict=ms.value}}
   b('#matchBtn',()=>act('/api/match',{voice:v.name,yes:markRanges(v,'y'),no:markRanges(v,'n'),strict:$('#mStrict').value},'match'));
   const vt=$('#vtSel');if(vt)vt.onchange=async()=>{try{await api('/api/voicetype',{method:'POST',body:JSON.stringify({voice:v.name,type:vt.value})})}catch(e){say('sp',e.message,'err')}refresh(true)};
@@ -465,14 +482,15 @@ function wire(v){
   b('#dsBtn',()=>{location.href=`/dataset/${encodeURIComponent(v.name)}.zip`});
   b('#trimBtn',()=>act('/api/trim',{voice:v.name},'tr'));
   b('#spBtn',()=>act('/api/speakers',{voice:v.name,num:($('#spNum')||{}).value||''},'sp'));
-  b('#keepBtn',async()=>{const ids=[...document.querySelectorAll('.pk:checked')].map(x=>+x.value);
-    try{await api('/api/keep',{method:'POST',body:JSON.stringify({voice:v.name,ids})});say('sp',ids.length?`Saved. Prepare will use only ${ids.map(i=>pn(v,i)).join(', ')}.`:'Saved. All speech will be used.','ok');refresh(true)}catch(e){say('sp',e.message,'err')}});
+  b('#keepBtn',async()=>{const ids=[...selSet(v)].sort((a,b)=>a-b);
+    try{await api('/api/keep',{method:'POST',body:JSON.stringify({voice:v.name,ids})});spSel=null;say('sp',ids.length?`Saved. Prepare will use only ${ids.map(i=>pn(v,i)).join(', ')}.`:'Saved. All speech will be used.','ok');refresh(true)}catch(e){say('sp',e.message,'err')}});
   b('#cmpBtn',()=>act('/api/compare',{voice:v.name,text:$('#txt').value},'exp'));
   document.querySelectorAll('[data-cmp-play]').forEach(el=>el.onclick=()=>playIn('/out/'+el.dataset.cmpPlay+'?t='+Date.now(),el.dataset.cmpLabel,''));
   document.querySelectorAll('[data-cmp-use]').forEach(el=>el.onclick=()=>act('/api/export',{voice:v.name,text:$('#txt').value,which:el.dataset.cmpUse},'exp'));
   b('#scoreBtn',()=>act('/api/score',{voice:v.name},'tr'));
   b('#vReview',()=>{wView='review';rvKey='';render()});b('#vList',()=>{wView='list';render()});
   const ws=$('#wSort');if(ws){ws.value=wSort;ws.onchange=()=>{wSort=ws.value;page=0;if(rows)drawRows()}}
+  b('#okFlag',()=>{if(!rows)return;const f=rows.filter(flagged).map(x=>x.file);if(!f.length)return say('tr','Nothing needs attention.');approve(f);say('tr',`Approved ${f.length} clip${f.length>1?'s':''}.`,'ok');drawWords()});
   b('#delFlag',()=>{if(!rows)return;const bad=rows.filter(r=>r.score&&r.score.lv===2).length;if(!bad)return say('tr','No clips are flagged red.');rows=rows.filter(r=>!(r.score&&r.score.lv===2));dirty=true;say('tr',`Took ${bad} flagged clip${bad>1?'s':''} out of the list. Press Save to apply (Reload list undoes it).`,'ok')});
   b('#frBtn',()=>{const f=$('#frFind').value,rp=$('#frRep').value;if(!f||!rows)return;const re=new RegExp(f.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),$('#frCase').checked?'g':'gi');let n=0;
     rows.forEach(r=>{const t=r.text.replace(re,()=>rp);if(t!==r.text){r.text=t;n++}});
@@ -498,17 +516,20 @@ function paintGpu(g){
   if(!g||g.error){set('#gmU',0,'n/a');set('#gmM',0,'n/a');set('#gmT',0,'n/a');return}
   set('#gmU',g.util,g.util==null?'n/a':Math.round(g.util)+' %');
   const mp=g.mem_total?100*g.mem_used/g.mem_total:0;set('#gmM',mp,g.mem_used==null?'n/a':(g.mem_used/1024).toFixed(1)+' / '+(g.mem_total/1024).toFixed(1)+' GB',mp>92?'warn':'');
-  set('#gmT',g.temp==null?0:100*g.temp/100,g.temp==null?'n/a':Math.round(g.temp)+' °C'+(g.fan!=null?' · fan '+Math.round(g.fan)+' %':'')+(g.power!=null?' · '+Math.round(g.power)+' W':''),g.temp>=83?'hot':g.temp>=70?'warn':'');
+  set('#gmT',g.temp==null?0:100*g.temp/100,g.temp==null?'n/a':Math.round(g.temp)+' °C'+(g.power!=null?' · '+Math.round(g.power)+' W':''),g.temp>=83?'hot':g.temp>=70?'warn':'');
 }
 async function pollGpu(){if(document.hidden)return;try{gpuLast=await api('/api/gpu');paintGpu(gpuLast)}catch(e){}}
 function syncGpu(on){if(on&&!gpuTimer){pollGpu();gpuTimer=setInterval(pollGpu,2000)}else if(!on&&gpuTimer){clearInterval(gpuTimer);gpuTimer=null}if(on&&gpuLast)paintGpu(gpuLast)}
-const flagged=r=>!!(r.warn||(r.score&&r.score.lv>=1));
+const flagged=r=>!r.approved&&!!(r.warn||(r.score&&r.score.lv>=1));
+async function approve(files,on=true){files.forEach(f=>{const r=rows&&rows.find(x=>x.file===f);if(r)r.approved=on});try{await api('/api/approve',{method:'POST',body:JSON.stringify({voice:cur,files,approve:on})})}catch(e){say('tr',e.message,'err')}}
+function approveRow(k){approve([rows[k].file]);drawWords()}
 const sev=r=>(r.score?r.score.lv*10+r.score.d:0)+(r.warn?5:0);
 const isEdited=r=>r.text!==r.orig;
 const curFilter=()=>wFilter||((rowsScored&&rows.some(flagged))?'needs':'all');
-const passes=(r,f)=>f==='all'||(f==='needs'&&flagged(r))||(f==='edited'&&isEdited(r));
+const passes=(r,f)=>f==='all'||(f==='needs'&&flagged(r))||(f==='edited'&&isEdited(r))||(f==='approved'&&!!r.approved);
 const toolsHtml=(v,loaded)=>`<details class="vs tools" ${toolsOpen?'open':''} ontoggle="toolsOpen=this.open"><summary>Tools</summary>
   <div class="vsrow"><div class="t"><b>Find and replace</b><div class="hint">Change a word or phrase in the text of every clip.</div><div class="row" style="margin-top:6px"><input type="text" id="frFind" placeholder="Find" style="width:140px" ${loaded?'':'disabled'}><input type="text" id="frRep" placeholder="Replace with" style="width:140px" ${loaded?'':'disabled'}><label class="hint" style="margin:0"><input type="checkbox" id="frCase"> match case</label></div></div><button class="sec" id="frBtn" ${loaded?'':'disabled'}>Replace all</button></div>
+  <div class="vsrow"><div class="t"><b>Approve flagged clips</b><div class="hint">Marks every clip that needs attention as fine, so they stop being flagged.</div></div><button class="sec" id="okFlag" ${loaded?'':'disabled'}>Approve flagged</button></div>
   <div class="vsrow"><div class="t"><b>Remove flagged clips</b><div class="hint">Takes the red-flagged clips out of the list. Press Save to apply.</div></div><button class="sec" id="delFlag" ${loaded&&v.scored?'':'disabled'}>Remove flagged</button></div>
   <div class="vsrow"><div class="t"><b>List order</b><div class="hint">How the List view is sorted.</div></div><select id="wSort" ${v.scored?'':'disabled'} style="width:150px"><option value="order">As recorded</option><option value="match">Least like my voice first</option></select></div>
   ${loaded?`<div class="vsrow"><div class="t"><b>Reload the clips</b><div class="hint">Throws away unsaved edits and loads the clips from disk again.</div></div><button class="sec" id="loadRows">Reload</button></div>`:''}
@@ -516,7 +537,7 @@ const toolsHtml=(v,loaded)=>`<details class="vs tools" ${toolsOpen?'open':''} on
 const cmpHtml=v=>`<div class="sub"><b>Compare versions</b><div class="hint">The same sentence made with each version of your voice. Listen, then press <b>Use this version</b> for the one you like: that becomes the voice you download.${v.compare.items.length<3?' (Some versions are the same checkpoint, so they share a sample.)':''}</div><div class="pslot"></div>
   ${v.compare.items.map(it=>`<div class="vsrow"><div class="t"><b>${it.versions.map(x=>esc(x.label)).join(' · ')}</b><div class="hint">${esc(it.versions[0].what)}</div></div><button class="sec" data-cmp-play="${esc(it.file)}" data-cmp-label="${esc(it.versions.map(x=>x.label).join(' / '))}">▶ Listen</button><button class="sec" data-cmp-use="${it.versions[0].which}">Use this version</button></div>`).join('')}</div>`;
 function chipsHtml(){const f=curFilter(),need=rows.filter(flagged).length,ed=rows.filter(isEdited).length;
-  return `<div class="chips"><span class="hint" style="margin:0">Show</span><button class="chip ${f==='all'?'on':''}" data-f="all">All ${rows.length}</button><button class="chip ${f==='needs'?'on':''}" data-f="needs" title="${rowsScored?'Clips that sound unlike the rest, or whose text looks wrong for their length':'Clips whose text looks wrong for their length. Press Check clips to also find other speakers'}">Needs attention ${need}</button><button class="chip ${f==='edited'?'on':''}" data-f="edited">Edited ${ed}</button></div>`}
+  return `<div class="chips"><span class="hint" style="margin:0">Show</span><button class="chip ${f==='all'?'on':''}" data-f="all">All ${rows.length}</button><button class="chip ${f==='needs'?'on':''}" data-f="needs" title="${rowsScored?'Clips that sound unlike the rest, or whose text looks wrong for their length':'Clips whose text looks wrong for their length. Press Check clips to also find other speakers'}">Needs attention ${need}</button><button class="chip ${f==='edited'?'on':''}" data-f="edited">Edited ${ed}</button>${rows.some(x=>x.approved)?`<button class="chip ${f==='approved'?'on':''}" data-f="approved" title="Clips you approved. Open one to undo the approval">Approved ${rows.filter(x=>x.approved).length}</button>`:''}</div>`}
 function drawWords(){
   const box=$('#wbody');if(!box||!rows)return;
   if((wView||(mode==='advanced'?'list':'review'))==='review')drawReview(box);else drawList(box);
@@ -535,18 +556,19 @@ function drawReview(box,autoplay){
     bindChips(box);const a=$('#rvAll');if(a)a.onclick=()=>{wFilter='all';rvKey='';drawWords()};const bk=$('#rvBack');if(bk)bk.onclick=()=>{rvIdx=n-1;drawWords()};return}
   const r=rvList[rvIdx],sc=r.score,lab=sc?['Sounds like the others','A bit different from the others','Very different from the others (maybe another speaker or noise)'][sc.lv]:'';
   box.innerHTML=`${chipsHtml()}<div class="rvprog"><div style="width:${100*(rvIdx+1)/n}%"></div></div>
-    <div class="rv"><div class="rvhead"><b>Clip ${rvIdx+1} of ${n}</b><span class="hint" style="margin:0">${r.dur!=null?r.dur+' s':''}</span>${sc?`<span class="rvtag"><span class="vdot l${sc.lv}"></span> ${lab}</span>`:''}</div>
-      ${r.warn?`<div class="msg" style="color:var(--warn)">⚠ ${esc(r.warn)}</div>`:''}
+    <div class="rv"><div class="rvhead"><b>Clip ${rvIdx+1} of ${n}</b><span class="hint" style="margin:0">${r.dur!=null?r.dur+' s':''}</span>${r.approved?`<span class="rvtag"><span class="vdot l0"></span> Approved by you</span>`:sc?`<span class="rvtag"><span class="vdot l${sc.lv}"></span> ${lab}</span>`:''}</div>
+      ${r.approved?`<div class="msg ok">✓ You approved this clip. <button class="x" id="rvUndo" style="font-size:13px">Undo</button></div>`:''}${r.warn&&!r.approved?`<div class="msg" style="color:var(--warn)">⚠ ${esc(r.warn)}</div>`:''}
       <div class="pslot"></div>
       <textarea id="rvText" rows="3" aria-label="What is said in this clip">${esc(r.text)}</textarea>
       <p class="hint" style="margin:4px 0 12px">Fix any wrong words. Another person at the start or end of the clip? Delete their words, press Save, then Reprocess: the audio is cut to match.</p>
-      <div class="row rvbtns"><button class="sec dng" id="rvRemove">Remove clip</button><span style="flex:1"></span><label class="hint" style="margin:0"><input type="checkbox" id="rvAuto" ${autoPlay?'checked':''}> play automatically</label><button class="sec" id="rvPrev" ${rvIdx?'':'disabled'}>‹ Back</button><button id="rvNext">${rvIdx<n-1?'Keep and next ›':'Keep and finish'}</button></div></div>`;
+      <div class="row rvbtns"><button class="sec dng" id="rvRemove">Remove clip</button><span style="flex:1"></span><label class="hint" style="margin:0"><input type="checkbox" id="rvAuto" ${autoPlay?'checked':''}> play automatically</label><button class="sec" id="rvPrev" ${rvIdx?'':'disabled'}>‹ Back</button><button id="rvNext" class="${flagged(r)?'ok':''}">${flagged(r)?'✓ Approve':'Keep'} ${rvIdx<n-1?'and next ›':'and finish'}</button></div></div>`;
   bindChips(box);
   setClip(`/audio/${cur}/${r.file}`,`Clip ${rvIdx+1}`,r.file);
   const ta=$('#rvText');ta.oninput=()=>{r.text=ta.value;dirtyUI()};
+  const un=$('#rvUndo');if(un)un.onclick=()=>{approve([r.file],false);drawReview(box,false);placePlayer()};
   $('#rvAuto').onchange=e=>{autoPlay=e.target.checked;try{localStorage.setItem('autoplay',autoPlay?'1':'0')}catch(x){}};
   $('#rvPrev').onclick=()=>{rvIdx--;drawReview(box,true);placePlayer();if(autoPlay)pAudio.play().catch(()=>{})};
-  $('#rvNext').onclick=()=>{rvIdx++;drawReview(box,true);placePlayer();if(autoPlay&&rvIdx<rvList.length)pAudio.play().catch(()=>{})};
+  $('#rvNext').onclick=()=>{if(flagged(r))approve([r.file]);rvIdx++;drawReview(box,true);placePlayer();if(autoPlay&&rvIdx<rvList.length)pAudio.play().catch(()=>{})};
   $('#rvRemove').onclick=()=>{const k=rows.indexOf(r);rows.splice(k,1);rvList.splice(rvIdx,1);rvKey=rowsFor+'|'+f+'|'+(rowsScored?1:0)+'|'+rows.length;dirtyUI();drawReview(box,true);placePlayer();if(autoPlay&&rvIdx<rvList.length)pAudio.play().catch(()=>{})};
 }
 // ----- List: every clip, tidy
@@ -554,10 +576,10 @@ function ordered(){const f=curFilter(),idx=rows.map((_,i)=>i).filter(i=>passes(r
 function drawList(box){
   const per=25,ord=ordered(),n=Math.ceil(ord.length/per)||1;page=Math.min(page,n-1);
   const slice=ord.slice(page*per,page*per+per);
-  const dot=r=>{const sc=r.score;if(!sc)return'<td class="d"></td>';const t=['Sounds like the others','A bit different from the others','Very different from the others (maybe another speaker or noise)'][sc.lv];return`<td class="d" title="${t}"><span class="vdot l${sc.lv}"></span></td>`};
+  const dot=r=>{const sc=r.score;if(!sc)return'<td class="d"></td>';if(r.approved)return'<td class="d" title="Approved by you"><span class="vdot l0"></span></td>';const t=['Sounds like the others','A bit different from the others','Very different from the others (maybe another speaker or noise)'][sc.lv];return`<td class="d" title="${t}"><span class="vdot l${sc.lv}"></span></td>`};
   box.innerHTML=`${chipsHtml()}<div class="pslot sticky"></div>
     ${ord.length?`<table id="tbl">${slice.map(k=>{const r=rows[k];
-      return `<tr data-f="${esc(r.file)}" class="${r.score&&r.score.lv===2?'flag':''}${r.file===playingFile?' playing':''}"><td class="p"><button class="sec" onclick="play('${esc(r.file)}')">▶</button></td>${rowsScored?dot(r):''}<td class="len">${r.dur!=null?r.dur+' s':''}</td><td><textarea class="cell" rows="1" oninput="edit(${k},this.value);this.style.height='auto';this.style.height=this.scrollHeight+'px'">${esc(r.text)}</textarea></td><td class="d">${r.warn?`<span class="warnic" title="${esc(r.warn)}">⚠</span>`:''}</td><td class="d"><button class="x" title="Remove this clip" onclick="del(${k})">✕</button></td></tr>`}).join('')}</table>
+      return `<tr data-f="${esc(r.file)}" class="${r.score&&r.score.lv===2?'flag':''}${r.file===playingFile?' playing':''}"><td class="p"><button class="sec" onclick="play('${esc(r.file)}')">▶</button></td>${rowsScored?dot(r):''}<td class="len">${r.dur!=null?r.dur+' s':''}</td><td><textarea class="cell" rows="1" oninput="edit(${k},this.value);this.style.height='auto';this.style.height=this.scrollHeight+'px'">${esc(r.text)}</textarea></td><td class="d">${r.warn&&!r.approved?`<span class="warnic" title="${esc(r.warn)}">⚠</span>`:''}${flagged(r)?`<button class="x okb" title="This clip is fine: stop flagging it" onclick="approveRow(${k})">✓</button>`:''}</td><td class="d"><button class="x" title="Remove this clip" onclick="del(${k})">✕</button></td></tr>`}).join('')}</table>
       <div class="pager"><button class="sec" ${page?'':'disabled'} onclick="pg(-1)">‹ Prev</button><span class="hint" style="margin:0">Page ${page+1} of ${n} · ${ord.length} clip${ord.length===1?'':'s'}</span><button class="sec" ${page<n-1?'':'disabled'} onclick="pg(1)">Next ›</button></div>`:'<p class="hint">No clips to show.</p>'}
     <p class="hint" style="margin:8px 0 0">${rowsScored?'<span class="vdot l0"></span> sounds like the others &nbsp; <span class="vdot l1"></span> a bit different &nbsp; <span class="vdot l2"></span> very different (maybe another speaker or noise). ':''}Two voices in one clip? Delete the other person's words from the start or end of the text, press Save, then Reprocess.</p>`;
   bindChips(box);box.querySelectorAll('textarea.cell').forEach(t=>{t.style.height='auto';t.style.height=t.scrollHeight+'px'});
@@ -583,7 +605,7 @@ async function saveRows(name){try{const j=await api('/api/transcript',{method:'P
 
 $('#notifyBtn').onclick=()=>setNotify(!notifyOn);paintNotify();
 $('#advBtn').onclick=()=>setMode(mode==='advanced'?'beginner':'advanced');
-$('#voiceSel').onchange=e=>{cur=e.target.value;localStorage.setItem('voice',cur);rows=null;dirty=false;flash={};render()};
+$('#voiceSel').onchange=e=>{cur=e.target.value;spSel=null;spPage=0;localStorage.setItem('voice',cur);rows=null;dirty=false;flash={};render()};
 const SRCINFO={recordings:{ph:'folder with your recordings (required)',hint:'',pick:'folder'},
   dataset:{ph:'folder or .zip with metadata.csv and the clips (required)',hint:'Use clips you have already cleaned: a folder or .zip holding a metadata.csv (lines like clip.wav|what is said) and the audio clips next to it, usually in a wavs folder. The speaker and prepare steps are skipped.',pick:'folderzip'},
   backup:{ph:'a backup .zip file (required)',hint:'Restores a voice from a backup made with Advanced > Voice settings > Back up: its clips, settings and, if they were included, its training, under the name you chose.',pick:'zip'}};

@@ -80,7 +80,29 @@ def cluster(embeddings, threshold, files=None):
     return [int(i) for i in lab]
 
 
-def _samples(name, people, per_file, log):
+def _separator(log):
+    """The background remover, or None if it cannot be loaded (the samples are then left as they are)."""
+    try:
+        from . import clean
+        return clean.Separator(log)
+    except BaseException as e:
+        log(f"Could not load the background remover ({e}); samples will include background sound."); return None
+
+
+def _grab(sep, wav, a, b):
+    """Audio of wav[a:b] seconds at SR, with music and background noise removed when `sep` is given."""
+    import soundfile as sf
+    if sep is None: return sf.read(wav, start=int(a * SR), stop=int(b * SR), dtype="float32")[0]
+    import librosa
+    from . import clean
+    pad = clean.CONTEXT_S; c0 = max(0.0, a - pad)
+    y = sf.read(wav, start=int(c0 * SR), stop=int((b + pad) * SR), dtype="float32")[0]
+    y = librosa.resample(y, orig_sr=SR, target_sr=clean.SR)
+    v = sep.vocals(y); v = librosa.resample(v, orig_sr=clean.SR, target_sr=SR)
+    o = int(round((a - c0) * SR)); return v[o:o + int((b - a) * SR)]
+
+
+def _samples(name, people, per_file, log, sep=None):
     """Write a few short sample clips per person, spread through the recordings in time (not just their longest turns),
     so what you hear is typical of what the person's clips will be. Also notes when each person is first heard."""
     import soundfile as sf
@@ -93,7 +115,7 @@ def _samples(name, people, per_file, log):
         pick = [cands[round(i * (len(cands) - 1) / max(1, N_SAMPLES - 1))] for i in range(min(N_SAMPLES, len(cands)))] if cands else []
         p["samples"], p["sample_times"], p["sample_ranges"] = [], [], []
         for fkey, a, b in dict.fromkeys(pick):
-            y, _ = sf.read(Path(per_file[fkey]["wav"]), start=int(a * SR), stop=int(b * SR), dtype="float32")
+            y = _grab(sep, Path(per_file[fkey]["wav"]), a, b)
             fn = f"person{p['id']}_{len(p['samples']) + 1}.wav"; sf.write(outdir / fn, y, SR, subtype="PCM_16")
             p["samples"].append(fn); p["sample_times"].append(round(a, 1)); p["sample_ranges"].append([fkey, round(a, 2), round(b, 2)])
 
@@ -145,7 +167,11 @@ def run(name, num_speakers=None, log=print, pipeline=None):
     plist = []
     for pid in sorted(people):
         p = people[pid]; p["members"] = [[k, v] for k, v in p["members"].items()]; plist.append(p)
-    _samples(name, plist, per_file, log)
+    log("Making the samples (music and background noise removed, so you hear just the voices)...")
+    sep = _separator(log)
+    try: _samples(name, plist, per_file, log, sep)
+    finally:
+        if sep: sep.close()
     for p in plist:
         for fkey, labels in p["members"]:
             for s in per_file[fkey]["segments"]:
@@ -277,12 +303,13 @@ def match(name, log=print, pipeline=None):
     edge = [x for x in sorted(acc, key=lambda x: -x[3]) if x[2] - x[1] >= MIN_SAMPLE_S and x not in spread][:3]
     outdir = CFG.runs / name / "speakers"; outdir.mkdir(parents=True, exist_ok=True)
     for old in outdir.glob("match_*.wav"): old.unlink()
-    samples = []
+    samples = []; sep = _separator(log)
     for border, group in ((False, spread), (True, edge)):
         for key, a, b, d in dict.fromkeys(group):
-            b = min(b, a + MAX_SAMPLE_S); y, _ = sf.read(_wavpath(name, key), start=int(a * SR), stop=int(b * SR), dtype="float32")
+            b = min(b, a + MAX_SAMPLE_S); y = _grab(sep, _wavpath(name, key), a, b)
             fn = f"match_{len(samples) + 1}.wav"; sf.write(outdir / fn, y, SR, subtype="PCM_16")
             samples.append({"file": fn, "time": round(a, 1), "range": [key, round(a, 2), round(b, 2)], "border": border})
+    if sep: sep.close()
     prev = r.get("match"); history = list((prev or {}).get("history") or [])
     def covered(a, b):                                                   # seconds of audio that both results contain
         return sum(max(0.0, min(x1, y1) - max(x0, y0)) for k, iv in a.items() for x0, x1 in iv for y0, y1 in b.get(k, []))

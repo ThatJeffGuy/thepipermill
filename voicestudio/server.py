@@ -91,6 +91,45 @@ def start_over(n, training=False):
     voices.write(n, **kw)
 
 
+def spin_off(n, pid):
+    """Start another voice from the same recordings for a person you named, reusing the speaker scan (no second scan).
+    Returns the new voice's name (the person's name, with spaces turned into -)."""
+    import os, re
+    r = speakers.load(n)
+    try: pid = int(pid)
+    except (TypeError, ValueError): raise ValueError("Unknown person.")
+    if not r or pid not in {p["id"] for p in r["people"]}: raise ValueError("Unknown person.")
+    m = voices.read(n); nm = (m.get("people_names") or {}).get(str(pid))
+    if not nm: raise ValueError("Give this person a name first (press the pencil), then start their voice.")
+    new = CFG.check_name(re.sub(r"[^A-Za-z0-9_-]", "", re.sub(r"\s+", "-", nm.strip())))
+    if voices.exists(new): raise ValueError(f"A voice called {new} already exists.")
+    if pid in (m.get("keep_people") or []): raise ValueError("This voice is already for that person. Pick someone else.")
+    used = dict(m.get("people_voices") or {}); used[str(pid)] = new
+    mine = {str(i): n for i in (m.get("keep_people") or [])} if len(m.get("keep_people") or []) == 1 else {}
+    voices.write(new, base=m.get("base"), source_dir=m.get("source_dir"), voice_type=m.get("voice_type") or "", keep_people=[pid],
+                 people_names=m.get("people_names") or {}, people_voices={**used, **mine}, made_from=n)
+    src, dst = CFG.runs / n, CFG.runs / new
+    dst.mkdir(parents=True, exist_ok=True)
+    def link(a, b):                                           # the scan's audio is large: share it instead of copying where possible
+        try: os.link(a, b)
+        except OSError: shutil.copy2(a, b)
+    for sub in ("speakers", "diar"):
+        if (src / sub).is_dir(): shutil.copytree(src / sub, dst / sub, copy_function=link, dirs_exist_ok=True)
+    j = json.loads((src / "speakers.json").read_text()); j.pop("match", None)
+    (dst / "speakers.json").write_text(json.dumps(j))
+    voices.write(n, people_voices=used)
+    return new
+
+
+def approved_path(n): return CFG.runs / n / "prep.approved.json"      # named prep.* so Start over clears it with the rest of Prepare
+
+
+def approved(n):
+    """Clips you said are fine in Check the words, so they stop being flagged as needing attention."""
+    try: return set(json.loads(approved_path(n).read_text()))
+    except (OSError, ValueError): return set()
+
+
 _MET = {}      # voice -> latest and first quality score, refreshed in the background (reading the trainer's metric files is slow)
 
 
@@ -282,7 +321,7 @@ def info(n):
         except Exception: pass
     return {"name": n, "base": m.get("base"), "base_used": m.get("base_used"),
             "people": sp["people"] if sp else None, "keep": m.get("keep_people") or [], 
-            "clean_voice": bool(m.get("clean_voice")), "scored": speakers.score_path(n).exists(), "imported": bool(m.get("imported")), "restoring": bool(m.get("restoring")), "words_seen": bool(m.get("words_seen")), "people_names": m.get("people_names") or {}, "voice_type": m.get("voice_type") or "", "ref_yes": m.get("ref_yes") or [], "ref_no": m.get("ref_no") or [], "strict": m.get("strict") or "normal", "use_match": bool(m.get("use_match")),
+            "scored": speakers.score_path(n).exists(), "imported": bool(m.get("imported")), "restoring": bool(m.get("restoring")), "words_seen": bool(m.get("words_seen")), "people_names": m.get("people_names") or {}, "people_voices": m.get("people_voices") or {}, "voice_type": m.get("voice_type") or "", "ref_yes": m.get("ref_yes") or [], "ref_no": m.get("ref_no") or [], "strict": m.get("strict") or "normal", "use_match": bool(m.get("use_match")),
             "match": ({k: sp["match"].get(k) for k in ("minutes", "stretches", "strict", "samples", "settled", "history")} if sp and sp.get("match") else None), "people_stale": speakers.stale(n) if sp else False, "folder": str(src) if src else None, "folder_ok": bool(src and src.is_dir()),
             "files": [{"name": speakers.rel(n, p), "mb": round(p.stat().st_size / 1e6, 1)} for p in files],
             "clips": clips, "clip_minutes": round(sum(_size(p) for p in (CFG.data / n / "wavs").glob("*.wav")) / (2 * 22050 * 60), 1), "prepared": md.exists(), "edited": len(trim.pending(n)),
@@ -410,6 +449,7 @@ class H(BaseHTTPRequestHandler):
                 n = CFG.check_name(q["voice"][0]); md = CFG.data / n / "metadata.csv"; rows = []
                 try: sc = json.loads(speakers.score_path(n).read_text()).get("scores", {})
                 except (OSError, ValueError): sc = None
+                ok = approved(n)
                 if md.exists():
                     for line in open(md, encoding="utf-8"):
                         f, _, t = line.rstrip("\n").partition("|")
@@ -418,7 +458,7 @@ class H(BaseHTTPRequestHandler):
                         warn = ("Very fast for this length: the text may be longer than what is said" if wps > 5.5 else
                                 "Very slow for this length: words may be missing from the text" if (dur > 2.5 and wps < 1.0) else
                                 "Almost no text" if len(t.strip()) < 3 else "")
-                        rows.append({"file": f, "text": t, "dur": round(dur, 1), "warn": warn, "score": (sc or {}).get(f)})
+                        rows.append({"file": f, "text": t, "dur": round(dur, 1), "warn": warn, "score": (sc or {}).get(f), "approved": f in ok})
                 return self._json({"rows": rows, "scored": sc is not None})
             if u.path.startswith("/download-voice/") and u.path.endswith(".zip"):
                 return self._voice_zip(CFG.check_name(os.path.basename(unquote(u.path))[:-4]))
@@ -507,6 +547,9 @@ class H(BaseHTTPRequestHandler):
                 if name: names[str(pid)] = name
                 else: names.pop(str(pid), None)                    # blank = back to "Person N"
                 voices.write(n, people_names=names)
+            elif u.path == "/api/nextvoice":
+                new = spin_off(n, d.get("id"))
+                return self._json({"ok": True, "name": new})
             elif u.path == "/api/voicetype":
                 vt = d.get("type") if d.get("type") in ("male", "female") else ""
                 voices.write(n, voice_type=vt)
@@ -531,10 +574,12 @@ class H(BaseHTTPRequestHandler):
             elif u.path == "/api/rename":
                 rename_voice(n, d.get("name"))
                 return self._json({"ok": True, "name": CFG.check_name(d.get("name"))})
+            elif u.path == "/api/approve":
+                ok = approved(n); fs = [str(f) for f in (d.get("files") or [])][:5000]
+                ok = (ok | set(fs)) if d.get("approve", True) else (ok - set(fs))
+                approved_path(n).write_text(json.dumps(sorted(ok)))
             elif u.path == "/api/wordsseen":
                 voices.write(n, words_seen=True)
-            elif u.path == "/api/prepopts":
-                voices.write(n, clean_voice=bool(d.get("clean")))
             elif u.path == "/api/job/stop":
                 running = job_pids(n)
                 if not running: raise ValueError("Nothing is running for this voice.")
