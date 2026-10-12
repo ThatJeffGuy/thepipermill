@@ -44,7 +44,15 @@ Open the page and press **+ New voice**. Pick a starting voice that is close to 
 | 5. Train | Quick / Normal / Long. It keeps running if you close the tab; stop and resume any time. |
 | 6. Listen | Type a sentence, make a test clip, then download the two voice files. |
 
-**Recording tips:** quiet room, same distance from the microphone, no music or fans, no clipping. Read naturally and vary it: questions, short and long sentences, numbers. The model copies how you speak, not just your tone. There is a list of sentences to read in the page ("Need something to read?").
+**Recording tips:** quiet room, same distance from the microphone, no music or fans, no clipping. Read or talk naturally and vary it: questions, short and long sentences, numbers. The model copies how you speak, not just your tone.
+
+### Real-world recordings
+
+Prepare and "Who is speaking?" are built for messy folders, not just tidy ones:
+- **Long files and big folders:** hours of audio and hundreds of files are fine, with a progress bar and time estimate. No clip is ever longer than 15 seconds (long stretches are cut at the quietest moment).
+- **Noisy rooms:** the silence threshold is chosen per recording, and you get a note when a recording is noisy.
+- **Any format:** wav, mp3, m4a, flac, ogg, opus, and video files (mp4, mkv, webm). Mono, stereo and surround (surround uses the centre channel, where speech lives) at any sample rate. For videos with several audio tracks, set `audio_language` (for example `"eng"`) in the config; otherwise the first track is used.
+- **Files that cannot be used** (corrupt, empty, too short, no speech) are skipped and listed at the end. They never stop the run.
 
 ### Recordings with more than one person (optional step 2)
 

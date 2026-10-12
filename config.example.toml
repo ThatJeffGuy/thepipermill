@@ -4,6 +4,7 @@ home = "~/voice-studio-data"        # recordings, prepared clips, checkpoints an
 host = "127.0.0.1"                  # keep on localhost: the page has no login
 port = 8765
 espeak_voice = "en-us"              # language of your recordings (espeak-ng voice name; the base voices are English)
+audio_language = ""                  # videos with several audio tracks: prefer this language (e.g. "eng"); default = the first track
 whisper_model = "openai/whisper-large-v3-turbo"   # writes down what you said; try "openai/whisper-small" on small GPUs
 batch_size = 0                      # 0 = automatic from GPU memory (8 GB -> 8, 12-16 GB -> 16)
 hf_token = ""                       # only needed for "Who is speaking?" (see README); or set HF_TOKEN / run `hf auth login`

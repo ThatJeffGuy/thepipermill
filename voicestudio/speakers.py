@@ -12,7 +12,8 @@ conditions once on its web page and give a read token (config `hf_token`, the HF
 """
 import json, os, re, subprocess
 from pathlib import Path
-from . import voices
+from . import audio, voices
+from .progress import Progress
 from .config import CFG
 
 SR = 16000
@@ -62,12 +63,6 @@ def _load_pipeline():
     return pipe
 
 
-def _to_16k(src: Path, dst: Path):
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    if dst.exists() and dst.stat().st_mtime >= src.stat().st_mtime: return
-    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", str(src), "-vn", "-ac", "1", "-ar", str(SR), "-sample_fmt", "s16", str(dst)], check=True)
-
-
 def cluster(embeddings, threshold):
     """Group voice fingerprints (one per speaker per file) into people. Returns a list of cluster ids."""
     import numpy as np
@@ -103,21 +98,25 @@ def run(name, num_speakers=None, log=print, pipeline=None):
     files = audio_files(name)
     if not files: raise SystemExit(f"No audio files found in {voices.source_dir(name) or 'a folder (choose your recordings folder first)'}")
     pipe = pipeline or _load_pipeline()
-    cache = CFG.runs / name / "diar"; per_file = {}; fps = []     # fps: (file key, label, embedding)
+    cache = CFG.runs / name / "diar"; per_file = {}; fps = []; skipped = []     # fps: (file key, label, embedding)
+    prog = Progress(name, "speakers")
     for i, f in enumerate(files, 1):
         key = rel(name, f); wav = cache / (re.sub(r"[^A-Za-z0-9._-]", "_", key) + ".16k.wav")
-        log(f"[{i}/{len(files)}] {key}")
-        _to_16k(f, wav)
-        kw = {"num_speakers": int(num_speakers)} if num_speakers else {}
-        out = pipe(str(wav), **kw)
-        labels = list(out.speaker_diarization.labels())
-        emb = out.speaker_embeddings
-        segs = [[round(t.start, 3), round(t.end, 3), lab] for t, _, lab in out.exclusive_speaker_diarization.itertracks(yield_label=True)]
+        prog.update("Finding who speaks in each recording", i - 1, len(files), key)
+        try:
+            if not (wav.exists() and wav.stat().st_mtime >= f.stat().st_mtime): audio.decode(f, wav, SR, log=log)
+            kw = {"num_speakers": int(num_speakers)} if num_speakers else {}
+            out = pipe(str(wav), **kw)
+            labels = list(out.speaker_diarization.labels())
+            emb = out.speaker_embeddings
+            segs = [[round(t.start, 3), round(t.end, 3), lab] for t, _, lab in out.exclusive_speaker_diarization.itertracks(yield_label=True)]
+        except (audio.AudioError, RuntimeError, ValueError, OSError) as e:
+            skipped.append((key, str(e))); log(f"[{i}/{len(files)}] SKIPPED {key}: {e}"); continue
         per_file[key] = {"wav": str(wav), "segments": segs}
         for k, lab in enumerate(labels):
             if emb is not None and k < len(emb) and any(s[2] == lab for s in segs): fps.append((key, lab, emb[k]))
-        log(f"    {len(labels)} speaker(s) found")
-    if not fps: raise SystemExit("No speech found.")
+        log(f"[{i}/{len(files)}] {key}: {len(labels)} speaker(s)")
+    if not fps: raise SystemExit("No speech found." + (f" {len(skipped)} file(s) could not be read." if skipped else ""))
     ids = cluster([e for _, _, e in fps], float(CFG["speaker_match_distance"]))
     # largest group first = Person 1
     secs = {}
@@ -143,6 +142,9 @@ def run(name, num_speakers=None, log=print, pipeline=None):
     m = voices.read(name); keep = [i for i in m.get("keep_people", []) if i <= len(plist)]
     voices.write(name, keep_people=keep)
     log(f"\nDone: {len(plist)} different voice(s) found. Listen to each and choose who to train on.")
+    if skipped:
+        log(f"\n{len(skipped)} file(s) were skipped:"); [log(f"  - {k}: {m}") for k, m in skipped[:25]]
+    prog.finish(f"{len(plist)} voices found")
     return out
 
 

@@ -33,7 +33,6 @@ table{width:100%;border-collapse:collapse}td{padding:5px 4px;border-bottom:1px s
 td input{width:100%}td.p{width:42px}td.d{width:36px}
 .msg{margin-top:8px;font-size:14px}.msg.err{color:var(--bad)}.msg.ok{color:var(--ok)}
 details{margin-top:10px}summary{cursor:pointer;color:var(--acc);font-size:14px}
-.sent{font-size:14px;color:var(--mute);columns:1;margin:8px 0 0;padding-left:20px}
 dialog{border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);padding:20px;max-width:420px}
 dialog::backdrop{background:#0008}
 .pickbox{border:1px solid var(--line);border-radius:10px;max-height:320px;overflow:auto;margin:10px 0}
@@ -80,6 +79,9 @@ const api=async(path,opt={})=>{const r=await fetch(path,{...opt,headers:{'X-Stud
   const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||r.statusText);return j};
 let S={voices:[],bases:{},busy:null},cur=localStorage.getItem('voice')||'',page=0,rows=null,rowsFor='',dirty=false,flash={};
 
+function fmt(sec){if(sec==null)return'';if(sec<60)return Math.max(5,Math.round(sec/5)*5)+' s';if(sec<3600)return Math.round(sec/60)+' min';return Math.floor(sec/3600)+' h '+Math.round((sec%3600)/60)+' min'}
+function pbar(j){if(!j||!j.running||!j.progress)return'';const p=j.progress,pct=p.total?Math.round(100*p.done/p.total):0;
+  return `<div class="bar"><div style="width:${pct}%"></div></div><div class="hint">${esc(p.stage)}: ${p.done} of ${p.total}${p.eta!=null?' · about '+fmt(p.eta)+' left':''}${p.note?' · '+esc(p.note):''}</div>`}
 function esc(t){return String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function say(key,text,cls){flash[key]={text,cls};render()}
 
@@ -113,14 +115,13 @@ function render(){
     ${!v.folder?'<div class="msg err">No folder chosen yet.</div>':!v.folder_ok?'<div class="msg err">That folder is not there any more.</div>':''}${f('up')}
     ${v.files.length?`<div class="hint" style="margin-top:10px">${v.files.length} audio file${v.files.length>1?'s':''}, ${totalMB.toFixed(0)} MB</div>
       <details><summary>Show the files</summary><ul class="files">${v.files.slice(0,300).map(x=>`<li><span>${esc(x.name)}</span><span>${x.mb} MB</span></li>`).join('')}</ul>${v.files.length>300?`<div class="hint">…and ${v.files.length-300} more</div>`:''}</details>`:(v.folder_ok?'<div class="hint" style="margin-top:10px">No audio files found in that folder yet.</div>':'')}
-    <details><summary>Need something to read?</summary><ol class="sent" id="sent">Loading…</ol></details>
   </div>
 
   <div class="card"><h2><span class="step ${v.people?'done':''}">2</span>Who is speaking? <span class="pill">optional</span></h2>
     <p class="hint">Only needed if your recordings have more than one person talking (a conversation, a call…). It finds each voice so you can listen and tick whose voice to train on. Everyone else is left out. Skip this if it is just you.</p>
     <div class="row"><label>How many people talk? <input type="number" id="spNum" min="1" max="20" placeholder="auto" style="width:90px"></label>
     <button id="spBtn" ${(!v.files.length||S.busy)?'disabled':''}>${v.people?'Find them again':'Find the speakers'}</button>${jobRun&&v.job.kind==='speakers'?'<span class="pill warn">working…</span>':''}</div>
-    ${v.job&&v.job.kind==='speakers'?`<pre>${esc(v.job.log)}</pre>`:''}
+    ${v.job&&v.job.kind==='speakers'?pbar(v.job)+`<pre>${esc(v.job.log)}</pre>`:''}
     ${v.people_stale?'<div class="msg err">Your recordings changed since this scan: find the speakers again.</div>':''}
     ${v.people?(v.people.length?`<ul class="files" style="margin-top:12px">${v.people.map(p=>`<li style="align-items:center;padding:8px 0"><label style="flex:1"><input type="checkbox" class="pk" value="${p.id}" ${(v.keep||[]).includes(p.id)?'checked':''}> <b>Person ${p.id}</b> <span class="hint" style="margin:0">${p.minutes} min · ${p.files} file(s)</span></label>${p.samples.map((sm,i)=>`<button class="sec" onclick="playS('${esc(v.name)}','${sm}')">▶ ${i+1}</button>`).join(' ')}</li>`).join('')}</ul>
       <div class="row" style="margin-top:8px"><button id="keepBtn">Save my choice</button><span class="hint" style="margin:0">${(v.keep||[]).length?`Training on: ${v.keep.map(i=>'Person '+i).join(', ')}`:'Nothing ticked: all speech is used'}</span></div>`:'<p class="hint">No speech found.</p>'):''}
@@ -131,7 +132,7 @@ function render(){
     <p class="hint">Cuts the recordings into short clips and writes down what you said (using the GPU). A few minutes.${(v.keep||[]).length?` Only the parts where ${v.keep.map(i=>'Person '+i).join(', ')} speak will be used.`:''}</p>
     <div class="row"><button id="prepBtn" ${(!v.files.length||S.busy)?'disabled':''}>${prepDone?'Prepare again':'Prepare my recordings'}</button>
     ${prepDone?`<span class="pill ok">${v.clips} clips ready</span>`:''}${jobRun&&v.job.kind==='prep'?'<span class="pill warn">working…</span>':''}</div>
-    ${v.job&&v.job.kind==='prep'?`<pre>${esc(v.job.log)}</pre>`:''}${f('prep')}
+    ${v.job&&v.job.kind==='prep'?pbar(v.job)+`<pre>${esc(v.job.log)}</pre>`:''}${f('prep')}
   </div>
 
   <div class="card"><h2><span class="step ${rows&&rowsFor===v.name&&!dirty?'done':''}">4</span>Check the words</h2>
@@ -183,7 +184,6 @@ function wire(v){
   b('#expBtn',()=>act('/api/export',{voice:v.name,text:$('#txt').value},'exp'));
   b('#instBtn',async()=>{if(!confirm(`Install "${v.name}" using the install step from your config?`))return;
     say('exp','Installing…');try{const r=await api('/api/install',{method:'POST',body:JSON.stringify({voice:v.name})});say('exp',r.message||'Installed.','ok')}catch(e){say('exp',e.message,'err')}});
-  if($('#sent')&&!$('#sent').dataset.l){$('#sent').dataset.l=1;fetch('/api/sentences').then(r=>r.text()).then(t=>{$('#sent').innerHTML=t.trim().split('\n').map(s=>`<li>${esc(s)}</li>`).join('')})}
 }
 
 async function act(path,body,key){delete flash[key];try{await api(path,{method:'POST',body:JSON.stringify(body)});if(key==='prep'){rows=null}}catch(e){say(key,e.message,'err')}refresh(true)}

@@ -13,6 +13,7 @@ DEFAULTS = {
     "port": 8765,
     "allowed_hosts": ["127.0.0.1", "localhost"],   # Host headers the web page accepts
     "espeak_voice": "en-us",                 # language of your recordings (espeak-ng voice name)
+    "audio_language": "",                    # for videos with several audio tracks: prefer this language, e.g. "eng"
     "whisper_model": "openai/whisper-large-v3-turbo",   # used to write down what you said
     "batch_size": 0,                         # 0 = choose from your GPU memory
     "hf_token": "",                          # Hugging Face read token (only for the speaker-finding model, which is gated)

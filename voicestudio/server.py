@@ -7,7 +7,7 @@ import json, os, re, shutil, signal, subprocess, sys, threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote
-from . import base, install, speakers, voices
+from . import base, install, progress, speakers, voices
 from .config import CFG
 
 WEB = Path(__file__).parent / "web"
@@ -77,7 +77,7 @@ def info(n):
     except (OSError, ValueError, KeyError): total = None
     done = (int(ep[-1][0]) - (int(ep[-1][1]) - total)) if (ep and total) else None
     j = JOBS.get(n); job = None
-    if j: job = {"kind": j["kind"], "running": j["proc"].poll() is None, "rc": j["proc"].poll(), "log": tail(j["log"])}
+    if j: job = {"kind": j["kind"], "running": j["proc"].poll() is None, "rc": j["proc"].poll(), "log": tail(j["log"]), "progress": progress.read(n, j["kind"])}
     sp = speakers.load(n)
     return {"name": n, "base": m.get("base"), "base_used": m.get("base_used"),
             "people": sp["people"] if sp else None, "keep": m.get("keep_people") or [], "people_stale": speakers.stale(n) if sp else False, "folder": str(src) if src else None, "folder_ok": bool(src and src.is_dir()),
@@ -155,7 +155,6 @@ class H(BaseHTTPRequestHandler):
         try:
             if u.path == "/": return self._file(WEB / "index.html", "text/html; charset=utf-8")
             if u.path == "/api/browse": return self._json(browse(q.get("path", [""])[0]))
-            if u.path == "/api/sentences": return self._file(WEB / "sentences.txt", "text/plain; charset=utf-8")
             if u.path == "/api/voices":
                 b = busy()
                 return self._json({"voices": [info(n) for n in voices.names()], "bases": {k: v[0] for k, v in base.BASES.items()},
