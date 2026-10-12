@@ -48,6 +48,7 @@ dialog::backdrop{background:#0008}
 footer.foot{margin:36px 0 0;padding-top:14px;border-top:1px solid var(--line);text-align:center;color:var(--mute);font-size:13px;line-height:1.7}
 footer.foot a{color:var(--acc);text-decoration:none}footer.foot a:hover{text-decoration:underline}footer.foot b{color:var(--ink)}
 .empty{text-align:center;padding:40px 10px;color:var(--mute)}
+.mos{cursor:help;border-bottom:1px dotted var(--mute)}.mos b{color:var(--ink)}
 .advbtn.on{background:var(--acc);color:#fff}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .seg button{background:var(--card);color:var(--mute);border-radius:0;padding:7px 12px;font-size:14px}.seg button.on{background:var(--acc);color:#fff}
@@ -221,7 +222,8 @@ function render(){
   const t=v.train, jobRun=v.job&&v.job.running, prepDone=v.prepared;
   const pct=t.total&&t.done!=null?Math.min(100,Math.round(100*t.done/t.total)):0;
   const finished=!t.running&&t.total&&t.done!=null&&t.done>=t.total;
-  let mosTxt='';if(t.mos!=null){mosTxt=t.mos>=4?'<span class="pill ok">sounds great</span>':t.mos>=3.4?'<span class="pill">getting good</span>':'<span class="pill warn">still learning</span>'}
+  const mosHelp=t.mos==null?'':`Quality score, from 1 to 5. A small model listens to the voice's test sentences and rates how natural and clean they sound, like a listener would: 1 is poor, 5 is excellent, and natural recorded speech scores about 4 to 4.5. It judges naturalness, not how much the voice sounds like you, so listen to it too. With very little training audio the score can swing a lot.${t.mos_first!=null?` It was ${t.mos_first.toFixed(2)} at the start of training and is ${t.mos.toFixed(2)} now.`:''}`;
+  const mosTxt=t.mos==null?'':`<span class="mos" title="${esc(mosHelp)}">Quality score <b>${t.mos.toFixed(2)}</b> / 5</span> <span class="pill ${t.mos>=4?'ok':t.mos>=3?'':'warn'}" title="${esc(mosHelp)}">${t.mos>=4?'good':t.mos>=3?'fair':'low'}</span> <span class="mos" title="${esc(mosHelp)}">ⓘ</span>`;
   const ADV=mode==='advanced';                       // Advanced only reveals extras; there is one layout
   const hd=(n,done,title)=>`<h2><span class="step ${done?'done':''}">${n>=3?n+1:n}</span>${title}</h2>`;
   const rowsLoaded=!!(rows&&rowsFor===v.name), wordsDone=rowsLoaded||!!v.words_seen;      // seen this session, or at any time before (remembered by the server)
@@ -274,7 +276,7 @@ function render(){
     ${t.running?'<button class="bad" id="stopBtn">Stop</button>':`<button id="trainBtn" ${(!prepDone||S.busy)?'disabled':''}>${t.checkpoints?'Resume training':'Start training'}</button>`}
     ${t.running?'':finished?'<span class="pill ok">finished</span>':''}</div>
     ${(t.running||t.done!=null)?`<div class="bar"><div style="width:${pct}%"></div></div>
-      <div class="hint">${t.done!=null?`${t.done} of ${t.total} rounds (${pct}%)`:'starting…'} ${t.mos!=null?` · quality score ${t.mos.toFixed(2)} ${mosTxt}`:''}</div>`:''}
+      <div class="hint">${t.done!=null?`${t.done} of ${t.total} rounds (${pct}%)`:'starting…'} ${t.mos!=null?` · ${mosTxt}`:''}</div>`:''}
     ${t.running?'<p class="hint" style="margin:8px 0 0"><b>Note:</b> the progress bar can take 10–20 minutes to update for the first time, and it only moves when training saves a new checkpoint. Please do not stop training until the bar has updated at least once.</p>':''}
     ${t.log.length?`${logBox(t.log.join('\n'))}`:''}${f('train')}
   </div>`,

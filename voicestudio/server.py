@@ -3,7 +3,7 @@
 Long jobs (prepare, train, export) run as separate processes that keep going if you close the page.
 Only one job runs at a time because they share the GPU.
 """
-import json, os, re, shutil, signal, subprocess, sys, tempfile, threading, zipfile
+import json, os, re, shutil, signal, subprocess, sys, tempfile, threading, time, zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote
@@ -91,6 +91,33 @@ def start_over(n, training=False):
     voices.write(n, **kw)
 
 
+_MET = {}      # voice -> latest and first quality score, refreshed in the background (reading the trainer's metric files is slow)
+
+
+def metrics(n):
+    """{"mos": latest quality score, "first": the score at the start}. Returns what is known now; a refresh runs in the background."""
+    m = _MET.setdefault(n, {"t": 0.0, "busy": False, "mos": None, "first": None, "files": {}})
+    if not m["busy"] and time.time() - m["t"] > 20:
+        m["busy"] = True; threading.Thread(target=_read_metrics, args=(n, m), daemon=True).start()
+    return m
+
+
+def _read_metrics(n, m):
+    try:
+        from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
+        pts = []
+        for f in sorted((CFG.runs / n).glob("lightning_logs/version_*/events.out.tfevents.*"), key=lambda p: p.stat().st_mtime):
+            st = f.stat(); key = (st.st_size, st.st_mtime)
+            if m["files"].get(str(f), (None, None))[0] != key:               # only re-read files that changed
+                ea = EventAccumulator(str(f), size_guidance={"scalars": 0}); ea.Reload()
+                m["files"][str(f)] = (key, [(s.wall_time, s.value) for s in ea.Scalars("val_mos")] if "val_mos" in ea.Tags()["scalars"] else [])
+            pts += m["files"][str(f)][1]
+        pts.sort()
+        m["mos"] = pts[-1][1] if pts else None; m["first"] = pts[0][1] if pts else None
+    except Exception: pass
+    finally: m["t"] = time.time(); m["busy"] = False
+
+
 def tail(path, n=2500):
     try:
         with open(path, "rb") as f:
@@ -121,6 +148,7 @@ def info(n):
         except OSError: pass
     j = JOBS.get(n); job = None
     if j: job = {"kind": j["kind"], "running": j["proc"].poll() is None, "rc": j["proc"].poll(), "log": tail(j["log"]), "progress": progress.read(n, j["kind"])}
+    met = metrics(n) if ck else {"mos": None, "first": None}
     sp = speakers.load(n)
     if sp and any(("pitch" not in p) or ("sample_ranges" not in p and p.get("sample_times")) for p in sp["people"]):
         try: sp = speakers.person_pitches(n) or sp          # older scan: add pitch + clip ranges once (a couple of seconds, no GPU)
@@ -132,7 +160,7 @@ def info(n):
             "files": [{"name": speakers.rel(n, p), "mb": round(p.stat().st_size / 1e6, 1)} for p in files],
             "clips": clips, "prepared": md.exists(), "edited": len(trim.pending(n)),
             "train": {"running": bool(train_pid(n)), "total": total, "done": max(0, done) if done is not None else None,
-                      "mos": float(mos[-1]) if mos else None, "checkpoints": len(ck), "disk_gb": round(sum(p.stat().st_size for p in ck) / 2**30, 1), "log": tl.split("\n")[-3:] if tl else []},
+                      "mos": met["mos"] if met["mos"] is not None else (float(mos[-1]) if mos else None), "mos_first": met["first"], "checkpoints": len(ck), "disk_gb": round(sum(p.stat().st_size for p in ck) / 2**30, 1), "log": tl.split("\n")[-3:] if tl else []},
             "job": job, "exported": (CFG.out / f"{n}.onnx").exists()}
 
 
