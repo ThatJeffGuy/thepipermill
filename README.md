@@ -33,16 +33,22 @@ Optional: `scripts/install-service.sh` starts it automatically when you log in.
 
 ## Using it
 
-Open the page and press **+ New voice**. Pick a starting voice that is close to yours (male or female): it is only the starting point, the result learns your voice from your recordings.
+Open the page and press **+ New voice**. Give it a short name, choose the folder with your recordings, and say whether the voice is **male, female or not specified**. That choice helps find your voice in a mixed recording and picks the starting voice (it is only the starting point: the result learns your voice from your recordings).
+
+**Two ways to use the page** (switch at the top, it remembers your choice):
+- **Beginner**: a wizard. One step at a time with **Prev** / **Next**, and a **Skip** button on the optional steps. Next unlocks when a step is done and the message beside it says what is missing. While something runs, the message at the bottom pulses and shows what is happening. A strip at the top shows where you are: green ✓ done, solid blue current, pulsing red working, dashed dash skipped, grey not reached yet.
+- **Advanced**: all the steps on one page.
+
+Every long job has a **Stop** button. **Start over** (bottom of the page) clears a voice's speaker scan, choices and prepared clips so you can begin again; your recordings are never touched and training is only deleted if you choose that too.
 
 | Step | What to do |
 |---|---|
 | 1. Recordings folder | Choose (Browse…) the folder on your computer that holds your recordings; they are read from there and never copied or changed. 30–60+ minutes works best. |
-| 2. Who is speaking? *(optional)* | Only if your recordings have more than one person (a conversation, a call). Finds each voice, groups the same person across files, and lets you listen to samples and tick whose voice to train on. See below. |
-| 3. Prepare | One click. Splits at pauses and transcribes with Whisper on the GPU. If you picked speakers in step 2, only their parts are used. |
-| 4. Check the words | Press ▶ on a clip, fix the text, remove bad clips (✕), save. **The voice learns exactly what is written here.** |
+| 2. Who is speaking? *(optional)* | Only if your recordings have more than one person (a conversation, a call, a film). Finds each voice, shows samples with the time each comes from, and lets you tick whose voice to train on. **Find more like my voice** refines it from clips you tick. See below. |
+| 3. Prepare | One click. Splits at pauses and transcribes with Whisper on the GPU. Uses only the people you chose (or the voice you matched) and, if you set it, only the audio between two times (for example from 21:30 if that is where you start speaking). |
+| 4. Check the words *(optional)* | Press ▶ on a clip, fix the text, remove bad clips (✕), save. **The voice learns exactly what is written here, so skipping this may reduce quality.** Words from another person can be cut out with **Reprocess**, below. |
 | 5. Train | Quick / Normal / Long. It keeps running if you close the tab; stop and resume any time. |
-| 6. Listen | Type a sentence, make a test clip, then download the two voice files. |
+| 6. Listen | Type a sentence, make a test clip, then download the two voice files. (Advanced mode lets you choose the version; Beginner always uses the best-sounding one.) |
 
 **Recording tips:** quiet room, same distance from the microphone, no music or fans, no clipping. Read or talk naturally and vary it: questions, short and long sentences, numbers. The model copies how you speak, not just your tone.
 
@@ -66,14 +72,26 @@ Prepare and "Who is speaking?" are built for messy folders, not just tidy ones:
 
 ### Recordings with more than one person (optional step 2)
 
-Step 2 uses [pyannote.audio](https://github.com/pyannote/pyannote-audio) speaker diarization (the open `pyannote/speaker-diarization-community-1` model) to find who speaks when, then matches the same person across your files by comparing voice fingerprints. You listen to a couple of samples of each person and tick the ones to train on; everyone else is left out of the dataset. If a person is split into two entries, tick both. If two people are merged, lower `speaker_match_distance` in the config and run it again.
+Step 2 uses [pyannote.audio](https://github.com/pyannote/pyannote-audio) speaker diarization (the open `pyannote/speaker-diarization-community-1` model) to find who speaks when. Each voice it finds is listed with how much they speak, when they are **first heard**, and their typical pitch. Sort the list by *Most speech* or *First heard*. Two speakers the model separated inside one recording are never merged; across several recordings, the same person is matched by voice fingerprint (lower `speaker_match_distance` in the config if two people get merged).
+
+Each person has **▶ samples spread through the recording** (the number is the time each comes from), so you hear typical clips and not only the clearest. Tick the person to train on and press **Save my choice**.
+
+**Looking for a male or female voice:** set it in the New voice box or next to the speaker count. Voices clearly in the wrong pitch range are dimmed ("probably not a male voice"), and the matching below skips them. Pitch only rules out obviously wrong voices; it cannot tell two similar men apart.
+
+**Find more like my voice:** voices can still be mixed up (a person may contain your speaker and similar-sounding others). Press **✓** on sample clips that are your speaker (and **✗** on ones that are not), choose Strict / Normal / Loose, and press *Find more like these*. It compares every stretch of speech in the whole recording with your ticked clips, across all the people found, and shows how many minutes it found plus new samples to check (the ones marked **?** are the least sure). Tick or cross more and run it again to improve it, then choose *Train on the matched voice* or *the ticked people instead*. Two or more ticked clips work best; stretches under one second are skipped because they are too short to recognise reliably.
+
+**Time window:** in Prepare, "only use audio from … to …" cuts out everything outside that range, which is the surest way to drop a stretch you know is someone else.
 
 That model is **gated on Hugging Face**, so once only:
 1. Log in at <https://huggingface.co>, open <https://huggingface.co/pyannote/speaker-diarization-community-1> and accept its conditions.
 2. Create a read token at <https://huggingface.co/settings/tokens>.
 3. Put it in your config as `hf_token = "..."`, or set `HF_TOKEN`, or run `.venv/bin/hf auth login`.
 
-Only use recordings of people who have agreed to it. Telling the tool how many people talk ("auto" by default) improves accuracy. From the command line: `voicestudio speakers myvoice [--num 2]`, then `voicestudio keep myvoice 1` (or `--all`).
+Only use recordings of people who have agreed to it. Telling the tool how many people talk ("auto" by default) improves accuracy.
+
+### Two voices in one clip: Reprocess (step 4)
+
+Prepare cuts at pauses, so a clip can hold two people talking. In *Check the words*, delete the words the wrong person says from the **start or end** of the clip's text, press **Save**, then **Reprocess edited clips**. Voice Studio listens to each edited clip again with word-by-word timing and cuts the audio down to just the words you kept. Spelling-only fixes are left alone. If words are removed from the **middle**, the clip cannot be cut and you are told to delete it instead. The untrimmed originals are kept in `wavs.untrimmed/`, and training will not start while edited clips are waiting to be reprocessed, so text and audio always match.
 
 ### Command line
 
@@ -82,7 +100,9 @@ Everything the page does is also available as `.venv/bin/voicestudio`:
 ```
 voicestudio new myvoice --folder ~/recordings   # create (add --base ryan|amy|lessac|joe|john to choose the starting voice)
 voicestudio speakers myvoice      # optional: who speaks in the recordings; then: voicestudio keep myvoice 1
+voicestudio match myvoice         # optional: find more speech like the clips you ticked in the page
 voicestudio prep myvoice          # clips + transcripts  -> check data/myvoice/metadata.csv
+voicestudio trim myvoice          # reprocess: cut edited clips down to the words you kept
 voicestudio train myvoice 1000    # extra epochs, resumable
 voicestudio export myvoice        # -> out/myvoice.onnx, out/myvoice.onnx.json, out/myvoice-test.wav  (--which best|accurate|latest)
 voicestudio clean myvoice         # free disk space: keep only the best and latest checkpoints
@@ -117,7 +137,9 @@ The page listens on `127.0.0.1` only and has **no login**. Do not expose it to a
 - **"CUDA is not available"**: run `nvidia-smi`; reinstall the driver, then `./install.sh` again. Very new GPUs need a PyTorch built for CUDA 12.8 or newer (the default install is).
 - **Out of memory while training**: set `batch_size = 8` (or 4) in the config.
 - **Whisper is slow or runs out of memory**: set `whisper_model = "openai/whisper-small"`.
-- **Transcripts have mistakes**: normal. Fix them in step 3; it matters more than anything else for quality.
+- **Transcripts have mistakes**: normal. Fix them in *Check the words* (step 4); it matters more than anything else for quality.
+- **Clips are of the wrong person**: pick the right person in step 2, use **Find more like my voice**, set the time window in Prepare, and use **Reprocess** for clips that mix two people. **Start over** clears it all if you want a clean run.
+- **The speaker scan seems stuck**: the bar shows real progress; a long recording can take several minutes. **Stop** cancels it.
 - **Voice sounds robotic or mumbles**: more (and cleaner) audio, and more training rounds. Listen to test clips as it trains and stop when it sounds right; more is not always better.
 
 ## Developing
