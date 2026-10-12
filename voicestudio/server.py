@@ -86,7 +86,7 @@ def start_over(n, training=False):
         for g in (CFG.out.glob(f"{n}.*"), CFG.out.glob(f"{n}-*")):
             for p in g: p.unlink(missing_ok=True)
     JOBS.pop(n, None)
-    kw = dict(keep_people=[], keep_from=None, keep_until=None, ref_yes=[], ref_no=[], use_match=False)
+    kw = dict(keep_people=[], keep_from=None, keep_until=None, ref_yes=[], ref_no=[], use_match=False, people_names={})
     if training: kw["base_used"] = None
     voices.write(n, **kw)
 
@@ -121,7 +121,7 @@ def info(n):
         except Exception: pass
     return {"name": n, "base": m.get("base"), "base_used": m.get("base_used"),
             "people": sp["people"] if sp else None, "keep": m.get("keep_people") or [], "keep_from": m.get("keep_from"), "keep_until": m.get("keep_until"),
-            "clean_voice": bool(m.get("clean_voice")), "voice_type": m.get("voice_type") or "", "ref_yes": m.get("ref_yes") or [], "ref_no": m.get("ref_no") or [], "strict": m.get("strict") or "normal", "use_match": bool(m.get("use_match")),
+            "clean_voice": bool(m.get("clean_voice")), "people_names": m.get("people_names") or {}, "voice_type": m.get("voice_type") or "", "ref_yes": m.get("ref_yes") or [], "ref_no": m.get("ref_no") or [], "strict": m.get("strict") or "normal", "use_match": bool(m.get("use_match")),
             "match": ({k: sp["match"][k] for k in ("minutes", "stretches", "strict", "samples")} if sp and sp.get("match") else None), "people_stale": speakers.stale(n) if sp else False, "folder": str(src) if src else None, "folder_ok": bool(src and src.is_dir()),
             "files": [{"name": speakers.rel(n, p), "mb": round(p.stat().st_size / 1e6, 1)} for p in files],
             "clips": clips, "prepared": md.exists(), "edited": len(trim.pending(n)),
@@ -284,6 +284,15 @@ class H(BaseHTTPRequestHandler):
             elif u.path == "/api/reset":
                 if busy() or train_pid(n): raise RuntimeError("A job is running. Wait for it or stop it first.")
                 start_over(n, training=bool(d.get("training")))
+            elif u.path == "/api/personname":
+                r = speakers.load(n)
+                try: pid = int(d.get("id"))
+                except (TypeError, ValueError): raise ValueError("Unknown person.")
+                if not r or pid not in {p["id"] for p in r["people"]}: raise ValueError("Unknown person.")
+                names = dict(voices.read(n).get("people_names") or {}); name = " ".join(str(d.get("name") or "").split())[:40]
+                if name: names[str(pid)] = name
+                else: names.pop(str(pid), None)                    # blank = back to "Person N"
+                voices.write(n, people_names=names)
             elif u.path == "/api/voicetype":
                 vt = d.get("type") if d.get("type") in ("male", "female") else ""
                 voices.write(n, voice_type=vt)
@@ -335,7 +344,7 @@ class H(BaseHTTPRequestHandler):
                 p = (d.get("path") or "").strip()
                 if not p or not Path(p).expanduser().is_dir(): raise ValueError("That folder does not exist.")
                 voices.write(n, source_dir=str(Path(p).expanduser().resolve()))
-                speakers.result_path(n).unlink(missing_ok=True); voices.write(n, keep_people=[])   # a new folder means new speakers
+                speakers.result_path(n).unlink(missing_ok=True); voices.write(n, keep_people=[], people_names={})   # a new folder means new speakers
             elif u.path == "/api/install":
                 if not install.configured(): raise ValueError("Install is not set up. Use the download buttons and copy the two files to your Piper voices folder.")
                 r = subprocess.run([sys.executable, "-m", "voicestudio", "install", n], capture_output=True, text=True, timeout=300)

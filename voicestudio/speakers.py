@@ -157,7 +157,7 @@ def run(name, num_speakers=None, log=print, pipeline=None):
     try: person_pitches(name)
     except Exception as e: log(f"(pitch not measured: {e})")
     m = voices.read(name); keep = [i for i in m.get("keep_people", []) if i <= len(plist)]
-    voices.write(name, keep_people=keep, use_match=False)                 # a new scan starts fresh: any earlier "find more like these" result is gone
+    voices.write(name, keep_people=keep, use_match=False, people_names={})                 # a new scan starts fresh: any earlier "find more like these" result is gone
     log(f"\nDone: {len(plist)} different voice(s) found. Listen to each and choose who to train on.")
     if skipped:
         log(f"\n{len(skipped)} file(s) were skipped:"); [log(f"  - {k}: {m}") for k, m in skipped[:25]]
