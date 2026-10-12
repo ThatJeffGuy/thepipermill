@@ -9,19 +9,4 @@ whisper_model = "openai/whisper-large-v3-turbo"   # writes down what you said; t
 batch_size = 0                      # 0 = automatic from GPU memory (8 GB -> 8, 12-16 GB -> 16)
 hf_token = ""                       # only needed for "Who is speaking?" (see README); or set HF_TOKEN / run `hf auth login`
 speaker_match_distance = 0.55       # lower = stricter about calling two voices the same person
-protected_names = []                # voice names that can never be created or installed over
-
-# What the "Install" button does. Without this the page still offers the .onnx/.json as downloads.
-[install]
-mode = "none"                       # none | local | ssh | script
-
-# mode = "local"   copy into the folder your Piper reads voices from
-local_dir = ""                      # e.g. "~/piper-voices"
-# mode = "ssh"     scp to another machine
-ssh_host = ""                       # e.g. "me@my-server"
-ssh_port = 22
-remote_dir = ""                     # e.g. "/opt/piper/voices"
-# local/ssh: command to run afterwards, e.g. restart Piper so it sees the new voice
-post_command = ""                   # e.g. "systemctl --user restart piper"
-# mode = "script"  run  your-script <voice-name> <path-to.onnx> <path-to.onnx.json>
-script = ""
+protected_names = []                # voice names that can never be created

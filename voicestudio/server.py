@@ -7,7 +7,7 @@ import json, os, re, shutil, signal, subprocess, sys, tempfile, threading, time,
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote
-from . import base, install, progress, speakers, train as train_mod, trim, voices
+from . import base, progress, speakers, train as train_mod, trim, voices
 from .config import CFG
 
 WEB = Path(__file__).parent / "web"
@@ -303,6 +303,18 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Content-Disposition", f'attachment; filename="{n}-dataset.zip"'); self.send_header("Cache-Control", "no-store"); self.end_headers()
         shutil.copyfileobj(spool, self.wfile); spool.close()
 
+    def _voice_zip(self, n):
+        """The finished voice as one zip: name.onnx + name.onnx.json (the pair Piper needs; they must keep the same name)."""
+        onnx, js = CFG.out / f"{n}.onnx", CFG.out / f"{n}.onnx.json"
+        if not (onnx.exists() and js.exists()): return self._err("Make a test clip first: that exports the voice files.", 404)
+        spool = tempfile.SpooledTemporaryFile(max_size=64 << 20)
+        with zipfile.ZipFile(spool, "w", zipfile.ZIP_STORED) as z:
+            z.write(onnx, onnx.name); z.write(js, js.name)
+        size = spool.tell(); spool.seek(0)
+        self.send_response(200); self.send_header("Content-Type", "application/zip"); self.send_header("Content-Length", str(size))
+        self.send_header("Content-Disposition", f'attachment; filename="{n}-voice.zip"'); self.send_header("Cache-Control", "no-store"); self.end_headers()
+        shutil.copyfileobj(spool, self.wfile); spool.close()
+
     def do_GET(self):
         if not self._guard(): return
         u = urlparse(self.path); q = parse_qs(u.query)
@@ -313,7 +325,7 @@ class H(BaseHTTPRequestHandler):
             if u.path == "/api/voices":
                 b = busy()
                 return self._json({"voices": [info(n) for n in voices.names()], "bases": {k: v[0] for k, v in base.BASES.items()},
-                                   "busy": {"voice": b[0], "kind": b[1]} if b else None, "install": install.configured(), "install_what": install.describe()})
+                                   "busy": {"voice": b[0], "kind": b[1]} if b else None, })
             if u.path == "/api/transcript":
                 n = CFG.check_name(q["voice"][0]); md = CFG.data / n / "metadata.csv"; rows = []
                 if md.exists():
@@ -321,6 +333,8 @@ class H(BaseHTTPRequestHandler):
                         f, _, t = line.rstrip("\n").partition("|")
                         if f: rows.append({"file": f, "text": t})
                 return self._json({"rows": rows})
+            if u.path.startswith("/download-voice/") and u.path.endswith(".zip"):
+                return self._voice_zip(CFG.check_name(os.path.basename(unquote(u.path))[:-4]))
             if u.path.startswith("/dataset/") and u.path.endswith(".zip"):
                 return self._dataset(CFG.check_name(os.path.basename(unquote(u.path))[:-4]))
             if u.path.startswith("/audio/"):
@@ -435,11 +449,6 @@ class H(BaseHTTPRequestHandler):
                 if not p or not Path(p).expanduser().is_dir(): raise ValueError("That folder does not exist.")
                 voices.write(n, source_dir=str(Path(p).expanduser().resolve()))
                 speakers.result_path(n).unlink(missing_ok=True); voices.write(n, keep_people=[], people_names={})   # a new folder means new speakers
-            elif u.path == "/api/install":
-                if not install.configured(): raise ValueError("Install is not set up. Use the download buttons and copy the two files to your Piper voices folder.")
-                r = subprocess.run([sys.executable, "-m", "voicestudio", "install", n], capture_output=True, text=True, timeout=300)
-                if r.returncode: raise RuntimeError((r.stdout + r.stderr)[-600:])
-                return self._json({"ok": True, "message": r.stdout.strip()[-300:]})
             else: return self._err("not found", 404)
             return self._json({"ok": True})
         except (ValueError, KeyError, RuntimeError, subprocess.TimeoutExpired, OSError, SystemExit) as e:

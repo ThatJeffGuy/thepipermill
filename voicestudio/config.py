@@ -19,15 +19,7 @@ DEFAULTS = {
     "hf_token": "",                          # Hugging Face read token (only for the speaker-finding model, which is gated)
     "diarization_model": "pyannote/speaker-diarization-community-1",
     "speaker_match_distance": 0.55,          # lower = stricter about calling two voices the same person
-    "protected_names": [],                   # voice names that can never be created or installed over
-    "install": {                             # what the "Install" button does (download links always work)
-        "mode": "none",                      # none | local | ssh | script
-        "local_dir": "",                     # local: copy .onnx/.json here
-        "ssh_host": "", "ssh_port": 22,      # ssh: scp to  ssh_host:remote_dir
-        "remote_dir": "",
-        "post_command": "",                  # local/ssh: run afterwards (e.g. restart your Piper service)
-        "script": "",                        # script: run  script <name> <onnx> <json>
-    },
+    "protected_names": [],                   # voice names that can never be created
 }
 
 NAME_RX = re.compile(r"^[A-Za-z0-9_-]{1,40}$")

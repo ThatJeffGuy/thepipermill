@@ -19,7 +19,6 @@ def main(argv=None):
     p = sub.add_parser("trim", help="reprocess: cut clips down to the words you kept when editing"); p.add_argument("name")
     p = sub.add_parser("train", help="fine-tune (resumable)"); p.add_argument("name"); p.add_argument("epochs", nargs="?", type=int, default=1000); p.add_argument("batch", nargs="?", type=int, default=0)
     p = sub.add_parser("export", help="make the .onnx/.json and a test clip"); p.add_argument("name"); p.add_argument("--text", default=None); p.add_argument("--which", choices=["best", "accurate", "latest"], default="best", help="best = best-sounding by quality score (default)")
-    p = sub.add_parser("install", help="run the configured install step"); p.add_argument("name")
     p = sub.add_parser("clean", help="free disk space: keep only the best and latest training checkpoints"); p.add_argument("name")
     p = sub.add_parser("delete", help="delete a voice and its working files"); p.add_argument("name")
     a = ap.parse_args(argv)
@@ -67,8 +66,6 @@ def main(argv=None):
         from . import train; train.run(n, a.epochs, a.batch)
     elif a.cmd == "export":
         from . import export; export.run(n, a.text or export.DEFAULT_TEXT, "last" if a.which == "latest" else a.which)
-    elif a.cmd == "install":
-        from . import install; install.run(n)
     elif a.cmd == "clean":
         from . import train; print(f"Freed {train.prune(n):.1f} GB.")
     elif a.cmd == "delete":

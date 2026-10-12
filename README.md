@@ -51,7 +51,7 @@ Voice names can use capital letters and are case-sensitive (**Joe** and **joe** 
 | 4. Prepare | One click. Splits at pauses and transcribes with Whisper on the GPU. Uses only the people you chose (or the voice you matched). Tick **Remove music and background noise** to keep only the voices (see below). |
 | 5. Check the words *(optional)* | Press ▶ on a clip, fix the text, remove bad clips (✕), save. **The voice learns exactly what is written here, so skipping this may reduce quality.** Words from another person can be cut out with **Reprocess**, below. **Export dataset (.zip)** saves the cleaned clips and transcript (22.05 kHz mono wavs + `metadata.csv`) to use anywhere. |
 | 6. Train | Quick / Normal / Long. It keeps running if you close the tab; stop and resume any time. The **quality score** (1 to 5, hover it for details) is a predicted listener rating of how natural the test sentences sound; it does not measure how much the voice sounds like you. The progress bar can take 10–20 minutes to update for the first time (it moves when training saves a new checkpoint), so do not stop training until it has updated at least once. |
-| 7. Listen | Type a sentence, make a test clip, then download the two voice files. It uses the best-sounding version; **Advanced** lets you choose another. |
+| 7. Listen | Type a sentence, make a test clip, then press **Download** to get the voice as one zip (`.onnx` + `.onnx.json`). It uses the best-sounding version; **Advanced** lets you choose another. |
 
 **Recording tips:** quiet room, same distance from the microphone, no music or fans, no clipping. Read or talk naturally and vary it: questions, short and long sentences, numbers. The model copies how you speak, not just your tone.
 
@@ -120,12 +120,11 @@ Default data folder: `~/voice-studio-data` with `data/` (prepared clips), `runs/
 
 ### Using your voice with Piper
 
-Put both files (same name, `.onnx` and `.onnx.json`) in the folder your Piper reads voices from, then restart or reload Piper.
-To automate that, set `[install]` in the config (copy to a local folder, `scp` to another machine, or run your own script). See [config.example.toml](config.example.toml).
+On the last step, press **Download** for a zip with the two voice files (`name.onnx` and `name.onnx.json`), or use the two download buttons for each file on their own. Put both files, with the same name, in the folder your Piper reads voices from, then restart or reload Piper. They are also kept in the `out` folder of your data folder.
 
 ## Settings
 
-Copy `config.example.toml` to `~/.config/voice-studio/config.toml`. Every option is optional (data folder, port, language, Whisper model, batch size, install step, protected voice names).
+Copy `config.example.toml` to `~/.config/voice-studio/config.toml`. Every option is optional (data folder, port, language, Whisper model, batch size, protected voice names).
 
 The page listens on `127.0.0.1` only and has **no login**. Do not expose it to a network you do not trust. It also rejects requests that do not come from the page itself, so other websites cannot drive it.
 
