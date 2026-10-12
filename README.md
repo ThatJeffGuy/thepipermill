@@ -1,4 +1,4 @@
-# The Piper Pepper Mill
+# The Piper Mill
 
 Train your own [Piper](https://github.com/OHF-Voice/piper1-gpl) text-to-speech voice from your own recordings, using a simple web page on your own computer.
 
@@ -47,7 +47,7 @@ Every long job has a **Stop** button. **Start over** (bottom of the page) clears
 |---|---|
 | 1. Recordings folder | Choose (Browse…) the folder on your computer that holds your recordings; they are read from there and never copied or changed. 30–60+ minutes works best. |
 | 2. Who is speaking? *(optional)* | Only if your recordings have more than one person (a conversation, a call, a film). Finds each voice, shows samples with the time each comes from, and lets you tick whose voice to train on. **Find more like my voice** refines it from clips you tick. See below. |
-| 3. Prepare | One click. Splits at pauses and transcribes with Whisper on the GPU. Uses only the people you chose (or the voice you matched) and, if you set it, only the audio between two times (for example from 21:30 if that is where you start speaking). |
+| 3. Prepare | One click. Splits at pauses and transcribes with Whisper on the GPU. Uses only the people you chose (or the voice you matched) and, if you set it, only the audio between two times (for example from 21:30 if that is where you start speaking). Tick **Remove music and background noise** to keep only the voices (see below). |
 | 4. Check the words *(optional)* | Press ▶ on a clip, fix the text, remove bad clips (✕), save. **The voice learns exactly what is written here, so skipping this may reduce quality.** Words from another person can be cut out with **Reprocess**, below. **Export dataset (.zip)** saves the cleaned clips and transcript (22.05 kHz mono wavs + `metadata.csv`) to use anywhere. |
 | 5. Train | Quick / Normal / Long. It keeps running if you close the tab; stop and resume any time. |
 | 6. Listen | Type a sentence, make a test clip, then download the two voice files. (Advanced mode lets you choose the version; Beginner always uses the best-sounding one.) |
@@ -56,7 +56,7 @@ Every long job has a **Stop** button. **Start over** (bottom of the page) clears
 
 ### Tuned for Piper
 
-The Pepper Mill prepares and trains the way Piper wants it:
+The Piper Mill prepares and trains the way Piper wants it:
 - **Audio:** 22.05 kHz mono, clips of 1.5 to 12 seconds cut at natural pauses, every clip levelled to the same loudness (Piper trims leading and trailing silence itself).
 - **Text:** transcripts are converted to how the words are *spoken*, because Piper reads text with espeak-ng: "15%" becomes "fifteen percent", "8.30" after "at" becomes "eight thirty", "$3.50" becomes "three dollars and fifty cents", "Dr." becomes "doctor". Repeated-phrase hallucinations and junk are dropped. Check the result in step 4.
 - **Training:** fine-tunes from a Piper base voice chosen to match your recordings, so 30 to 60 minutes is enough. Piper holds out 10% of your clips to score progress. If you edit or re-prepare, its cache is refreshed automatically so old audio is never reused.
@@ -91,9 +91,13 @@ That model is **gated on Hugging Face**, so once only:
 
 Only use recordings of people who have agreed to it. Telling the tool how many people talk ("auto" by default) improves accuracy.
 
+### Removing music and background noise (Prepare)
+
+For films, videos and noisy recordings, tick **Remove music and background noise** in Prepare. It uses [Demucs](https://github.com/facebookresearch/demucs) to keep only the voices, and it runs only on the parts Prepare keeps (your chosen speaker or matched voice, within your time window), so it adds very little time. The clips and their transcripts are then made from the cleaned audio. The first use downloads a small model (about 80 MB). A clean recording of just you does not need it, and it is off by default. From the command line: `voicestudio prep myvoice --clean`.
+
 ### Two voices in one clip: Reprocess (step 4)
 
-Prepare cuts at pauses, so a clip can hold two people talking. In *Check the words*, delete the words the wrong person says from the **start or end** of the clip's text, press **Save**, then **Reprocess edited clips**. The Pepper Mill listens to each edited clip again with word-by-word timing and cuts the audio down to just the words you kept. Spelling-only fixes are left alone. If words are removed from the **middle**, the clip cannot be cut and you are told to delete it instead. The untrimmed originals are kept in `wavs.untrimmed/`, and training will not start while edited clips are waiting to be reprocessed, so text and audio always match.
+Prepare cuts at pauses, so a clip can hold two people talking. In *Check the words*, delete the words the wrong person says from the **start or end** of the clip's text, press **Save**, then **Reprocess edited clips**. The Piper Mill listens to each edited clip again with word-by-word timing and cuts the audio down to just the words you kept. Spelling-only fixes are left alone. If words are removed from the **middle**, the clip cannot be cut and you are told to delete it instead. The untrimmed originals are kept in `wavs.untrimmed/`, and training will not start while edited clips are waiting to be reprocessed, so text and audio always match.
 
 ### Command line
 
@@ -128,10 +132,11 @@ The page listens on `127.0.0.1` only and has **no login**. Do not expose it to a
 
 ## Licences and credits
 
-- The Piper Pepper Mill itself: MIT (see `LICENSE`).
+- The Piper Mill itself: MIT (see `LICENSE`).
 - It installs and drives [piper1-gpl](https://github.com/OHF-Voice/piper1-gpl) (GPL-3.0) as a separate program; it is downloaded by `install.sh` and not included here.
 - Starting voices come from [rhasspy/piper-checkpoints](https://huggingface.co/datasets/rhasspy/piper-checkpoints). **Each has its own dataset licence, often non-commercial** (for example Ryan is CC BY-NC-SA 4.0). A voice you train from one inherits those limits. The licence is shown when you create a voice and saved next to the file in `base/`.
 - Transcription uses OpenAI Whisper (MIT) through Hugging Face `transformers`.
+- Removing background noise uses Demucs (MIT) by Meta Research.
 - Speaker finding uses pyannote.audio (MIT) with the `speaker-diarization-community-1` model (CC-BY-4.0, gated: accept its conditions on Hugging Face).
 
 ## Troubleshooting

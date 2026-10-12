@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Start The Piper Pepper Mill automatically when you log in (systemd user service). Remove with:  systemctl --user disable --now voice-studio
+# Start The Piper Mill automatically when you log in (systemd user service). Remove with:  systemctl --user disable --now voice-studio
 set -euo pipefail
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p ~/.config/systemd/user
 cat > ~/.config/systemd/user/voice-studio.service <<UNIT
 [Unit]
-Description=The Piper Pepper Mill (Piper voice training web page)
+Description=The Piper Mill (Piper voice training web page)
 
 [Service]
 ExecStart=$DIR/.venv/bin/python -m voicestudio serve

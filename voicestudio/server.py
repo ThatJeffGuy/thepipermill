@@ -121,7 +121,7 @@ def info(n):
         except Exception: pass
     return {"name": n, "base": m.get("base"), "base_used": m.get("base_used"),
             "people": sp["people"] if sp else None, "keep": m.get("keep_people") or [], "keep_from": m.get("keep_from"), "keep_until": m.get("keep_until"),
-            "voice_type": m.get("voice_type") or "", "ref_yes": m.get("ref_yes") or [], "ref_no": m.get("ref_no") or [], "strict": m.get("strict") or "normal", "use_match": bool(m.get("use_match")),
+            "clean_voice": bool(m.get("clean_voice")), "voice_type": m.get("voice_type") or "", "ref_yes": m.get("ref_yes") or [], "ref_no": m.get("ref_no") or [], "strict": m.get("strict") or "normal", "use_match": bool(m.get("use_match")),
             "match": ({k: sp["match"][k] for k in ("minutes", "stretches", "strict", "samples")} if sp and sp.get("match") else None), "people_stale": speakers.stale(n) if sp else False, "folder": str(src) if src else None, "folder_ok": bool(src and src.is_dir()),
             "files": [{"name": speakers.rel(n, p), "mb": round(p.stat().st_size / 1e6, 1)} for p in files],
             "clips": clips, "prepared": md.exists(), "edited": len(trim.pending(n)),
@@ -202,7 +202,7 @@ class H(BaseHTTPRequestHandler):
             z.write(md, "metadata.csv")
             for f in names:
                 if (root / "wavs" / f).exists(): z.write(root / "wavs" / f, f"wavs/{f}")
-            z.writestr("README.txt", "Dataset made with The Piper Pepper Mill.\n\nwavs/*.wav  mono, 16-bit, 22.05 kHz clips (1.5-12 s) of one speaker, levelled to the same loudness\n"
+            z.writestr("README.txt", "Dataset made with The Piper Mill.\n\nwavs/*.wav  mono, 16-bit, 22.05 kHz clips (1.5-12 s) of one speaker, levelled to the same loudness\n"
                        "metadata.csv  one line per clip:  file.wav|transcript   (the transcript is in spoken form, as Piper reads it)\n\n"
                        "Only use recordings of people who have agreed to it.\n")
         size = spool.tell(); spool.seek(0)
@@ -315,7 +315,7 @@ class H(BaseHTTPRequestHandler):
                 try: a, b = secs(d.get("from")), secs(d.get("until"))
                 except ValueError: raise ValueError("Times look like 21:30 (minutes:seconds) or 1:05:00.")
                 if a is not None and b is not None and b <= a: raise ValueError("The end time must be after the start time.")
-                voices.write(n, keep_from=a, keep_until=b)
+                voices.write(n, keep_from=a, keep_until=b, clean_voice=bool(d.get("clean")))
             elif u.path == "/api/job/stop":
                 running = job_pids(n)
                 if not running: raise ValueError("Nothing is running for this voice.")
@@ -384,5 +384,5 @@ def serve():
     host, port = CFG["host"], int(CFG["port"])
     if host not in ("127.0.0.1", "localhost", "::1"):
         print("WARNING: listening beyond this computer. There is no login. Only do this on a network you trust.", flush=True)
-    print(f"The Piper Pepper Mill on http://{host}:{port}   (data: {CFG.home})", flush=True)
+    print(f"The Piper Mill on http://{host}:{port}   (data: {CFG.home})", flush=True)
     ThreadingHTTPServer((host, port), H).serve_forever()

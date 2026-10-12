@@ -9,7 +9,7 @@ Built for real recordings: long files, many files, noisy rooms, stereo/surround,
 import shutil, tempfile
 import numpy as np
 from pathlib import Path
-from . import audio, speakers, textnorm, voices
+from . import audio, clean, speakers, textnorm, voices
 from .config import CFG
 from .progress import Progress
 
@@ -105,6 +105,10 @@ def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
     wavs.mkdir(parents=True, exist_ok=True)
     shutil.rmtree(CFG.cache / name, ignore_errors=True)               # Piper's cache is keyed by row+text: never reuse it for new clips
 
+    sep = None
+    if voices.read(name).get("clean_voice"):
+        log("Removing music and background noise from the parts that are kept (only your voice is left in)...")
+        sep = clean.Separator(log)
     clips, n, skipped, noisy, silent = [], 0, [], [], []
     with tempfile.TemporaryDirectory() as td:
         for i, f in enumerate(files, 1):
@@ -120,6 +124,7 @@ def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
                 for s0, e0 in spans:
                     part = y[s0:e0]
                     if len(part) < min_s * SR: continue
+                    if sep: part = sep.span(y, s0, e0)                    # vocals only; the clips and their transcripts come from this
                     db, snr = (top_db, None) if top_db else analyze(part)
                     new = segments(part, db, min_s, max_s, join_gap)
                     if new and snr is not None and snr < 18: noisy.append(key)
@@ -132,6 +137,7 @@ def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
                 skipped.append((key, str(e))); log(f"[{i}/{len(files)}] SKIPPED {key}: {e}")
             finally:
                 tmp.unlink(missing_ok=True)
+    if sep: sep.close()
     if not clips:
         raise SystemExit("No speech found in any file." + (f" {len(skipped)} file(s) could not be read." if skipped else " Try a quieter recording."))
     log(f"\n{len(clips)} clips, {sum(d for _, d in clips)/60:.1f} min of speech from {len(files) - len(skipped)} file(s). Writing it down (Whisper)...")

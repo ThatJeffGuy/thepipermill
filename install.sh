@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The Piper Pepper Mill installer. Linux + an NVIDIA GPU. Creates ./.venv and downloads the Piper trainer into ./vendor.
+# The Piper Mill installer. Linux + an NVIDIA GPU. Creates ./.venv and downloads the Piper trainer into ./vendor.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -60,8 +60,9 @@ if "dynamo=False" not in s:
     s = s.replace("        verbose=False,\n", "        verbose=False,\n        dynamo=False,\n", 1); p.write_text(s); print("patched export_onnx.py")
 PY
 
-say "Installing The Piper Pepper Mill and its audio tools"
+say "Installing The Piper Mill and its audio tools"
 pipi -c constraints.txt transformers accelerate soundfile librosa numpy onnx onnxscript onnxruntime pyannote.audio num2words
+pipi --no-deps demucs einops julius lameenc openunmix      # optional "remove music and background noise" (its model downloads on first use)
 pipi -e .
 
 say "Checking the GPU"

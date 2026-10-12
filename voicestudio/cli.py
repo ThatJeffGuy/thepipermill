@@ -12,7 +12,7 @@ def main(argv=None):
     sub.add_parser("doctor", help="check the GPU and tools")
     sub.add_parser("list", help="list voices")
     p = sub.add_parser("new", help="create a voice"); p.add_argument("name"); p.add_argument("--base", default="auto", help="auto (matched to your recordings) or: ryan, amy, lessac, joe, john"); p.add_argument("--folder", required=True, help="the folder with your recordings")
-    p = sub.add_parser("prep", help="recordings -> dataset"); p.add_argument("name"); p.add_argument("--top-db", type=float, default=None, help="silence threshold (default: chosen automatically for each recording)")
+    p = sub.add_parser("prep", help="recordings -> dataset"); p.add_argument("name"); p.add_argument("--clean", action="store_true", help="remove music and background noise (keep only the voices)"); p.add_argument("--top-db", type=float, default=None, help="silence threshold (default: chosen automatically for each recording)")
     p = sub.add_parser("speakers", help="find who is speaking in the recordings"); p.add_argument("name"); p.add_argument("--num", type=int, default=None, help="how many people talk (default: detect)")
     p = sub.add_parser("match", help="find more speech that sounds like the clips you ticked"); p.add_argument("name")
     p = sub.add_parser("keep", help="choose which people to train on"); p.add_argument("name"); p.add_argument("ids", nargs="*", type=int); p.add_argument("--all", action="store_true", help="use everyone (no filtering)")
@@ -50,7 +50,9 @@ def main(argv=None):
     n = CFG.check_name(a.name)
     if not voices.exists(n): sys.exit(f"No voice '{n}'. Create it first:  voicestudio new {n}")
     if a.cmd == "prep":
-        from . import prep; prep.run(n, top_db=a.top_db)
+        from . import prep
+        if a.clean: voices.write(n, clean_voice=True)
+        prep.run(n, top_db=a.top_db)
     elif a.cmd == "speakers":
         from . import speakers; speakers.run(n, a.num)
     elif a.cmd == "match":
