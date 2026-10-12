@@ -24,7 +24,7 @@ Tested on Ubuntu with an RTX 5070 (Blackwell, CUDA 13 build of PyTorch).
 ## Install
 
 ```bash
-git clone <this repo> voice-studio && cd voice-studio
+git clone https://github.com/ThatJeffGuy/voice-studio.git && cd voice-studio
 ./install.sh          # creates .venv, installs PyTorch and the Piper trainer, checks the GPU
 ./run.sh              # then open http://127.0.0.1:8765
 ```
