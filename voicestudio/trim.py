@@ -86,6 +86,7 @@ def run(name, log=print):
         log(f"  {f}: {dur:.1f} s -> {b - a:.1f} s")
     base.write_text("".join(f"{f}|{t}\n" for f, t in orig.items()), encoding="utf-8")
     shutil.rmtree(CFG.cache / name, ignore_errors=True)                            # Piper's cache is keyed by clip+text
+    if trimmed: (CFG.runs / name / "clipscores.json").unlink(missing_ok=True)      # cut clips sound different: score them again
     log(f"\nDone: {trimmed} clip(s) cut to your words, {same} spelling-only edit(s) kept as they were, {bad} need your attention.")
     for m in problems[:30]: log(f"  - {m}")
     if trimmed: log("Listen to a few trimmed clips (press ▶) to be sure they sound right.")

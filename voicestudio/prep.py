@@ -165,6 +165,7 @@ def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
     (root / "metadata.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
     (root / "metadata.orig.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")        # as written by Whisper: lets "reprocess" see which clips you edited
     shutil.rmtree(root / "wavs.untrimmed", ignore_errors=True)
+    (CFG.runs / name / "clipscores.json").unlink(missing_ok=True)                  # new clips: old scores no longer apply
     mins = sum(d for p, d in clips if p.exists()) / 60
     log(f"\nDone: {len(rows)} clips ({mins:.1f} min), {dropped} dropped.")
     if skipped:

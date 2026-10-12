@@ -31,7 +31,7 @@ def train_pid(n):
         return None
 
 
-JOB_KINDS = ("speakers", "match", "prep", "trim", "export")
+JOB_KINDS = ("speakers", "match", "score", "prep", "trim", "export")
 
 
 def job_pids(n):
@@ -217,7 +217,7 @@ def info(n):
         except Exception: pass
     return {"name": n, "base": m.get("base"), "base_used": m.get("base_used"),
             "people": sp["people"] if sp else None, "keep": m.get("keep_people") or [], 
-            "clean_voice": bool(m.get("clean_voice")), "words_seen": bool(m.get("words_seen")), "people_names": m.get("people_names") or {}, "voice_type": m.get("voice_type") or "", "ref_yes": m.get("ref_yes") or [], "ref_no": m.get("ref_no") or [], "strict": m.get("strict") or "normal", "use_match": bool(m.get("use_match")),
+            "clean_voice": bool(m.get("clean_voice")), "scored": speakers.score_path(n).exists(), "words_seen": bool(m.get("words_seen")), "people_names": m.get("people_names") or {}, "voice_type": m.get("voice_type") or "", "ref_yes": m.get("ref_yes") or [], "ref_no": m.get("ref_no") or [], "strict": m.get("strict") or "normal", "use_match": bool(m.get("use_match")),
             "match": ({k: sp["match"].get(k) for k in ("minutes", "stretches", "strict", "samples", "settled", "history")} if sp and sp.get("match") else None), "people_stale": speakers.stale(n) if sp else False, "folder": str(src) if src else None, "folder_ok": bool(src and src.is_dir()),
             "files": [{"name": speakers.rel(n, p), "mb": round(p.stat().st_size / 1e6, 1)} for p in files],
             "clips": clips, "clip_minutes": round(sum(_size(p) for p in (CFG.data / n / "wavs").glob("*.wav")) / (2 * 22050 * 60), 1), "prepared": md.exists(), "edited": len(trim.pending(n)),
@@ -332,11 +332,18 @@ class H(BaseHTTPRequestHandler):
                                    "busy": {"voice": b[0], "kind": b[1]} if b else None, })
             if u.path == "/api/transcript":
                 n = CFG.check_name(q["voice"][0]); md = CFG.data / n / "metadata.csv"; rows = []
+                try: sc = json.loads(speakers.score_path(n).read_text()).get("scores", {})
+                except (OSError, ValueError): sc = None
                 if md.exists():
                     for line in open(md, encoding="utf-8"):
                         f, _, t = line.rstrip("\n").partition("|")
-                        if f: rows.append({"file": f, "text": t})
-                return self._json({"rows": rows})
+                        if not f: continue
+                        dur = _size(CFG.data / n / "wavs" / f) / (2 * 22050); wps = len(t.split()) / dur if dur > 0 else 0
+                        warn = ("Very fast for this length: the text may be longer than what is said" if wps > 5.5 else
+                                "Very slow for this length: words may be missing from the text" if (dur > 2.5 and wps < 1.0) else
+                                "Almost no text" if len(t.strip()) < 3 else "")
+                        rows.append({"file": f, "text": t, "dur": round(dur, 1), "warn": warn, "score": (sc or {}).get(f)})
+                return self._json({"rows": rows, "scored": sc is not None})
             if u.path.startswith("/download-voice/") and u.path.endswith(".zip"):
                 return self._voice_zip(CFG.check_name(os.path.basename(unquote(u.path))[:-4]))
             if u.path.startswith("/dataset/") and u.path.endswith(".zip"):
@@ -381,6 +388,9 @@ class H(BaseHTTPRequestHandler):
                 if not (CFG.data / n / "metadata.csv").exists(): raise ValueError("Prepare the recordings first.")
                 if trim.pending(n): raise ValueError(f"{len(trim.pending(n))} clip(s) have edited words but their audio was not cut to match. Press 'Reprocess edited clips' in Check the words first.")
                 start_job(n, "train", ["train", n, str(ep)], meta={"epochs": ep})
+            elif u.path == "/api/score":
+                if not (CFG.data / n / "metadata.csv").exists(): raise ValueError("Prepare the recordings first.")
+                start_job(n, "score", ["score", n])
             elif u.path == "/api/match":
                 def ranges(v):
                     out = []

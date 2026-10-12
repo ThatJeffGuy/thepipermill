@@ -302,6 +302,42 @@ def match(name, log=print, pipeline=None):
     return r["match"]
 
 
+def score_path(name): return CFG.runs / name / "clipscores.json"
+
+
+def score_clips(name, log=print, pipeline=None):
+    """How much each prepared clip sounds like the others (voice fingerprint distance from the typical clip). Clips from a different
+    person, or with a lot of noise, stand out. Needs the same speaker model as "Who is speaking?"."""
+    import numpy as np, soundfile as sf, torch, librosa
+    root = CFG.data / name; md = root / "metadata.csv"
+    if not md.exists(): raise SystemExit("Prepare the recordings first.")
+    files = [l.split("|", 1)[0] for l in md.read_text(encoding="utf-8").splitlines() if "|" in l]
+    if len(files) < 5: raise SystemExit("Need at least 5 clips to compare them.")
+    pipe = pipeline or _load_pipeline(); em = pipe._embedding; prog = Progress(name, "score"); vec, ok = [], []
+    t0 = 0.0
+    for i, f in enumerate(files):
+        if time.time() - t0 > 0.5: t0 = time.time(); prog.update("Listening to each clip", i, len(files), frac=i / len(files))
+        try:
+            y, sr = sf.read(root / "wavs" / f, dtype="float32"); y = librosa.resample(y, orig_sr=sr, target_sr=SR) if sr != SR else y
+            v = np.asarray(em(torch.from_numpy(y)[None, None].to(em.device)), dtype="float64")[0]
+        except (OSError, RuntimeError, ValueError): continue
+        if np.isfinite(v).all(): vec.append(v / (np.linalg.norm(v) + 1e-9)); ok.append(f)
+    if len(vec) < 5: raise SystemExit("Could not read enough clips.")
+    x = np.asarray(vec); c = x.mean(0); c /= np.linalg.norm(c) + 1e-9
+    for _ in range(2):                                                    # a robust centre: leave out the quarter furthest away, then recompute
+        d = 1 - x @ c; keep_ = d <= np.percentile(d, 75); c = x[keep_].mean(0); c /= np.linalg.norm(c) + 1e-9
+    d = 1 - x @ c; med = float(np.median(d)); mad = float(np.median(np.abs(d - med))) * 1.4826 + 1e-6
+    out = {}
+    for f, di in zip(ok, d):
+        z = (float(di) - med) / mad
+        out[f] = {"d": round(float(di), 3), "lv": 2 if (z > 3 and di > med + 0.08) else 1 if (z > 2 and di > med + 0.05) else 0}
+    score_path(name).write_text(json.dumps({"scores": out, "median": round(med, 3)}))
+    bad = sum(1 for v in out.values() if v["lv"] == 2); maybe = sum(1 for v in out.values() if v["lv"] == 1)
+    log(f"Done: {len(out)} clips checked. {bad} sound very different from the rest, {maybe} a bit different.")
+    prog.finish(f"{bad} flagged")
+    return out
+
+
 def keep(name, ids):
     r = load(name)
     if not r: raise SystemExit("Find the speakers first.")
