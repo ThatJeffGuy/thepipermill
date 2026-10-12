@@ -94,7 +94,7 @@ def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
     if chosen:
         if speakers.stale(name): log("NOTE: the recordings changed since the speakers were found; press 'Find the speakers' again.")
         log(f"Using only the parts where person(s) {', '.join(map(str, chosen))} speak.")
-    mm = voices.read(name)
+    mm = voices.read(name); voices.write(name, words_seen=False)           # new clips: the words have not been looked at yet
     if mm.get("use_match"): log("Using only the parts that sound like the clips you ticked ('find more like these').")
     prog = Progress(name, "prep")
     root = CFG.data / name; wavs = root / "wavs"

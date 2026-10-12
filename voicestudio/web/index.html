@@ -223,7 +223,7 @@ function render(){
   let mosTxt='';if(t.mos!=null){mosTxt=t.mos>=4?'<span class="pill ok">sounds great</span>':t.mos>=3.4?'<span class="pill">getting good</span>':'<span class="pill warn">still learning</span>'}
   const ADV=mode==='advanced';                       // Advanced only reveals extras; there is one layout
   const hd=(n,done,title)=>`<h2><span class="step ${done?'done':''}">${n>=3?n+1:n}</span>${title}</h2>`;
-  const rowsLoaded=!!(rows&&rowsFor===v.name);
+  const rowsLoaded=!!(rows&&rowsFor===v.name), wordsDone=rowsLoaded||!!v.words_seen;      // seen this session, or at any time before (remembered by the server)
   const cards=[
   ()=>`<div class="card">${hd(1,v.files.length,'Your recordings folder')}
     <p class="hint">Choose the folder on this computer that holds your recordings (wav, mp3, m4a, flac…). Subfolders are included. About 30–60 minutes of clear, natural speech in a quiet room works best.</p>
@@ -255,7 +255,7 @@ function render(){
     ${pbar(v.job&&v.job.kind==='prep'?v.job:null)}${jobNote(v,'prep',true)}${f('prep')}
   </div>`,
 
-  ()=>`<div class="card">${hd(4,rowsLoaded&&!dirty,'Check the words <span class="pill">optional</span>')}
+  ()=>`<div class="card">${hd(4,wordsDone&&!dirty,'Check the words <span class="pill">optional</span>')}
     <p class="hint">The voice learns exactly what is written here. Press ▶ to listen and fix any wrong words. Remove clips with noise, coughs or mistakes (✕).</p>
     <p class="hint"><b>Skipping this may reduce quality.</b> Any wrong words or noisy clips left in will be learned too, and the finished voice can mispronounce or sound rough. If your recordings are clean, skipping is fine.</p>
     <div class="row"><button class="sec" id="loadRows" ${prepDone?'':'disabled'}>${rowsLoaded?'Reload list':'Show my clips'}</button>
@@ -297,8 +297,8 @@ function render(){
       ${matchHtml(v,jobRun,true)}</div>`;
     const wcards=[cards[0],cards[1],refineCard,cards[2],cards[3],cards[4],cards[5]];
     const names=['Recordings','Speakers','Refine','Prepare','Words','Train','Listen'];
-    const isDone=[v.files.length>0,!!v.people,!!v.match,prepDone,rowsLoaded&&!dirty,finished||t.checkpoints>0,v.exported];   // what lets you press Next
-    const shownDone=[v.files.length>0,!!v.people,!!v.match,prepDone,rowsLoaded&&!dirty&&!v.edited,!!finished,v.exported];     // what the strip shows as finished (training: only when all rounds are done)
+    const isDone=[v.files.length>0,!!v.people,!!v.match,prepDone,wordsDone&&!dirty,finished||t.checkpoints>0,v.exported];   // what lets you press Next
+    const shownDone=[v.files.length>0,!!v.people,!!v.match,prepDone,wordsDone&&!dirty&&!v.edited,!!finished,v.exported];     // what the strip shows as finished (training: only when all rounds are done)
     const optional=[false,true,true,false,true,false,false];
     const run=k=>jobRun&&v.job.kind===k;
     const gate=[
@@ -306,7 +306,7 @@ function render(){
       run('speakers')?'Finding the speakers… please wait.':!v.people?'Find the speakers, or press Skip if it is just you.':'',
       run('match')?'Matching your voice… please wait.':'',
       run('prep')?'Preparing… please wait.':!prepDone?'Prepare your recordings to continue.':'',
-      dirty?'Save your changes first, or press Skip.':run('trim')?'Reprocessing… please wait.':v.edited?'Press Reprocess so the audio matches your edited words.':!rowsLoaded?'Open your clips to check them, or press Skip.':'',
+      dirty?'Save your changes first, or press Skip.':run('trim')?'Reprocessing… please wait.':v.edited?'Press Reprocess so the audio matches your edited words.':!wordsDone?'Open your clips to check them, or press Skip.':'',
       t.running?`${v.name} is training on the GPU…`:!t.checkpoints?'Start training to continue.':'',
       ''];
     const working=[null,run('speakers')?'Finding the speakers… please wait.':null,run('match')?'Finding more like your ticked clips… please wait.':null,run('prep')?'Preparing… please wait.':null,run('trim')?'Reprocessing… please wait.':null,
@@ -330,6 +330,8 @@ function render(){
       <button class="sec bad" id="delBtn" style="color:#fff">Delete this voice…</button></details>`:''}`;
   if(keep.sp&&$('#spNum'))$('#spNum').value=keep.sp;if(keep.wh&&$('#which'))$('#which').value=keep.wh;if(keep.txt!=null&&$('#txt'))$('#txt').value=keep.txt;if(keep.ep!=null&&$('#ep'))$('#ep').value=keep.ep;
   wire(v);if(rows&&rowsFor===v.name&&$('#tbl'))drawRows();
+  // opening the Words step shows your clips straight away (no need to press "Show my clips" after a refresh)
+  if(stepNo===4&&v.prepared&&!(rows&&rowsFor===v.name)&&!autoRows[v.name+':'+v.clips]){autoRows[v.name+':'+v.clips]=1;loadRows(v.name).catch(()=>{})}
 }
 
 function wire(v){
@@ -373,8 +375,11 @@ function wire(v){
 
 async function act(path,body,key){delete flash[key];try{await api(path,{method:'POST',body:JSON.stringify(body)});if(key==='prep'){rows=null}}catch(e){say(key,e.message,'err')}refresh(true)}
 async function loadRows(name){
-  const j=await api(`/api/transcript?voice=${name}`);rows=j.rows;rowsFor=name;page=0;dirty=false;render();
+  const j=await api(`/api/transcript?voice=${name}`);rows=j.rows;rowsFor=name;page=0;dirty=false;
+  const v=S.voices.find(x=>x.name===name);if(v&&!v.words_seen){v.words_seen=true;api('/api/wordsseen',{method:'POST',body:JSON.stringify({voice:name})}).catch(()=>{})}   // remember that you looked
+  render();
 }
+const autoRows={};
 function drawRows(){
   const per=25,n=Math.ceil(rows.length/per)||1;page=Math.min(page,n-1);
   const slice=rows.slice(page*per,page*per+per);

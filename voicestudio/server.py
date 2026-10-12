@@ -86,7 +86,7 @@ def start_over(n, training=False):
         for g in (CFG.out.glob(f"{n}.*"), CFG.out.glob(f"{n}-*")):
             for p in g: p.unlink(missing_ok=True)
     JOBS.pop(n, None)
-    kw = dict(keep_people=[], ref_yes=[], ref_no=[], use_match=False, people_names={})
+    kw = dict(keep_people=[], ref_yes=[], ref_no=[], use_match=False, people_names={}, words_seen=False)
     if training: kw["base_used"] = None
     voices.write(n, **kw)
 
@@ -127,7 +127,7 @@ def info(n):
         except Exception: pass
     return {"name": n, "base": m.get("base"), "base_used": m.get("base_used"),
             "people": sp["people"] if sp else None, "keep": m.get("keep_people") or [], 
-            "clean_voice": bool(m.get("clean_voice")), "people_names": m.get("people_names") or {}, "voice_type": m.get("voice_type") or "", "ref_yes": m.get("ref_yes") or [], "ref_no": m.get("ref_no") or [], "strict": m.get("strict") or "normal", "use_match": bool(m.get("use_match")),
+            "clean_voice": bool(m.get("clean_voice")), "words_seen": bool(m.get("words_seen")), "people_names": m.get("people_names") or {}, "voice_type": m.get("voice_type") or "", "ref_yes": m.get("ref_yes") or [], "ref_no": m.get("ref_no") or [], "strict": m.get("strict") or "normal", "use_match": bool(m.get("use_match")),
             "match": ({k: sp["match"].get(k) for k in ("minutes", "stretches", "strict", "samples", "settled", "history")} if sp and sp.get("match") else None), "people_stale": speakers.stale(n) if sp else False, "folder": str(src) if src else None, "folder_ok": bool(src and src.is_dir()),
             "files": [{"name": speakers.rel(n, p), "mb": round(p.stat().st_size / 1e6, 1)} for p in files],
             "clips": clips, "prepared": md.exists(), "edited": len(trim.pending(n)),
@@ -320,6 +320,8 @@ class H(BaseHTTPRequestHandler):
                 if ids: speakers.keep(n, ids)
                 else: voices.write(n, keep_people=[])
                 voices.write(n, use_match=False)                       # saving ticked people means: use the people, not a match
+            elif u.path == "/api/wordsseen":
+                voices.write(n, words_seen=True)
             elif u.path == "/api/prepopts":
                 voices.write(n, clean_voice=bool(d.get("clean")))
             elif u.path == "/api/job/stop":
