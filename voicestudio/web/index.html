@@ -274,6 +274,7 @@ function render(){
     ${t.running?'':finished?'<span class="pill ok">finished</span>':''}</div>
     ${(t.running||t.done!=null)?`<div class="bar"><div style="width:${pct}%"></div></div>
       <div class="hint">${t.done!=null?`${t.done} of ${t.total} rounds (${pct}%)`:'starting…'} ${t.mos!=null?` · quality score ${t.mos.toFixed(2)} ${mosTxt}`:''}</div>`:''}
+    ${t.running?'<p class="hint" style="margin:8px 0 0"><b>Note:</b> the progress bar can take 10–20 minutes to update for the first time, and it only moves when training saves a new checkpoint. Please do not stop training until the bar has updated at least once.</p>':''}
     ${t.log.length?`${logBox(t.log.join('\n'))}`:''}${f('train')}
   </div>`,
 
