@@ -46,6 +46,16 @@ Open the page and press **+ New voice**. Pick a starting voice that is close to 
 
 **Recording tips:** quiet room, same distance from the microphone, no music or fans, no clipping. Read or talk naturally and vary it: questions, short and long sentences, numbers. The model copies how you speak, not just your tone.
 
+### Tuned for Piper
+
+Voice Studio prepares and trains the way Piper wants it:
+- **Audio:** 22.05 kHz mono, clips of 1.5 to 12 seconds cut at natural pauses, every clip levelled to the same loudness (Piper trims leading and trailing silence itself).
+- **Text:** transcripts are converted to how the words are *spoken*, because Piper reads text with espeak-ng: "15%" becomes "fifteen percent", "8.30" after "at" becomes "eight thirty", "$3.50" becomes "three dollars and fifty cents", "Dr." becomes "doctor". Repeated-phrase hallucinations and junk are dropped. Check the result in step 4.
+- **Training:** fine-tunes from a Piper base voice chosen to match your recordings, so 30 to 60 minutes is enough. Piper holds out 10% of your clips to score progress. If you edit or re-prepare, its cache is refreshed automatically so old audio is never reused.
+- **Which version you get:** Piper keeps its best checkpoints by sound quality and by accuracy, plus the latest. The test clip and the downloaded voice default to the **best-sounding** one by quality score, which is usually better than simply the newest. You can pick *Most accurate* or *Latest* in step 6.
+- **Disk space:** every checkpoint is about 0.8 GB, so one voice can use up to about 9 GB. *Voice settings → Free up space* keeps only the best and the latest (or `voicestudio clean myvoice`).
+- **Output:** `name.onnx` + `name.onnx.json`, the standard Piper voice format.
+
 ### Real-world recordings
 
 Prepare and "Who is speaking?" are built for messy folders, not just tidy ones:
@@ -74,7 +84,8 @@ voicestudio new myvoice --folder ~/recordings   # create (add --base ryan|amy|le
 voicestudio speakers myvoice      # optional: who speaks in the recordings; then: voicestudio keep myvoice 1
 voicestudio prep myvoice          # clips + transcripts  -> check data/myvoice/metadata.csv
 voicestudio train myvoice 1000    # extra epochs, resumable
-voicestudio export myvoice        # -> out/myvoice.onnx, out/myvoice.onnx.json, out/myvoice-test.wav
+voicestudio export myvoice        # -> out/myvoice.onnx, out/myvoice.onnx.json, out/myvoice-test.wav  (--which best|accurate|latest)
+voicestudio clean myvoice         # free disk space: keep only the best and latest checkpoints
 voicestudio list | doctor | delete myvoice
 ```
 

@@ -7,7 +7,7 @@ import json, os, re, shutil, signal, subprocess, sys, threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote
-from . import base, install, progress, speakers, voices
+from . import base, install, progress, speakers, train as train_mod, voices
 from .config import CFG
 
 WEB = Path(__file__).parent / "web"
@@ -84,7 +84,7 @@ def info(n):
             "files": [{"name": speakers.rel(n, p), "mb": round(p.stat().st_size / 1e6, 1)} for p in files],
             "clips": clips, "prepared": md.exists(),
             "train": {"running": bool(train_pid(n)), "total": total, "done": max(0, done) if done is not None else None,
-                      "mos": float(mos[-1]) if mos else None, "checkpoints": len(ck), "log": tl.split("\n")[-3:] if tl else []},
+                      "mos": float(mos[-1]) if mos else None, "checkpoints": len(ck), "disk_gb": round(sum(p.stat().st_size for p in ck) / 2**30, 1), "log": tl.split("\n")[-3:] if tl else []},
             "job": job, "exported": (CFG.out / f"{n}.onnx").exists()}
 
 
@@ -215,7 +215,11 @@ class H(BaseHTTPRequestHandler):
                 pid = train_pid(n)
                 if pid: os.killpg(os.getpgid(pid), signal.SIGINT)
             elif u.path == "/api/export":
-                start_job(n, "export", ["export", n, "--text", (d.get("text") or "")[:400]])
+                which = d.get("which") if d.get("which") in ("best", "accurate", "latest") else "best"
+                start_job(n, "export", ["export", n, "--text", (d.get("text") or "")[:400], "--which", which])
+            elif u.path == "/api/clean":
+                if busy(): raise RuntimeError("A job is running. Wait for it or stop it first.")
+                return self._json({"ok": True, "freed_gb": round(train_mod.prune(n), 1)})
             elif u.path == "/api/source":
                 p = (d.get("path") or "").strip()
                 if not p or not Path(p).expanduser().is_dir(): raise ValueError("That folder does not exist.")
@@ -242,7 +246,9 @@ class H(BaseHTTPRequestHandler):
                 for r in d["rows"]:
                     f = os.path.basename(r["file"]); t = " ".join(str(r["text"]).split()).replace("|", " ")
                     if t and (wavs / f).exists(): lines.append(f"{f}|{t}")
-                md.write_text("\n".join(lines) + "\n", encoding="utf-8"); return self._json({"ok": True, "kept": len(lines)})
+                md.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                shutil.rmtree(CFG.cache / n, ignore_errors=True)              # Piper's cache is keyed by row+text: start fresh
+                return self._json({"ok": True, "kept": len(lines)})
             self._err("not found", 404)
         except (ValueError, KeyError, OSError) as e:
             self._err(e)

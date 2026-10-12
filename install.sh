@@ -61,7 +61,7 @@ if "dynamo=False" not in s:
 PY
 
 say "Installing Voice Studio and its audio tools"
-pipi -c constraints.txt transformers accelerate soundfile librosa numpy onnx onnxscript onnxruntime pyannote.audio
+pipi -c constraints.txt transformers accelerate soundfile librosa numpy onnx onnxscript onnxruntime pyannote.audio num2words
 pipi -e .
 
 say "Checking the GPU"

@@ -97,7 +97,7 @@ async function refresh(force){
 }
 
 function render(){
-  const keep={txt:$('#txt')&&$('#txt').value,ep:$('#ep')&&$('#ep').value,sp:$('#spNum')&&$('#spNum').value};
+  const keep={txt:$('#txt')&&$('#txt').value,ep:$('#ep')&&$('#ep').value,sp:$('#spNum')&&$('#spNum').value,wh:$('#which')&&$('#which').value};
   const sel=$('#voiceSel');sel.innerHTML=S.voices.map(v=>`<option ${v.name===cur?'selected':''}>${esc(v.name)}</option>`).join('')||'<option>(no voices yet)</option>';
   $('#busyBar').innerHTML=S.busy?`<div class="card" style="padding:10px 16px"><span class="pill warn">Busy</span> <b>${esc(S.busy.voice)}</b>: ${esc(S.busy.kind)} is using the GPU. Other jobs wait until it finishes.</div>`:'';
   const v=S.voices.find(x=>x.name===cur);
@@ -155,7 +155,8 @@ function render(){
   <div class="card"><h2><span class="step ${v.exported?'done':''}">6</span>Listen, then use it</h2>
     <p class="hint">Make a test clip from the latest training and listen. When you like it, download the two voice files.</p>
     <textarea id="txt">Good evening. This is a test of my new voice, and I hope it sounds like me.</textarea>
-    <div class="row" style="margin-top:8px"><button id="expBtn" ${(!t.checkpoints||S.busy)?'disabled':''}>Make test clip</button>
+    <div class="row" style="margin-top:8px"><label>Version <select id="which"><option value="best">Best sounding (recommended)</option><option value="accurate">Most accurate</option><option value="latest">Latest</option></select></label>
+    <button id="expBtn" ${(!t.checkpoints||S.busy)?'disabled':''}>Make test clip</button>
     ${jobRun&&v.job.kind==='export'?'<span class="pill warn">working…</span>':''}
     ${S.install?`<button class="sec" id="instBtn" ${v.exported?'':'disabled'}>Install on my Piper…</button>`:''}</div>
     ${v.exported?`<div class="row" style="margin-top:10px"><a href="/download/${esc(v.name)}.onnx"><button class="sec">⬇ ${esc(v.name)}.onnx</button></a><a href="/download/${esc(v.name)}.onnx.json"><button class="sec">⬇ ${esc(v.name)}.onnx.json</button></a></div>
@@ -163,8 +164,9 @@ function render(){
     ${v.exported?`<p><audio controls src="/out/${esc(v.name)}-test.wav?t=${Date.now()>>14}" style="width:100%"></audio></p>`:''}
     ${v.job&&v.job.kind==='export'&&v.job.rc?`<pre>${esc(v.job.log)}</pre>`:''}${f('exp')}
   </div>
-  <details style="margin-top:6px"><summary>Voice settings</summary><p class="hint">Starting voice: ${v.base==='auto'||!v.base?`automatic${v.base_used?' (picked: '+esc(S.bases[v.base_used]||v.base_used)+')':' (chosen when training starts, from your recordings)'}`:esc(S.bases[v.base]||v.base)}</p><button class="sec bad" id="delBtn" style="color:#fff">Delete this voice…</button></details>`;
-  if(keep.sp&&$('#spNum'))$('#spNum').value=keep.sp;if(keep.txt!=null)$('#txt').value=keep.txt;if(keep.ep!=null&&$('#ep'))$('#ep').value=keep.ep;
+  <details style="margin-top:6px"><summary>Voice settings</summary><p class="hint">Starting voice: ${v.base==='auto'||!v.base?`automatic${v.base_used?' (picked: '+esc(S.bases[v.base_used]||v.base_used)+')':' (chosen when training starts, from your recordings)'}`:esc(S.bases[v.base]||v.base)}</p>${t.checkpoints?`<p class="hint">Training checkpoints use ${t.disk_gb} GB (${t.checkpoints} files). <button class="sec" id="cleanBtn" ${S.busy?'disabled':''}>Free up space</button> keeps only the best and the latest.</p>`:''}
+    <button class="sec bad" id="delBtn" style="color:#fff">Delete this voice…</button></details>`;
+  if(keep.sp&&$('#spNum'))$('#spNum').value=keep.sp;if(keep.wh&&$('#which'))$('#which').value=keep.wh;if(keep.txt!=null)$('#txt').value=keep.txt;if(keep.ep!=null&&$('#ep'))$('#ep').value=keep.ep;
   wire(v);if(rows&&rowsFor===v.name)drawRows();
 }
 
@@ -172,6 +174,7 @@ function wire(v){
   const b=(id,fn)=>{const el=$(id);if(el)el.onclick=fn};   // skips buttons that are not on the page right now
   b('#browseSrc',()=>pickFolder($('#srcIn').value,p=>{$('#srcIn').value=p}));
   b('#setSrc',async()=>{try{await api('/api/source',{method:'POST',body:JSON.stringify({voice:v.name,path:$('#srcIn').value})});refresh(true)}catch(e){say('up',e.message,'err')}});
+  b('#cleanBtn',async()=>{try{const r=await api('/api/clean',{method:'POST',body:JSON.stringify({voice:v.name})});say('exp',`Freed ${r.freed_gb} GB.`,'ok');refresh(true)}catch(e){say('exp',e.message,'err')}});
   b('#delBtn',async()=>{if(!confirm(`Delete "${v.name}" and its working files (prepared clips, training progress, exported voice)?\n\nRecordings in your own folder are never deleted.`))return;
     try{await api(`/api/voice?voice=${v.name}`,{method:'DELETE'});rows=null;cur='';refresh(true)}catch(e){say('exp',e.message,'err')}});
   b('#prepBtn',()=>act('/api/prep',{voice:v.name},'prep'));
@@ -181,7 +184,7 @@ function wire(v){
   b('#loadRows',()=>loadRows(v.name));b('#saveRows',()=>saveRows(v.name));
   b('#trainBtn',()=>act('/api/train',{voice:v.name,epochs:+$('#ep').value},'train'));
   b('#stopBtn',()=>act('/api/train/stop',{voice:v.name},'train'));
-  b('#expBtn',()=>act('/api/export',{voice:v.name,text:$('#txt').value},'exp'));
+  b('#expBtn',()=>act('/api/export',{voice:v.name,text:$('#txt').value,which:$('#which').value},'exp'));
   b('#instBtn',async()=>{if(!confirm(`Install "${v.name}" using the install step from your config?`))return;
     say('exp','Installing…');try{const r=await api('/api/install',{method:'POST',body:JSON.stringify({voice:v.name})});say('exp',r.message||'Installed.','ok')}catch(e){say('exp',e.message,'err')}});
 }

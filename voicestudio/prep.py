@@ -6,10 +6,10 @@ what was said with Whisper, and saves  data/<voice>/wavs/*.wav  +  data/<voice>/
 Built for real recordings: long files, many files, noisy rooms, stereo/surround, odd sample rates, and files that cannot be read
 (those are skipped and listed, they never stop the run).
 """
-import tempfile
+import shutil, tempfile
 import numpy as np
 from pathlib import Path
-from . import audio, speakers, voices
+from . import audio, speakers, textnorm, voices
 from .config import CFG
 from .progress import Progress
 
@@ -78,7 +78,13 @@ def _transcribe(asr, audio_list, gen, batch):
             batch = max(1, batch // 2)
 
 
-def run(name, top_db=None, min_s=1.5, max_s=15.0, join_gap=0.45, log=print):
+def level(clip, target_rms=0.1, peak=0.95, max_gain=4.0):
+    """Same loudness for every clip (Piper learns better from consistent levels), without clipping or boosting noise."""
+    rms, pk = float(np.sqrt((clip ** 2).mean())) + 1e-9, float(np.abs(clip).max()) + 1e-9
+    return (clip * min(target_rms / rms, peak / pk, max_gain)).astype("float32")
+
+
+def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
     import soundfile as sf, torch
     from transformers import pipeline
     src = voices.source_dir(name)
@@ -92,6 +98,7 @@ def run(name, top_db=None, min_s=1.5, max_s=15.0, join_gap=0.45, log=print):
     root = CFG.data / name; wavs = root / "wavs"
     for old in wavs.glob("*.wav"): old.unlink()                      # re-preparing starts clean
     wavs.mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(CFG.cache / name, ignore_errors=True)               # Piper's cache is keyed by row+text: never reuse it for new clips
 
     clips, n, skipped, noisy, silent = [], 0, [], [], []
     with tempfile.TemporaryDirectory() as td:
@@ -113,7 +120,7 @@ def run(name, top_db=None, min_s=1.5, max_s=15.0, join_gap=0.45, log=print):
                     if new and snr is not None and snr < 18: noisy.append(key)
                     for s, e in new:
                         n += 1; got += 1; p = wavs / f"{name}_{n:05d}.wav"
-                        sf.write(p, part[s:e], SR, subtype="PCM_16"); clips.append((p, (e - s) / SR))
+                        sf.write(p, level(part[s:e]), SR, subtype="PCM_16"); clips.append((p, (e - s) / SR))
                 if got == 0: silent.append(key)
                 log(f"[{i}/{len(files)}] {key}: {secs/60:.1f} min -> {got} clips" + ("  (no speech found)" if got == 0 else ""))
             except (audio.AudioError, RuntimeError, ValueError, OSError) as e:
@@ -136,10 +143,12 @@ def run(name, top_db=None, min_s=1.5, max_s=15.0, join_gap=0.45, log=print):
         prog.update("Writing down what was said", done, len(clips), f"{done}/{len(clips)} clips")
         res, batch = _transcribe(asr, [sf.read(p, dtype="float32")[0] for p, _ in chunk], gen, batch)
         for (p, d), r in zip(chunk, res):
-            t = " ".join(r["text"].split()).replace("|", " ")
+            raw = " ".join(r["text"].split())
+            t = textnorm.normalize(raw, CFG["espeak_voice"]).replace("|", " ")      # spoken form: what Piper's espeak-ng will read
             words = len(t.split())
-            # Whisper invents text on non-speech: drop empties, known junk and impossible speaking rates
-            if len(t) < 3 or t.lower() in JUNK or words / d > 6 or words / d < 0.4: dropped += 1; p.unlink(missing_ok=True); continue
+            # Whisper invents text on non-speech: drop empties, known junk, repeated phrases and impossible speaking rates
+            if len(t) < 3 or t.lower().strip(".!? ") in JUNK or textnorm.looks_like_loop(t) or words / d > 6 or words / d < 0.4:
+                dropped += 1; p.unlink(missing_ok=True); continue
             rows.append(f"{p.name}|{t}")
         done += len(chunk)
         if done % 80 < len(chunk): log(f"  {done}/{len(clips)}")
