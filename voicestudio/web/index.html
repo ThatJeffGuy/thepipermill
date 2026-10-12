@@ -61,6 +61,7 @@ button.dng{background:transparent;color:var(--bad)}.vsrow button.dng{border-colo
 @media (max-width:520px){.vsrow{flex-wrap:wrap}.vsrow button{width:100%}}
 .vdot{display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle}.vdot.l0{background:var(--ok)}.vdot.l1{background:var(--warn)}.vdot.l2{background:var(--bad)}
 td.len{color:var(--mute);font-size:12.5px;white-space:nowrap;padding:0 6px;width:48px}tr.flag input{border-color:var(--bad)}.warnic{color:var(--warn);cursor:help}
+.linkbtn{background:none;color:var(--acc);padding:2px 4px;font-size:13px;font-weight:500;border-radius:6px}.linkbtn:hover{text-decoration:underline}
 .mos{cursor:help;border-bottom:1px dotted var(--mute)}.mos b{color:var(--ink)}
 .advbtn.on{background:var(--acc);color:#fff}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
@@ -98,6 +99,7 @@ td.len{color:var(--mute);font-size:12.5px;white-space:nowrap;padding:0 6px;width
 <div id="main"></div>
 <footer class="foot">
   <div id="sub">Loading…</div>
+  <div><button class="linkbtn" id="notifyBtn" aria-pressed="false" title="Play a sound and show a desktop notification when a job finishes"></button><span id="notifyMsg" class="hint" style="margin:0 0 0 6px"></span></div>
   <div><b>Made by <a href="https://www.everydaysciencestuff.com" target="_blank" rel="noopener">That Scottish Guy</a></b> · &copy; 2026 · <a href="https://github.com/ThatJeffGuy/thepipermill/blob/main/LICENSE" target="_blank" rel="noopener">MIT</a> · <a href="https://github.com/ThatJeffGuy/thepipermill" target="_blank" rel="noopener">Source on GitHub</a></div>
 </footer>
 </div>
@@ -157,6 +159,22 @@ function pbar(j){if(!j||!j.running||!j.progress)return'';const p=j.progress,pct=
 const dataNote=v=>{const m=v.clip_minutes;if(!v.prepared||m==null)return'';
   return m<10?`<div class="msg err">Only <b>${m} min</b> of speech. The voice will probably sound rough, and the quality score can drop while it trains. Aim for 30 to 60 minutes of clean speech.</div>`
     :m<30?`<div class="msg" style="color:var(--warn)"><b>${m} min</b> of speech is on the low side. It will work, but 30 to 60 minutes sounds better.</div>`:''};
+// "Notify me": a chime and a desktop notification when a job stops running
+let notifyOn=false,prevRun=null;try{notifyOn=localStorage.getItem('notify')==='1'}catch(e){}
+function chime(){try{const c=new (window.AudioContext||window.webkitAudioContext)(),o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.type='sine';
+  const t=c.currentTime;o.frequency.setValueAtTime(660,t);o.frequency.setValueAtTime(880,t+.15);g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(.18,t+.03);g.gain.exponentialRampToValueAtTime(.0001,t+.6);o.start(t);o.stop(t+.65)}catch(e){}}
+function tell(body){chime();try{if(window.Notification&&Notification.permission==='granted')new Notification('The Piper Mill',{body,tag:'pm-'+body})}catch(e){}}
+function paintNotify(note){const b=$('#notifyBtn');if(!b)return;b.textContent=(notifyOn?'🔔 Notifications on':'🔕 Notify me when a job finishes');b.setAttribute('aria-pressed',notifyOn);$('#notifyMsg').textContent=note||''}
+async function setNotify(on){
+  notifyOn=on;try{localStorage.setItem('notify',on?'1':'0')}catch(e){}
+  let note='';if(on){chime();if(window.Notification&&Notification.permission==='default'){try{await Notification.requestPermission()}catch(e){}}
+    if(!window.Notification)note='(sound only: this browser has no notifications)';else if(Notification.permission==='denied')note='(sound only: notifications are blocked for this site in your browser)'}
+  paintNotify(note)}
+function watchJobs(n){
+  const run={};n.voices.forEach(v=>{run[v.name+'|job']=v.job&&v.job.running?v.job.kind:'';run[v.name+'|train']=v.train.running?'training':''});
+  if(notifyOn&&prevRun)Object.keys(run).forEach(k=>{const was=prevRun[k];if(was&&run[k]!==was){const v=n.voices.find(x=>x.name===k.split('|')[0]);if(!v)return;
+    const j=v.job&&v.job.kind===was?v.job:null,how=j&&j.rc?(j.rc<0?'was stopped':'did not finish'):'finished';tell(`${v.name}: ${jobName(was)} ${how}`)}});
+  prevRun=run}
 const JOBNAME={score:'checking your clips',speakers:'speaker identification',match:'matching your voice',prep:'preparing your recordings',trim:'reprocessing clips',export:'making the test clip',training:'training'};
 const jobName=k=>JOBNAME[k]||k;
 const logBox=t=>mode==='advanced'?`<pre>${esc(t)}</pre>`:'';          // the console is an Advanced extra
@@ -239,6 +257,7 @@ let last='';
 async function refresh(force){
   let n;try{n=await api('/api/voices')}catch(e){return}
   $('#sub').textContent=n.busy?(n.busy.kind==='training'?`${n.busy.voice} is training on the GPU`:`GPU is busy with ${jobName(n.busy.kind)}`):'GPU is free';
+  watchJobs(n);
   const ae=document.activeElement, typing=ae&&(ae.closest&&ae.closest('#tbl')||['txt','srcIn','spNum','pnameIn','frFind','frRep'].includes(ae.id));
   const sig=JSON.stringify(n);
   if(!force&&(sig===last||typing))return;      // never redraw under your fingers
@@ -469,6 +488,7 @@ let au;function playS(n,f){if(au)au.pause();au=new Audio(`/speaker-sample/${n}/$
 function play(f){if(au)au.pause();au=new Audio(`/audio/${cur}/${f}`);au.play()}
 async function saveRows(name){try{const j=await api('/api/transcript',{method:'PUT',body:JSON.stringify({voice:name,rows})});dirty=false;say('tr',`Saved. ${j.kept} clips kept.${j.edited?` ${j.edited} clip(s) have changed words: press Reprocess to cut their audio to match.`:''}`,'ok');refresh(true)}catch(e){say('tr',e.message,'err')}}
 
+$('#notifyBtn').onclick=()=>setNotify(!notifyOn);paintNotify();
 $('#advBtn').onclick=()=>setMode(mode==='advanced'?'beginner':'advanced');
 $('#voiceSel').onchange=e=>{cur=e.target.value;localStorage.setItem('voice',cur);rows=null;dirty=false;flash={};render()};
 $('#newBtn').onclick=()=>{$('#advStart').hidden=mode!=='advanced';$('#newErr').textContent='';$('#newBase').innerHTML='<option value="auto">Automatic: matched to my recordings (recommended)</option>'+Object.entries(S.bases).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');$('#newDlg').showModal()};

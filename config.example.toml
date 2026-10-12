@@ -10,3 +10,7 @@ batch_size = 0                      # 0 = automatic from GPU memory (8 GB -> 8, 
 hf_token = ""                       # only needed for "Who is speaking?" (see README); or set HF_TOKEN / run `hf auth login`
 speaker_match_distance = 0.55       # lower = stricter about calling two voices the same person
 protected_names = []                # voice names that can never be created
+
+# Tell another service when a job finishes (even if no browser is open): a Home Assistant webhook, an ntfy topic, ...
+notify_url = ""                     # e.g. "http://homeassistant.local:8123/api/webhook/piper-mill"  (keep it private: it may contain a secret)
+notify_format = "json"              # json | text   (text = just the message, handy for ntfy)

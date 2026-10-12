@@ -139,6 +139,64 @@ def gpu_stats():
     _GPU.update(t=time.time(), v=v); return v
 
 
+_NOTE = {}      # (voice, job) -> was it running when we last looked
+JOBWORDS = {"speakers": "speaker identification", "match": "matching your voice", "score": "checking your clips", "prep": "preparing your recordings",
+            "trim": "reprocessing clips", "export": "making the test clip", "training": "training"}
+
+
+def _job_states():
+    """{(voice, job): (running, exit code or None)} for every job and training run we know about."""
+    out = {}
+    for n, j in list(JOBS.items()):
+        rc = j["proc"].poll(); out[(n, j["kind"])] = (rc is None, rc)
+    if CFG.runs.exists():
+        for d in CFG.runs.iterdir():
+            if d.is_dir():
+                out[(d.name, "training")] = (bool(train_pid(d.name)), None)
+                for k, _ in job_pids(d.name): out.setdefault((d.name, k), (True, None))
+    return out
+
+
+def _how_it_ended(voice, job, rc):
+    if job == "training":
+        t = tail(CFG.runs / voice / "train.log", 4000) if (CFG.runs / voice / "train.log").exists() else ""
+        return "stopped" if "KeyboardInterrupt" in t else "did not finish" if "Traceback" in t else "finished"
+    return "finished" if rc in (0, None) else "was stopped" if rc < 0 else "did not finish"
+
+
+def _send_notification(voice, job, rc):
+    url = (CFG["notify_url"] or "").strip()
+    if not url: return
+    how = _how_it_ended(voice, job, rc); msg = f"{voice}: {JOBWORDS.get(job, job)} {how}"
+    status = "ok" if how == "finished" else "stopped" if "stopped" in how else "failed"
+    def post():
+        try:
+            import urllib.request
+            if (CFG["notify_format"] or "json") == "text":
+                req = urllib.request.Request(url, data=msg.encode(), headers={"Title": "The Piper Mill"}, method="POST")
+            else:
+                req = urllib.request.Request(url, data=json.dumps({"title": "The Piper Mill", "message": msg, "voice": voice, "job": job, "status": status}).encode(),
+                                             headers={"Content-Type": "application/json"}, method="POST")
+            urllib.request.urlopen(req, timeout=6).read()
+        except Exception as e: print(f"notify: could not reach the notify_url ({type(e).__name__})", flush=True)     # never print the URL: it may hold a secret
+    threading.Thread(target=post, daemon=True).start()
+
+
+def notify_tick(send=None):
+    """Send one message for every job that has just stopped running."""
+    send = send or _send_notification; now = _job_states()
+    for key, (running, rc) in now.items():
+        if _NOTE.get(key) and not running: send(key[0], key[1], rc)
+        _NOTE[key] = running
+
+
+def _watch():
+    while True:
+        try: notify_tick()
+        except Exception: pass
+        time.sleep(3)
+
+
 def _size(p):
     """File size, or 0 if the file has just been deleted (training removes old checkpoints while the page is reading)."""
     try: return p.stat().st_size
@@ -506,5 +564,6 @@ def serve():
     host, port = CFG["host"], int(CFG["port"])
     if host not in ("127.0.0.1", "localhost", "::1"):
         print("WARNING: listening beyond this computer. There is no login. Only do this on a network you trust.", flush=True)
+    if (CFG["notify_url"] or "").strip(): threading.Thread(target=_watch, daemon=True).start()
     print(f"The Piper Mill on http://{host}:{port}   (data: {CFG.home})", flush=True)
     ThreadingHTTPServer((host, port), H).serve_forever()

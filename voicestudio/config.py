@@ -20,6 +20,8 @@ DEFAULTS = {
     "diarization_model": "pyannote/speaker-diarization-community-1",
     "speaker_match_distance": 0.55,          # lower = stricter about calling two voices the same person
     "protected_names": [],                   # voice names that can never be created
+    "notify_url": "",                        # optional: POST here when a job finishes (a Home Assistant webhook, ntfy topic, ...)
+    "notify_format": "json",                 # json = {"title","message","voice","job","status"} | text = just the message (ntfy)
 }
 
 NAME_RX = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
