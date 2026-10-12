@@ -220,7 +220,7 @@ def info(n):
             "clips": clips, "prepared": md.exists(), "edited": len(trim.pending(n)),
             "train": {"running": bool(train_pid(n)), "total": total, "done": max(0, done) if done is not None else None,
                       "mos": met["mos"] if met["mos"] is not None else (float(mos[-1]) if mos else None), "mos_first": met["first"], "checkpoints": len(ck), "disk_gb": round(sum(_size(p) for p in ck) / 2**30, 1), "log": tl.split("\n")[-3:] if tl else []},
-            "job": job, "exported": (CFG.out / f"{n}.onnx").exists()}
+            "job": job, "exported": (CFG.out / f"{n}.onnx").exists(), "exported_at": (CFG.out / f"{n}.onnx").stat().st_mtime if (CFG.out / f"{n}.onnx").exists() else None}
 
 
 def browse(path):
@@ -313,7 +313,7 @@ class H(BaseHTTPRequestHandler):
             if u.path == "/api/voices":
                 b = busy()
                 return self._json({"voices": [info(n) for n in voices.names()], "bases": {k: v[0] for k, v in base.BASES.items()},
-                                   "busy": {"voice": b[0], "kind": b[1]} if b else None, "install": install.configured()})
+                                   "busy": {"voice": b[0], "kind": b[1]} if b else None, "install": install.configured(), "install_what": install.describe()})
             if u.path == "/api/transcript":
                 n = CFG.check_name(q["voice"][0]); md = CFG.data / n / "metadata.csv"; rows = []
                 if md.exists():

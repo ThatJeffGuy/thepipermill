@@ -102,6 +102,13 @@ footer.foot a{color:var(--acc);text-decoration:none}footer.foot a:hover{text-dec
     <span class="row"><button class="sec" id="pickCancel">Cancel</button><button id="pickOk">Use this folder</button></span></div>
 </dialog>
 
+<dialog id="installDlg">
+  <h2>Install on your Piper?</h2>
+  <div id="installBody" class="hint" style="margin:0 0 12px"></div>
+  <div class="row" style="justify-content:flex-end"><button class="sec" id="installCancel" autofocus>Cancel</button><button class="bad" id="installOk">Yes, install it</button></div>
+  <div class="msg err" id="installErr"></div>
+</dialog>
+
 <dialog id="renameDlg">
   <h2>Rename this voice</h2>
   <p class="hint" style="margin:0 0 10px">Letters, digits, - and _ (1 to 40). Capital letters count, so <b>Joe</b> and <b>joe</b> are different names. Everything moves with it: your clips, training and any exported files.</p>
@@ -195,6 +202,19 @@ function wizStep(v,c){
     wiz[v.name]=tr.running?5:k==='export'?6:k==='prep'?3:k==='match'?2:k==='speakers'?1:!v.files.length?0:!c.prepDone?(!v.people?1:v.match?3:2):!(c.finished||tr.checkpoints)?5:6;
   }
   return wiz[v.name];
+}
+function openInstall(v){
+  const ago=v.exported_at?Math.max(0,Math.round((Date.now()/1000-v.exported_at)/60)):null;
+  $('#installBody').innerHTML=`<p>You are about to install <b>${esc(v.name)}</b> on your Piper.</p>
+    <p><b>Files:</b> ${esc(v.name)}.onnx and ${esc(v.name)}.onnx.json${v.exported_at?`<br><b>Exported:</b> ${esc(new Date(v.exported_at*1000).toLocaleString())} (${ago<1?'just now':ago<60?ago+' min ago':Math.round(ago/60)+' h ago'}). These are the files from your last test clip.`:''}</p>
+    <p><b>What happens:</b> ${esc(S.install_what||'Your install step runs.')}</p>
+    <p class="msg err" style="margin:8px 0 0"><b>Careful:</b> a voice with the same name there is replaced, and Piper may restart, so voices can pause for a moment. This cannot be undone from here.</p>`;
+  const dlg=$('#installDlg');$('#installErr').textContent='';
+  $('#installCancel').onclick=()=>dlg.close();
+  $('#installOk').onclick=async()=>{$('#installOk').disabled=true;$('#installOk').textContent='Installing…';
+    try{const r=await api('/api/install',{method:'POST',body:JSON.stringify({voice:v.name})});dlg.close();say('exp',r.message||'Installed.','ok')}
+    catch(e){$('#installErr').textContent=e.message}$('#installOk').disabled=false;$('#installOk').textContent='Yes, install it'};
+  dlg.showModal();$('#installCancel').focus();           // Cancel is the default, so a stray Enter or click cannot install anything
 }
 function openRename(v){
   const dlg=$('#renameDlg'),inp=$('#renameIn');$('#renameErr').textContent='';inp.value=v.name;
@@ -312,7 +332,7 @@ function render(){
     <div class="row" style="margin-top:8px">${ADV?'<label>Version <select id="which"><option value="best">Best sounding (recommended)</option><option value="accurate">Most accurate</option><option value="latest">Latest</option></select></label>':''}
     <button id="expBtn" ${(!t.checkpoints||S.busy)?'disabled':''}>Make test clip</button>
     ${jobRun&&v.job.kind==='export'?'<button class="bad stopjob">Stop</button>':''}
-    ${S.install?`<button class="sec" id="instBtn" ${v.exported?'':'disabled'}>Install on my Piper…</button>`:''}</div>
+    </div>
     ${v.exported?`<div class="row" style="margin-top:10px"><a href="/download/${esc(v.name)}.onnx"><button class="sec">⬇ ${esc(v.name)}.onnx</button></a><a href="/download/${esc(v.name)}.onnx.json"><button class="sec">⬇ ${esc(v.name)}.onnx.json</button></a></div>
       <p class="hint">Put both files in your Piper voices folder. They must keep the same name.${S.install?'':' (Automatic install is off: set it up in config.toml if you want a button for it.)'}</p>`:''}
     ${v.exported?`<p><audio controls src="/out/${esc(v.name)}-test.wav?t=${Date.now()>>14}" style="width:100%"></audio></p>`:''}
@@ -352,7 +372,7 @@ function render(){
     ${wcards[stepNo]()}
     <div class="nav"><button class="sec" id="prevBtn" ${stepNo>0?'':'disabled'}>‹ Prev</button>
       <span class="hint nm" id="navMsg">${working[stepNo]?live(esc(working[stepNo])):esc(gate[stepNo])}</span>
-      <span class="row">${optional[stepNo]?`<button class="sec" id="skipBtn" ${(run('speakers')||run('match')||run('trim')||(stepNo===4&&v.edited))?'disabled':''}>Skip ›</button>`:''}${stepNo<names.length-1?`<button id="nextBtn" ${gate[stepNo]?'disabled':''}>Next ›</button>`:''}</span></div>
+      <span class="row">${optional[stepNo]?`<button class="sec" id="skipBtn" ${(run('speakers')||run('match')||run('trim')||(stepNo===4&&v.edited))?'disabled':''}>Skip ›</button>`:''}${stepNo<names.length-1?`<button id="nextBtn" ${gate[stepNo]?'disabled':''}>Next ›</button>`:(S.install?`<button id="instBtn" ${v.exported&&!S.busy?'':'disabled'} title="${v.exported?'Put this voice on your Piper (asks you to confirm first)':'Make a test clip first: that exports the voice files'}">Install on my Piper…</button>`:'')}</span></div>
     ${stepNo===5&&t.running?'<p class="hint" style="text-align:center;margin:10px 0 0">You can close this page and come back any time: training keeps going.<br>To stop training, press the red <b>Stop</b> button above.</p>':''}
     <div style="text-align:center;margin-top:16px"><button class="sec" id="resetBtn" ${S.busy?'disabled':''}>Start over</button></div>
     ${ADV?`<details ${vsOpen?'open':''} ontoggle="vsOpen=this.open" style="margin-top:14px"><summary>Voice settings</summary><p class="hint">Starting voice: ${v.base==='auto'||!v.base?`automatic${v.base_used?' (picked: '+esc(S.bases[v.base_used]||v.base_used)+')':' (chosen when training starts)'}`:esc(S.bases[v.base]||v.base)}</p>${t.checkpoints?`<p class="hint">Training checkpoints use ${t.disk_gb} GB (${t.checkpoints} files). <button class="sec" id="cleanBtn" ${S.busy?'disabled':''}>Free up space</button> keeps only the best and the latest.</p>`:''}
@@ -399,8 +419,7 @@ function wire(v){
   b('#trainBtn',()=>act('/api/train',{voice:v.name,epochs:+$('#ep').value},'train'));
   b('#stopBtn',()=>act('/api/train/stop',{voice:v.name},'train'));
   b('#expBtn',()=>act('/api/export',{voice:v.name,text:$('#txt').value,which:($('#which')||{}).value||'best'},'exp'));
-  b('#instBtn',async()=>{if(!confirm(`Install "${v.name}" using the install step from your config?`))return;
-    say('exp','Installing…');try{const r=await api('/api/install',{method:'POST',body:JSON.stringify({voice:v.name})});say('exp',r.message||'Installed.','ok')}catch(e){say('exp',e.message,'err')}});
+  b('#instBtn',()=>openInstall(v));
 }
 
 async function act(path,body,key){delete flash[key];try{await api(path,{method:'POST',body:JSON.stringify(body)});if(key==='prep'){rows=null}}catch(e){say(key,e.message,'err')}refresh(true)}

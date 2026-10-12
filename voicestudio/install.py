@@ -10,6 +10,16 @@ def configured():
     return CFG["install"]["mode"] in ("local", "ssh", "script")
 
 
+def describe():
+    """One plain sentence about what the Install button will do with the current settings (shown in the confirmation)."""
+    c = CFG["install"]; m = c["mode"]
+    post = " Then it runs: " + c["post_command"] + "." if c.get("post_command") else ""
+    if m == "local": return f"Copies the two voice files into the folder {c['local_dir']} on this computer." + post
+    if m == "ssh": return f"Copies the two voice files to {c['ssh_host']}:{c['remote_dir']}." + post
+    if m == "script": return f"Runs your install script ({shutil.os.path.basename(c['script'])}) with the voice name and the two files. The script decides where they go and whether Piper is restarted."
+    return ""
+
+
 def run(name):
     name = CFG.check_name(name)
     onnx, js = CFG.out / f"{name}.onnx", CFG.out / f"{name}.onnx.json"
