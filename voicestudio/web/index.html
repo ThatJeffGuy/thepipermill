@@ -313,8 +313,8 @@ function render(){
     <button id="expBtn" ${(!t.checkpoints||S.busy)?'disabled':''}>Make test clip</button>
     ${jobRun&&v.job.kind==='export'?'<button class="bad stopjob">Stop</button>':''}
     </div>
-    ${v.exported?`<div class="row" style="margin-top:10px"><a href="/download/${esc(v.name)}.onnx"><button class="sec">⬇ ${esc(v.name)}.onnx</button></a><a href="/download/${esc(v.name)}.onnx.json"><button class="sec">⬇ ${esc(v.name)}.onnx.json</button></a></div>
-      <p class="hint">Put both files in your Piper voices folder. They must keep the same name.</p>`:''}
+    ${v.exported?`${ADV?`<div class="row" style="margin-top:10px"><a href="/download/${esc(v.name)}.onnx"><button class="sec">⬇ ${esc(v.name)}.onnx</button></a><a href="/download/${esc(v.name)}.onnx.json"><button class="sec">⬇ ${esc(v.name)}.onnx.json</button></a></div>`:''}
+      <p class="hint">${ADV?'Put both files in your Piper voices folder. They must keep the same name. Or press <b>Download</b> below for both in one zip.':'Press <b>Download</b> below to get your voice as a zip. Unzip it and put both files in your Piper voices folder: they must keep the same name.'}</p>`:''}
     ${v.exported?`<p><audio controls src="/out/${esc(v.name)}-test.wav?t=${Date.now()>>14}" style="width:100%"></audio></p>`:''}
     ${v.job&&v.job.kind==='export'&&v.job.rc?`${logBox(v.job.log)}`:''}${jobNote(v,'export')}${f('exp')}
   </div>`];
