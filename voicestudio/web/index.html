@@ -52,6 +52,13 @@ footer.foot a{color:var(--acc);text-decoration:none}footer.foot a:hover{text-dec
 .gm{display:flex;align-items:center;gap:8px;min-width:190px;flex:1}.gm:last-child b{min-width:150px}.gm span{color:var(--mute);width:62px}.gm b{min-width:92px;text-align:right;font-variant-numeric:tabular-nums}
 .mbar{flex:1;height:8px;background:var(--acc2);border-radius:6px;overflow:hidden}.mbar i{display:block;height:100%;width:0;background:var(--acc);transition:width .5s}
 .gm.warn .mbar i{background:var(--warn)}.gm.hot .mbar i{background:var(--bad)}.gm.warn b{color:var(--warn)}.gm.hot b{color:var(--bad)}
+.vs{margin-top:14px;border:1px solid var(--line);border-radius:12px;background:var(--card);padding:0 16px}
+.vs summary{padding:12px 0;font-weight:600}
+.vsrow{display:flex;align-items:center;gap:16px;padding:12px 0;border-top:1px solid var(--line)}
+.vsrow .t{flex:1;min-width:0}.vsrow .t b{font-size:14px}.vsrow .hint{margin:2px 0 0}
+.vsrow button{flex:none;width:150px;height:42px;padding:0 12px;white-space:nowrap;border:1px solid transparent;box-sizing:border-box}
+button.dng{background:transparent;color:var(--bad)}.vsrow button.dng{border-color:var(--bad)}button.dng:hover:not(:disabled){background:color-mix(in srgb,var(--bad) 12%,transparent)}
+@media (max-width:520px){.vsrow{flex-wrap:wrap}.vsrow button{width:100%}}
 .mos{cursor:help;border-bottom:1px dotted var(--mute)}.mos b{color:var(--ink)}
 .advbtn.on{background:var(--acc);color:#fff}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
@@ -355,9 +362,12 @@ function render(){
       <span class="row">${optional[stepNo]?`<button class="sec" id="skipBtn" ${(run('speakers')||run('match')||run('trim')||(stepNo===4&&v.edited))?'disabled':''}>Skip ›</button>`:''}${stepNo<names.length-1?`<button id="nextBtn" ${gate[stepNo]?'disabled':''}>Next ›</button>`:`<button id="zipBtn" ${v.exported?'':'disabled'} title="${v.exported?'Download the voice as one zip: the .onnx and .onnx.json files':'Make a test clip first: that exports the voice files'}">Download</button>`}</span></div>
     ${stepNo===5&&t.running?'<p class="hint" style="text-align:center;margin:10px 0 0">You can close this page and come back any time: training keeps going.<br>To stop training, press the red <b>Stop</b> button above.</p>':''}
     <div style="text-align:center;margin-top:16px"><button class="sec" id="resetBtn" ${S.busy?'disabled':''}>Start over</button></div>
-    ${ADV?`<details ${vsOpen?'open':''} ontoggle="vsOpen=this.open" style="margin-top:14px"><summary>Voice settings</summary><p class="hint">Starting voice: ${v.base==='auto'||!v.base?`automatic${v.base_used?' (picked: '+esc(S.bases[v.base_used]||v.base_used)+')':' (chosen when training starts)'}`:esc(S.bases[v.base]||v.base)}</p>${t.checkpoints?`<p class="hint">Training checkpoints use ${t.disk_gb} GB (${t.checkpoints} files). <button class="sec" id="cleanBtn" ${S.busy?'disabled':''}>Free up space</button> keeps only the best and the latest.</p>`:''}
-      <p style="margin:8px 0"><button class="sec" id="renameBtn" ${S.busy?'disabled':''}>Rename this voice…</button> <span class="hint" style="margin:0">Capital letters count: Joe and joe are different names.</span></p>
-      <button class="sec bad" id="delBtn" style="color:#fff">Delete this voice…</button></details>`:''}`;
+    ${ADV?`<details class="vs" ${vsOpen?'open':''} ontoggle="vsOpen=this.open"><summary>Voice settings</summary>
+      <div class="vsrow"><div class="t"><b>Starting voice</b><div class="hint">${v.base==='auto'||!v.base?`Automatic${v.base_used?' (picked: '+esc(S.bases[v.base_used]||v.base_used)+')':', chosen when training starts'}`:esc(S.bases[v.base]||v.base)}</div></div></div>
+      ${t.checkpoints?`<div class="vsrow"><div class="t"><b>Free up space</b><div class="hint">Training checkpoints use ${t.disk_gb} GB (${t.checkpoints} files). This keeps only the best and the latest.</div></div><button class="sec" id="cleanBtn" ${S.busy?'disabled':''}>Free up space</button></div>`:''}
+      <div class="vsrow"><div class="t"><b>Rename</b><div class="hint">Change this voice's name. Capital letters count: Joe and joe are different.</div></div><button class="sec" id="renameBtn" ${S.busy?'disabled':''}>Rename…</button></div>
+      <div class="vsrow"><div class="t"><b>Delete</b><div class="hint">Removes this voice and its working files. Your recordings are never touched.</div></div><button class="sec dng" id="delBtn">Delete…</button></div>
+    </details>`:''}`;
   if(keep.sp&&$('#spNum'))$('#spNum').value=keep.sp;if(keep.wh&&$('#which'))$('#which').value=keep.wh;if(keep.txt!=null&&$('#txt'))$('#txt').value=keep.txt;if(keep.ep!=null&&$('#ep'))$('#ep').value=keep.ep;
   wire(v);syncGpu(ADV&&stepNo===5);if(rows&&rowsFor===v.name&&$('#tbl'))drawRows();
   // opening the Words step shows your clips straight away (no need to press "Show my clips" after a refresh)
