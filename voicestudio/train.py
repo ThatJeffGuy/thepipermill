@@ -28,12 +28,32 @@ def _scored(name, key):
     return out
 
 
+def _epoch(p):
+    m = re.search(r"epoch=(\d+)", p.name); return int(m.group(1)) if m else None
+
+
+def base_epoch(name):
+    """The epoch the starting voice was already at (training counts on from there)."""
+    key = voices.read(name).get("base_used")
+    try: return int((base.info(key) or {}).get("epoch", 0)) if key else 0
+    except (TypeError, ValueError): return 0
+
+
 def pick(name, which="best"):
-    """(checkpoint, description). Piper keeps its best checkpoints by quality score (val_mos) and by accuracy (val_mel):
-    the best-sounding one is usually better than simply the latest."""
+    """(checkpoint, description). Piper keeps its best checkpoints by quality score (val_mos) and by accuracy (val_mel).
+    "Best sounding" ignores the first rounds of training: there the voice still sounds like the starting voice, which can score
+    well on naturalness without sounding like you. If the best scores all come from those first rounds (the score has only gone
+    down since), it falls back to the most accurate version."""
     mos, mel = _scored(name, "val_mos"), _scored(name, "val_mel")
+    eps = [e for e in (_epoch(p) for p in all_ckpts(name)) if e is not None]
+    done = (max(eps) - base_epoch(name)) if eps else 0
+    start = base_epoch(name) + max(20, int(0.1 * done))                    # skip at least the first 20 rounds (or 10%)
     if which == "best" and mos:
-        sc, p = max(mos); return p, f"best-sounding version (quality score {sc:.2f})"
+        late = [(sc, p) for sc, p in mos if (_epoch(p) or 0) >= start]
+        if late:
+            sc, p = max(late); return p, f"best-sounding version (quality score {sc:.2f}, after the first rounds)"
+        if mel:
+            sc, p = min(mel); return p, f"most accurate version (mel error {sc:.3f}); the quality score was highest right at the start, so it is not a useful guide here"
     if which in ("best", "accurate") and mel:
         sc, p = min(mel); return p, f"most accurate version (mel error {sc:.3f})"
     return newest_ckpt(name), "latest version"

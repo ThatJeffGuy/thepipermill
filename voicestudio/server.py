@@ -96,7 +96,7 @@ _MET = {}      # voice -> latest and first quality score, refreshed in the backg
 
 def metrics(n):
     """{"mos": latest quality score, "first": the score at the start}. Returns what is known now; a refresh runs in the background."""
-    m = _MET.setdefault(n, {"t": 0.0, "busy": False, "mos": None, "first": None, "files": {}})
+    m = _MET.setdefault(n, {"t": 0.0, "busy": False, "mos": None, "first": None, "rate": None, "files": {}})
     if not m["busy"] and time.time() - m["t"] > 20:
         m["busy"] = True; threading.Thread(target=_read_metrics, args=(n, m), daemon=True).start()
     return m
@@ -114,6 +114,9 @@ def _read_metrics(n, m):
             pts += m["files"][str(f)][1]
         pts.sort()
         m["mos"] = pts[-1][1] if pts else None; m["first"] = pts[0][1] if pts else None
+        last = max(m["files"], key=lambda k: m["files"][k][0][1], default=None)             # the newest event file = the current run
+        run_pts = sorted(m["files"][last][1]) if last else []
+        m["rate"] = ((len(run_pts) - 1) / ((run_pts[-1][0] - run_pts[0][0]) / 60)) if len(run_pts) >= 3 and run_pts[-1][0] > run_pts[0][0] else None   # rounds per minute
     except Exception: pass
     finally: m["t"] = time.time(); m["busy"] = False
 
@@ -207,7 +210,7 @@ def info(n):
         except OSError: pass
     j = JOBS.get(n); job = None
     if j: job = {"kind": j["kind"], "running": j["proc"].poll() is None, "rc": j["proc"].poll(), "log": tail(j["log"]), "progress": progress.read(n, j["kind"])}
-    met = metrics(n) if ck else {"mos": None, "first": None}
+    met = metrics(n) if ck else {"mos": None, "first": None, "rate": None}
     sp = speakers.load(n)
     if sp and any(("pitch" not in p) or ("sample_ranges" not in p and p.get("sample_times")) for p in sp["people"]):
         try: sp = speakers.person_pitches(n) or sp          # older scan: add pitch + clip ranges once (a couple of seconds, no GPU)
@@ -217,10 +220,11 @@ def info(n):
             "clean_voice": bool(m.get("clean_voice")), "words_seen": bool(m.get("words_seen")), "people_names": m.get("people_names") or {}, "voice_type": m.get("voice_type") or "", "ref_yes": m.get("ref_yes") or [], "ref_no": m.get("ref_no") or [], "strict": m.get("strict") or "normal", "use_match": bool(m.get("use_match")),
             "match": ({k: sp["match"].get(k) for k in ("minutes", "stretches", "strict", "samples", "settled", "history")} if sp and sp.get("match") else None), "people_stale": speakers.stale(n) if sp else False, "folder": str(src) if src else None, "folder_ok": bool(src and src.is_dir()),
             "files": [{"name": speakers.rel(n, p), "mb": round(p.stat().st_size / 1e6, 1)} for p in files],
-            "clips": clips, "prepared": md.exists(), "edited": len(trim.pending(n)),
+            "clips": clips, "clip_minutes": round(sum(_size(p) for p in (CFG.data / n / "wavs").glob("*.wav")) / (2 * 22050 * 60), 1), "prepared": md.exists(), "edited": len(trim.pending(n)),
             "train": {"running": bool(train_pid(n)), "total": total, "done": max(0, done) if done is not None else None,
-                      "mos": met["mos"] if met["mos"] is not None else (float(mos[-1]) if mos else None), "mos_first": met["first"], "checkpoints": len(ck), "disk_gb": round(sum(_size(p) for p in ck) / 2**30, 1), "log": tl.split("\n")[-3:] if tl else []},
-            "job": job, "exported": (CFG.out / f"{n}.onnx").exists(), "exported_at": (CFG.out / f"{n}.onnx").stat().st_mtime if (CFG.out / f"{n}.onnx").exists() else None}
+                      "mos": met["mos"] if met["mos"] is not None else (float(mos[-1]) if mos else None), "mos_first": met["first"], "eta": (round((total - done) / met["rate"] * 60) if (train_pid(n) and met["rate"] and total and done is not None and total > done) else None), "checkpoints": len(ck), "disk_gb": round(sum(_size(p) for p in ck) / 2**30, 1), "log": tl.split("\n")[-3:] if tl else []},
+            "job": job, "exported": (CFG.out / f"{n}.onnx").exists(), "exported_at": (CFG.out / f"{n}.onnx").stat().st_mtime if (CFG.out / f"{n}.onnx").exists() else None,
+            "export_what": ((CFG.out / f"{n}.version.txt").read_text() if (CFG.out / f"{n}.version.txt").exists() else None)}
 
 
 def browse(path):

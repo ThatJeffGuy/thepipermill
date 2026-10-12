@@ -151,6 +151,10 @@ function fmt(sec){if(sec==null)return'';if(sec<60)return Math.max(5,Math.round(s
 function pbar(j){if(!j||!j.running||!j.progress)return'';const p=j.progress,pct=p.frac!=null?Math.round(100*p.frac):p.total?Math.round(100*p.done/p.total):0;
   const what=p.frac!=null?`${pct}%`:`${p.done} of ${p.total}`;
   return `<div class="bar"><div style="width:${pct}%"></div></div><div class="hint">${esc(p.stage)}: ${what}${p.eta!=null?' · about '+fmt(p.eta)+' left':''}${p.note?' · '+esc(p.note):''}</div>`}
+// how much speech there is decides how well the voice can turn out
+const dataNote=v=>{const m=v.clip_minutes;if(!v.prepared||m==null)return'';
+  return m<10?`<div class="msg err">Only <b>${m} min</b> of speech. The voice will probably sound rough, and the quality score can drop while it trains. Aim for 30 to 60 minutes of clean speech.</div>`
+    :m<30?`<div class="msg" style="color:var(--warn)"><b>${m} min</b> of speech is on the low side. It will work, but 30 to 60 minutes sounds better.</div>`:''};
 const JOBNAME={speakers:'speaker identification',match:'matching your voice',prep:'preparing your recordings',trim:'reprocessing clips',export:'making the test clip',training:'training'};
 const jobName=k=>JOBNAME[k]||k;
 const logBox=t=>mode==='advanced'?`<pre>${esc(t)}</pre>`:'';          // the console is an Advanced extra
@@ -284,8 +288,8 @@ function render(){
     <div class="row" style="margin-bottom:10px"><label><input type="checkbox" id="cleanChk" ${v.clean_voice?'checked':''}> Remove music and background noise (keep only the voices)</label></div>
     <p class="hint" style="margin:-4px 0 10px">Recommended for films, videos or noisy recordings; not needed for a clean recording. It only cleans the parts being kept, so it adds little time. The first use downloads a small model (about 80 MB).</p>
     <div class="row"><button id="prepBtn" ${(!v.files.length||S.busy)?'disabled':''}>${prepDone?'Prepare again':'Prepare my recordings'}</button>
-    ${prepDone?`<span class="pill ok">${v.clips} clips ready</span>`:''}${jobRun&&v.job.kind==='prep'?'<button class="bad stopjob">Stop</button>':''}</div>
-    ${pbar(v.job&&v.job.kind==='prep'?v.job:null)}${jobNote(v,'prep',true)}${f('prep')}
+    ${prepDone?`<span class="pill ok">${v.clips} clips · ${v.clip_minutes} min</span>`:''}${jobRun&&v.job.kind==='prep'?'<button class="bad stopjob">Stop</button>':''}</div>
+    ${pbar(v.job&&v.job.kind==='prep'?v.job:null)}${jobNote(v,'prep',true)}${dataNote(v)}${f('prep')}
   </div>`,
 
   ()=>`<div class="card">${hd(4,wordsDone&&!dirty,'Check the words <span class="pill">optional</span>')}
@@ -302,12 +306,14 @@ function render(){
 
   ()=>`<div class="card">${hd(5,finished,'Train')}
     <p class="hint">Teaches the voice on your GPU. Takes from half an hour to a couple of hours. It keeps going if you close this page, and you can stop and resume any time.</p>
-    <div class="row"><label>Length <select id="ep"><option value="300">Quick (300)</option><option value="1000" selected>Normal (1000)</option><option value="2000">Long (2000)</option></select></label>
+    <div class="row"><label>Length <select id="ep"><option value="300" ${v.clip_minutes<10?'selected':''}>Quick (300)</option><option value="1000" ${v.clip_minutes<10?'':'selected'}>Normal (1000)</option><option value="2000">Long (2000)</option></select></label>
     ${t.running?'<button class="bad" id="stopBtn">Stop</button>':`<button id="trainBtn" ${(!prepDone||S.busy)?'disabled':''}>${t.checkpoints?'Resume training':'Start training'}</button>`}
     ${t.running?'':finished?'<span class="pill ok">finished</span>':''}</div>
     ${(t.running||t.done!=null)?`<div class="bar"><div style="width:${pct}%"></div></div>
-      <div class="hint">${t.done!=null?`${t.done} of ${t.total} rounds (${pct}%)`:'starting…'} ${t.mos!=null?` · ${mosTxt}`:''}</div>`:''}
+      <div class="hint">${t.done!=null?`${t.done} of ${t.total} rounds (${pct}%)${t.eta!=null?' · about '+fmt(t.eta)+' left':''}`:'starting…'} ${t.mos!=null?` · ${mosTxt}`:''}</div>`:''}
     ${ADV?`<div class="gpu" id="gpuBox"><div class="gm" id="gmU" title="How busy the graphics chip is right now"><span>GPU</span><div class="mbar"><i></i></div><b>–</b></div><div class="gm" id="gmM" title="Video memory in use, out of the card's total"><span>Memory</span><div class="mbar"><i></i></div><b>–</b></div><div class="gm" id="gmT" title="GPU temperature, fan speed and power draw. Under 70 °C is comfortable; above 83 °C the card slows itself down. A fan reading of 0 % is normal when the card is cool: the fans stop below about 50 to 60 °C and speed up on their own as it heats"><span>Temp</span><div class="mbar"><i></i></div><b>–</b></div></div>`:''}
+    ${t.mos!=null&&t.mos_first!=null&&t.mos<3&&t.mos<0.5*t.mos_first?`<div class="msg" style="color:var(--warn)">The quality score has fallen from <b>${t.mos_first.toFixed(2)}</b> to <b>${t.mos.toFixed(2)}</b>. With very little audio this can happen as the model fits your clips. It is reasonable to stop here and listen using the <b>Most accurate</b> or <b>Latest</b> version (turn on Advanced to choose).</div>`:''}
+    ${dataNote(v)}
     ${t.running?'<p class="hint" style="margin:8px 0 0"><b>Note:</b> the progress bar can take 10–20 minutes to update for the first time, and it only moves when training saves a new checkpoint. Please do not stop training until the bar has updated at least once.</p>':''}
     ${t.log.length?`${logBox(t.log.join('\n'))}`:''}${f('train')}
   </div>`,
@@ -316,12 +322,14 @@ function render(){
     <p class="hint">Make a test clip from the latest training and listen. When you like it, download the two voice files.</p>
     ${!t.checkpoints?'<p class="hint"><b>Not available yet.</b> Listening unlocks once training has saved its first checkpoint.</p>':''}
     <textarea id="txt" ${t.checkpoints?'':'disabled'}>Good evening. This is a test of my new voice, and I hope it sounds like me.</textarea>
-    <div class="row" style="margin-top:8px">${ADV?'<label>Version <select id="which"><option value="best">Best sounding (recommended)</option><option value="accurate">Most accurate</option><option value="latest">Latest</option></select></label>':''}
+    <div class="row" style="margin-top:8px">${ADV?'<label>Version <select id="which"><option value="best">Best sounding (recommended; skips the first rounds)</option><option value="accurate">Most accurate</option><option value="latest">Latest</option></select></label>':''}
     <button id="expBtn" ${(!t.checkpoints||S.busy)?'disabled':''}>Make test clip</button>
     ${jobRun&&v.job.kind==='export'?'<button class="bad stopjob">Stop</button>':''}
     </div>
     ${v.exported?`${ADV?`<div class="row" style="margin-top:10px"><a href="/download/${esc(v.name)}.onnx"><button class="sec">⬇ ${esc(v.name)}.onnx</button></a><a href="/download/${esc(v.name)}.onnx.json"><button class="sec">⬇ ${esc(v.name)}.onnx.json</button></a></div>`:''}
       <p class="hint">${ADV?'Put both files in your Piper voices folder. They must keep the same name. Or press <b>Download</b> below for both in one zip.':'Press <b>Download</b> below to get your voice as a zip. Unzip it and put both files in your Piper voices folder: they must keep the same name.'}</p>`:''}
+    ${v.exported&&v.export_what?`<p class="hint" style="margin:6px 0 0">This is the <b>${esc(v.export_what)}</b>.</p>`:''}
+    ${t.mos!=null&&t.mos<3?`<p class="hint" style="margin:6px 0 0;color:var(--warn)">The quality score is low (${t.mos.toFixed(2)} out of 5). If the clip does not sound like you, turn on <b>Advanced</b> and make another test clip with the <b>Latest</b> or <b>Most accurate</b> version.</p>`:''}
     ${v.exported?`<p><audio controls src="/out/${esc(v.name)}-test.wav?t=${Date.now()>>14}" style="width:100%"></audio></p>`:''}
     ${v.job&&v.job.kind==='export'&&v.job.rc?`${logBox(v.job.log)}`:''}${jobNote(v,'export')}${f('exp')}
   </div>`];
