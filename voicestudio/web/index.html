@@ -8,7 +8,7 @@
 <style>
 :root{--bg:#f6f7f9;--card:#fff;--ink:#1c2230;--mute:#6a7385;--line:#e3e6ec;--acc:#2f6fed;--acc2:#e8efff;--ok:#1f9d55;--warn:#c27c0e;--bad:#c93a3a}
 @media (prefers-color-scheme:dark){:root{--bg:#12151c;--card:#1b2029;--ink:#e8ecf4;--mute:#97a0b3;--line:#2a313f;--acc:#6b9bff;--acc2:#202c47;--ok:#4cc985;--warn:#e0a53c;--bad:#ef6b6b}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,Segoe UI,Roboto,sans-serif}
+*{box-sizing:border-box}[hidden]{display:none !important}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,Segoe UI,Roboto,sans-serif}
 .wrap{max-width:860px;margin:0 auto;padding:20px 16px 80px}
 header{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
 h1{font-size:22px;margin:0;flex:1}@media (max-width:520px){h1{font-size:19px}}
@@ -116,7 +116,7 @@ textarea.cell{width:100%;min-height:38px;resize:none;overflow:hidden;padding:8px
 </div>
 
 <dialog id="pickDlg">
-  <h2>Choose a folder</h2>
+  <h2 id="pickTitle">Choose a folder</h2>
   <div class="row" id="pickPlaces" style="margin-bottom:8px"></div>
   <div class="hint" id="pickPath" style="word-break:break-all;margin:0"></div>
   <div class="pickbox" id="pickList"></div>
@@ -141,13 +141,15 @@ textarea.cell{width:100%;min-height:38px;resize:none;overflow:hidden;padding:8px
 
 <dialog id="newDlg">
   <h2>New voice</h2>
-  <p class="hint">Use your own voice, or the voice of someone who has agreed to it. The new voice is always learned from your recordings. Training begins from a similar-sounding voice to save time; that is chosen for you automatically.</p>
+  <p class="hint" id="newIntro">Use your own voice, or the voice of someone who has agreed to it. The new voice is always learned from your recordings. Training begins from a similar-sounding voice to save time; that is chosen for you automatically.</p>
   <p><input type="text" id="newName" placeholder="a short name, e.g. my-voice or Joe" style="width:100%" autocomplete="off"></p>
   <p class="hint" style="margin-top:-6px">Letters, digits, - and _. Capital letters count: Joe and joe are different names.</p>
+  <p class="row"><label>Start from <select id="newSrc"><option value="recordings">my recordings</option><option value="dataset">a prepared dataset</option><option value="backup">a backup of a voice</option></select></label></p>
+  <p class="hint" id="newSrcHint" style="margin-top:-6px" hidden></p>
   <details id="advStart" style="margin-bottom:8px"><summary>Advanced: choose the starting voice myself</summary><p><select id="newBase" style="width:100%"></select></p></details>
   <p class="row"><input type="text" id="newFolder" placeholder="folder with your recordings (required)" style="flex:1;min-width:0" autocomplete="off"><button class="sec" type="button" id="newBrowse">Browse…</button></p>
-  <p class="row"><label>This voice is <select id="newType"><option value="">not specified</option><option value="male">male</option><option value="female">female</option></select></label><span class="hint" style="margin:0">helps find your voice and pick the starting voice</span></p>
-  <p class="hint">The starting voice has its own dataset licence (usually non-commercial). It is saved next to the file and shown after creation.</p>
+  <p class="row" id="newTypeRow"><label>This voice is <select id="newType"><option value="">not specified</option><option value="male">male</option><option value="female">female</option></select></label><span class="hint" style="margin:0">helps find your voice and pick the starting voice</span></p>
+  <p class="hint" id="newLicense">The starting voice has its own dataset licence (usually non-commercial). It is saved next to the file and shown after creation.</p>
   <div class="row" style="justify-content:flex-end"><button class="sec" id="newCancel">Cancel</button><button id="newOk">Create</button></div>
   <div class="msg err" id="newErr"></div>
 </dialog>
@@ -186,7 +188,7 @@ function watchJobs(n){
   if(notifyOn&&prevRun)Object.keys(run).forEach(k=>{const was=prevRun[k];if(was&&run[k]!==was){const v=n.voices.find(x=>x.name===k.split('|')[0]);if(!v)return;
     const j=v.job&&v.job.kind===was?v.job:null,how=j&&j.rc?(j.rc<0?'was stopped':'did not finish'):'finished';tell(`${v.name}: ${jobName(was)} ${how}`)}});
   prevRun=run}
-const JOBNAME={compare:'comparing versions',score:'checking your clips',speakers:'speaker identification',match:'matching your voice',prep:'preparing your recordings',trim:'reprocessing clips',export:'making the test clip',training:'training'};
+const JOBNAME={import:'importing the dataset',restore:'restoring the backup',compare:'comparing versions',score:'checking your clips',speakers:'speaker identification',match:'matching your voice',prep:'preparing your recordings',trim:'reprocessing clips',export:'making the test clip',training:'training'};
 const jobName=k=>JOBNAME[k]||k;
 const logBox=t=>mode==='advanced'?`<pre>${esc(t)}</pre>`:'';          // the console is an Advanced extra
 // Beginner mode has no console: a job that failed gets one plain line instead (a job you stopped says so)
@@ -234,7 +236,7 @@ function say(key,text,cls){flash[key]={text,cls};render()}
 function wizStep(v,c){
   if(wiz[v.name]==null){
     const k=v.job&&v.job.running?v.job.kind:'',tr=v.train;
-    wiz[v.name]=tr.running?5:k==='export'?6:k==='prep'?3:k==='match'?2:k==='speakers'?1:!v.files.length?0:!c.prepDone?(!v.people?1:v.match?3:2):!(c.finished||tr.checkpoints)?5:6;
+    wiz[v.name]=v.imported&&c.prepDone&&!(v.job&&v.job.running)?(c.finished||tr.checkpoints?5:4):tr.running?5:k==='export'?6:k==='import'||k==='restore'?0:k==='prep'?3:k==='match'?2:k==='speakers'?1:!v.files.length?0:!c.prepDone?(!v.people?1:v.match?3:2):!(c.finished||tr.checkpoints)?5:6;
   }
   return wiz[v.name];
 }
@@ -260,7 +262,9 @@ function openReset(v){
   $('#resetKeep').onclick=()=>go(false);$('#resetAll').onclick=()=>go(true);$('#resetCancel').onclick=()=>$('#resetDlg').close();
   $('#resetDlg').showModal();
 }
-function go(name,i){stopPlayer(true);const gv=S.voices.find(x=>x.name===name);if(i>=6&&gv&&!gv.train.checkpoints)i=5;   // Listen stays locked until training has saved a checkpoint
+function go(name,i){stopPlayer(true);
+  const gv0=S.voices.find(x=>x.name===name),at=wiz[name];
+  if(gv0&&gv0.imported&&at!=null&&Math.abs(i-at)===1){if(at===0&&i===1)i=4;else if(at===4&&i===3)i=0}      // an imported voice has no speakers/refine/prepare steps: Next and Prev skip over themconst gv=S.voices.find(x=>x.name===name);if(i>=6&&gv&&!gv.train.checkpoints)i=5;   // Listen stays locked until training has saved a checkpoint
   wiz[name]=Math.max(0,Math.min(6,i));render();window.scrollTo(0,0)}
 function setMode(m){mode=m;try{localStorage.setItem('mode',m)}catch(e){}render()}
 
@@ -295,15 +299,20 @@ function render(){
   const hd=(n,done,title)=>`<h2><span class="step ${done?'done':''}">${n>=3?n+1:n}</span>${title}</h2>`;
   const rowsLoaded=!!(rows&&rowsFor===v.name), wordsDone=rowsLoaded||!!v.words_seen;      // seen this session, or at any time before (remembered by the server)
   const cards=[
-  ()=>`<div class="card">${hd(1,v.files.length,'Your recordings folder')}
+  ()=>`<div class="card">${hd(1,v.files.length||v.imported,'Your recordings folder')}
+    ${v.imported||v.restoring?`<p class="hint">${v.restoring?'This voice is being restored from a backup.':'This voice was started from a prepared dataset, so there are no recordings to choose: its clips are the dataset you imported.'}${v.imported&&v.prepared?` It has <b>${v.clips}</b> clips (${v.clip_minutes} min).`:''}</p>
+      ${pbar(v.job&&(v.job.kind==='import'||v.job.kind==='restore')?v.job:null)}${jobNote(v,'import',true)}${jobNote(v,'restore',true)}`:`
     <p class="hint">Choose the folder on this computer that holds your recordings (wav, mp3, m4a, flac…). Subfolders are included. About 30–60 minutes of clear, natural speech in a quiet room works best.</p>
     <div class="row"><input type="text" id="srcIn" value="${esc(v.folder||'')}" placeholder="/path/to/your/recordings" style="flex:1;min-width:200px"><button class="sec" id="browseSrc">Browse…</button></div>
     ${!v.folder?'<div class="msg err">No folder chosen yet.</div>':!v.folder_ok?'<div class="msg err">That folder is not there any more.</div>':''}${f('up')}
     ${v.files.length?`<div class="hint" style="margin-top:10px">${v.files.length} audio file${v.files.length>1?'s':''}, ${totalMB.toFixed(0)} MB</div>
       <details ${filesOpen?'open':''} ontoggle="filesOpen=this.open"><summary>Show the files</summary><ul class="files">${v.files.slice(0,300).map(x=>`<li><span>${esc(x.name)}</span><span>${x.mb} MB</span></li>`).join('')}</ul>${v.files.length>300?`<div class="hint">…and ${v.files.length-300} more</div>`:''}</details>`:(v.folder_ok?'<div class="hint" style="margin-top:10px">No audio files found in that folder yet.</div>':'')}
+
+    `}
   </div>`,
 
   ()=>`<div class="card">${hd(2,v.people,'Who is speaking? <span class="pill">optional</span>')}
+    ${v.imported?'<div class="msg">This voice was started from a prepared dataset, so it has no recordings to scan. Press <b>Skip</b>.</div>':''}
     <p class="hint">Only needed if your recordings have more than one person talking (a conversation, a call…). It finds each voice so you can listen and tick whose voice to train on. Everyone else is left out. Skip this if it is just you.</p>
     <p class="hint">Press ✎ next to a person to give them a name if you like (optional; leave it as "Person N" if you prefer). The ▶ samples are spread through the recording (the number is the time each one comes from), so you hear typical clips, not only the clearest. Voices can still be mixed up now and then: listen to a few in Check the words and remove the wrong ones.</p>
     <div class="row">${ADV?'<label>How many people talk? <input type="number" id="spNum" min="1" max="20" placeholder="auto" style="width:90px"></label>':''}
@@ -319,7 +328,8 @@ function render(){
 
   ()=>`<div class="card">${hd(3,prepDone,'Prepare')}
     <p class="hint">Cuts the recordings into short clips and writes down what you said (using the GPU). A few minutes.${v.use_match&&v.match?' Only the parts that sound like your ticked clips will be used.':(v.keep||[]).length?` Only the parts where ${v.keep.map(i=>esc(pn(v,i))).join(', ')} speak will be used.`:''}</p>
-    <div class="row" style="margin-bottom:10px"><label><input type="checkbox" id="cleanChk" ${v.clean_voice?'checked':''}> Remove music and background noise (keep only the voices)</label></div>
+    ${v.imported?'<div class="msg">This voice was started from a prepared dataset, so there is nothing to prepare.</div>':''}
+    <div class="row" style="margin-bottom:10px" ${v.imported?'hidden':''}><label><input type="checkbox" id="cleanChk" ${v.clean_voice?'checked':''}> Remove music and background noise (keep only the voices)</label></div>
     <p class="hint" style="margin:-4px 0 10px">Recommended for films, videos or noisy recordings; not needed for a clean recording. It only cleans the parts being kept, so it adds little time. The first use downloads a small model (about 80 MB).</p>
     <div class="row"><button id="prepBtn" ${(!v.files.length||S.busy)?'disabled':''}>${prepDone?'Prepare again':'Prepare my recordings'}</button>
     ${prepDone?`<span class="pill ok">${v.clips} clips · ${v.clip_minutes} min</span>`:''}${jobRun&&v.job.kind==='prep'?'<button class="bad stopjob">Stop</button>':''}</div>
@@ -379,27 +389,27 @@ function render(){
     // wizard: one step at a time, Prev / Next, and Skip on the optional steps
     const refineCard=()=>`<div class="card"><h2><span class="step ${v.match?'done':''}">3</span>Refine your voice <span class="pill">optional</span></h2>
       <p class="hint">Hear your speaker in some clips but not others? This looks through the whole recording for more speech that sounds like the clips you ticked ✓ on the last page. Skip it if you already picked the right person.</p>
-      ${matchHtml(v,jobRun,true)}</div>`;
+      ${v.imported?'<div class="msg">This voice has no recordings to search. Press <b>Skip</b>.</div>':matchHtml(v,jobRun,true)}</div>`;
     const wcards=[cards[0],cards[1],refineCard,cards[2],cards[3],cards[4],cards[5]];
     const names=['Recordings','Speakers','Refine','Prepare','Words','Train','Listen'];
-    const isDone=[v.files.length>0,!!v.people,!!v.match,prepDone,wordsDone&&!dirty,finished||t.checkpoints>0,v.exported];   // what lets you press Next
-    const shownDone=[v.files.length>0,!!v.people,!!v.match,prepDone,wordsDone&&!dirty&&!v.edited,!!finished,v.exported];     // what the strip shows as finished (training: only when all rounds are done)
+    const isDone=[v.files.length>0||v.imported,!!v.people,!!v.match,prepDone,wordsDone&&!dirty,finished||t.checkpoints>0,v.exported];   // what lets you press Next
+    const shownDone=[v.files.length>0||v.imported,!!v.people,!!v.match,prepDone,wordsDone&&!dirty&&!v.edited,!!finished,v.exported];     // what the strip shows as finished (training: only when all rounds are done)
     const optional=[false,true,true,false,true,false,false];
     const run=k=>jobRun&&v.job.kind===k;
     const gate=[
-      !(v.files.length&&v.folder_ok)?'Choose a folder that has audio files to continue.':'',
-      run('speakers')?'Finding the speakers… please wait.':!v.people?'Find the speakers, or press Skip if it is just you.':'',
+      run('import')||run('restore')?'Working on it… please wait.':(v.restoring&&!v.imported)?'Restoring the backup… please wait.':!(v.imported||(v.files.length&&v.folder_ok))?'Choose a folder that has audio files to continue.':'',
+      run('speakers')?'Finding the speakers… please wait.':v.imported?'This voice has no recordings to scan: press Skip.':!v.people?'Find the speakers, or press Skip if it is just you.':'',
       run('match')?'Matching your voice… please wait.':'',
       run('prep')?'Preparing… please wait.':!prepDone?'Prepare your recordings to continue.':'',
       dirty?'Save your changes first, or press Skip.':run('score')?'Checking your clips… please wait.':run('trim')?'Reprocessing… please wait.':v.edited?'Press Reprocess so the audio matches your edited words.':!wordsDone?'Open your clips to check them, or press Skip.':'',
       t.running?`${v.name} is training on the GPU…`:!t.checkpoints?'Start training to continue.':'',
       ''];
-    const working=[null,run('speakers')?'Finding the speakers… please wait.':null,run('match')?'Finding more like your ticked clips… please wait.':null,run('prep')?'Preparing… please wait.':null,run('trim')?'Reprocessing… please wait.':run('score')?'Checking your clips… please wait.':null,
+    const working=[run('import')?'Importing the dataset… please wait.':run('restore')?'Restoring the backup… please wait.':null,run('speakers')?'Finding the speakers… please wait.':null,run('match')?'Finding more like your ticked clips… please wait.':null,run('prep')?'Preparing… please wait.':null,run('trim')?'Reprocessing… please wait.':run('score')?'Checking your clips… please wait.':null,
       t.running?`${v.name} is training on the GPU…`:null,run('export')?'Making the test clip… please wait.':run('compare')?'Making a sample of each version… please wait.':null];
     const stepNo=wizStep(v,{prepDone,finished});
     $('#main').innerHTML=`
     <div class="strip">${names.map((n,i)=>{
-      const busyNow=[false,run('speakers'),run('match'),run('prep'),run('trim')||run('score'),!!t.running,run('export')||run('compare')][i];
+      const busyNow=[run('import')||run('restore'),run('speakers'),run('match'),run('prep'),run('trim')||run('score'),!!t.running,run('export')||run('compare')][i];
       const st=busyNow?(i===stepNo?'cur run':'run'):i===stepNo?(shownDone[i]?'cur ok':'cur'):shownDone[i]?'ok':i<stepNo?(optional[i]?'skip':'warn'):(i===5&&t.checkpoints>0&&!t.running)?'part':'todo';
       const mark=busyNow?'':st.includes('ok')?'✓':st==='skip'?'–':st==='warn'?'!':st==='part'?'…':i+1;
       const locked=i===6&&!t.checkpoints;
@@ -411,10 +421,11 @@ function render(){
       <span class="hint nm" id="navMsg">${working[stepNo]?live(esc(working[stepNo])):esc(gate[stepNo])}</span>
       <span class="row">${optional[stepNo]?`<button class="sec" id="skipBtn" ${(run('speakers')||run('match')||run('trim')||run('score')||(stepNo===4&&v.edited))?'disabled':''}>Skip ›</button>`:''}${stepNo<names.length-1?`<button id="nextBtn" ${gate[stepNo]?'disabled':''}>Next ›</button>`:`<button id="zipBtn" ${v.exported?'':'disabled'} title="${v.exported?'Download the voice as one zip: the .onnx and .onnx.json files':'Make a test clip first: that exports the voice files'}">Download</button>`}</span></div>
     ${stepNo===5&&t.running?'<p class="hint" style="text-align:center;margin:10px 0 0">You can close this page and come back any time: training keeps going.<br>To stop training, press the red <b>Stop</b> button above.</p>':''}
-    <div style="text-align:center;margin-top:16px"><button class="sec" id="resetBtn" ${S.busy?'disabled':''}>Start over</button></div>
+    ${v.imported?'':`<div style="text-align:center;margin-top:16px"><button class="sec" id="resetBtn" ${S.busy?'disabled':''}>Start over</button></div>`}
     ${ADV?`<details class="vs" ${vsOpen?'open':''} ontoggle="vsOpen=this.open"><summary>Voice settings</summary>
       <div class="vsrow"><div class="t"><b>Starting voice</b><div class="hint">${v.base==='auto'||!v.base?`Automatic${v.base_used?' (picked: '+esc(S.bases[v.base_used]||v.base_used)+')':', chosen when training starts'}`:esc(S.bases[v.base]||v.base)}</div></div></div>
       ${t.checkpoints?`<div class="vsrow"><div class="t"><b>Free up space</b><div class="hint">Training checkpoints use ${t.disk_gb} GB (${t.checkpoints} files). This keeps only the best and the latest.</div></div><button class="sec" id="cleanBtn" ${S.busy?'disabled':''}>Free up space</button></div>`:''}
+      <div class="vsrow"><div class="t"><b>Back up</b><div class="hint">Saves this voice (its clips, settings and exported files) to one zip. Training checkpoints make it much bigger${t.checkpoints?` (${t.disk_gb} GB)`:''}.</div><label class="hint" style="margin:6px 0 0"><input type="checkbox" id="bkCk" ${t.checkpoints?'':'disabled'}> include the training checkpoints</label></div><button class="sec" id="bkBtn" ${S.busy?'disabled':''}>Download backup</button></div>
       <div class="vsrow"><div class="t"><b>Rename</b><div class="hint">Change this voice's name. Capital letters count: Joe and joe are different.</div></div><button class="sec" id="renameBtn" ${S.busy?'disabled':''}>Rename…</button></div>
       <div class="vsrow"><div class="t"><b>Delete</b><div class="hint">Removes this voice and its working files. Your recordings are never touched.</div></div><button class="sec dng" id="delBtn">Delete…</button></div>
     </details>`:''}`;
@@ -435,7 +446,7 @@ function wire(v){
     label.replaceWith(inp);el.remove();inp.focus();inp.select()});
   const ss=$('#spSort');if(ss)ss.onchange=()=>{spSort=ss.value;try{localStorage.setItem('spSort',spSort)}catch(e){}spTicks=[...document.querySelectorAll('.pk:checked')].map(x=>+x.value);render()};   // keep ticks you have not saved yet
   if(spTicks){document.querySelectorAll('.pk').forEach(c=>c.checked=spTicks.includes(+c.value));spTicks=null}
-  b('#resetBtn',()=>openReset(v));b('#renameBtn',()=>openRename(v));
+  b('#resetBtn',()=>openReset(v));b('#bkBtn',()=>{location.href=`/backup/${encodeURIComponent(v.name)}.zip?ckpt=${$('#bkCk')&&$('#bkCk').checked?1:0}`});b('#renameBtn',()=>openRename(v));
   b('#prevBtn',()=>go(v.name,wiz[v.name]-1));b('#nextBtn',()=>go(v.name,wiz[v.name]+1));b('#skipBtn',()=>go(v.name,wiz[v.name]+1));
   document.querySelectorAll('.sp[data-go]').forEach(el=>el.onclick=()=>go(v.name,+el.dataset.go));
   const saveSrc=async()=>{const val=$('#srcIn').value.trim();if(!val||val===(v.folder||''))return;delete flash.up;try{await api('/api/source',{method:'POST',body:JSON.stringify({voice:v.name,path:val})});refresh(true)}catch(e){say('up',e.message,'err')}};
@@ -573,27 +584,35 @@ async function saveRows(name){try{const j=await api('/api/transcript',{method:'P
 $('#notifyBtn').onclick=()=>setNotify(!notifyOn);paintNotify();
 $('#advBtn').onclick=()=>setMode(mode==='advanced'?'beginner':'advanced');
 $('#voiceSel').onchange=e=>{cur=e.target.value;localStorage.setItem('voice',cur);rows=null;dirty=false;flash={};render()};
-$('#newBtn').onclick=()=>{$('#advStart').hidden=mode!=='advanced';$('#newErr').textContent='';$('#newBase').innerHTML='<option value="auto">Automatic: matched to my recordings (recommended)</option>'+Object.entries(S.bases).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');$('#newDlg').showModal()};
+const SRCINFO={recordings:{ph:'folder with your recordings (required)',hint:'',pick:'folder'},
+  dataset:{ph:'folder or .zip with metadata.csv and the clips (required)',hint:'Use clips you have already cleaned: a folder or .zip holding a metadata.csv (lines like clip.wav|what is said) and the audio clips next to it, usually in a wavs folder. The speaker and prepare steps are skipped.',pick:'folderzip'},
+  backup:{ph:'a backup .zip file (required)',hint:'Restores a voice from a backup made with Advanced > Voice settings > Back up: its clips, settings and, if they were included, its training, under the name you chose.',pick:'zip'}};
+function updateNewDlg(){const m=$('#newSrc').value,i=SRCINFO[m];$('#newFolder').placeholder=i.ph;$('#newSrcHint').hidden=!i.hint;$('#newSrcHint').textContent=i.hint;
+  $('#newIntro').hidden=m==='backup';$('#newTypeRow').hidden=m==='backup';$('#newLicense').hidden=m==='backup';$('#advStart').hidden=m==='backup'||mode!=='advanced'}
+$('#newSrc').onchange=()=>{$('#newFolder').value='';updateNewDlg()};
+$('#newBtn').onclick=()=>{$('#newSrc').value='recordings';updateNewDlg();$('#advStart').hidden=mode!=='advanced';$('#newErr').textContent='';$('#newBase').innerHTML='<option value="auto">Automatic: matched to my recordings (recommended)</option>'+Object.entries(S.bases).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');$('#newDlg').showModal()};
 $('#newCancel').onclick=()=>$('#newDlg').close();
-$('#newBrowse').onclick=()=>pickFolder($('#newFolder').value,p=>{$('#newFolder').value=p});
+$('#newBrowse').onclick=()=>pickFolder($('#newFolder').value,p=>{$('#newFolder').value=p},SRCINFO[$('#newSrc').value].pick);
 
 // folder chooser (the page cannot open the system dialog and learn the real path, so it lists folders itself)
-let pickCb=null,pickCur='';
+let pickCb=null,pickCur='',pickMode='folder';
 async function pickLoad(p){
-  const j=await api('/api/browse?path='+encodeURIComponent(p||''));pickCur=j.path;
+  const j=await api('/api/browse?path='+encodeURIComponent(p||'')+(pickMode!=='folder'?'&zips=1':''));pickCur=j.path;
   $('#pickPath').textContent=j.path;
   const name=x=>x.split('/').filter(Boolean).pop()||'/';
   $('#pickPlaces').innerHTML=j.places.map(x=>`<button class="sec" data-p="${esc(x)}">${esc(x===j.places[0]?'Home':name(x))}</button>`).join('');
   const base=j.path.replace(/\/$/,'');
-  $('#pickList').innerHTML=(j.parent?`<div data-p="${esc(j.parent)}">⬆ Up one level</div>`:'')+(j.dirs.map(d=>`<div data-p="${esc(base+'/'+d)}">📁 ${esc(d)}</div>`).join('')||'<div style="cursor:default;color:var(--mute)">No folders in here</div>');
-  $('#pickInfo').textContent=j.audio?`${j.audio} audio file${j.audio>1?'s':''} in this folder`:'No audio files directly in this folder';
+  $('#pickList').innerHTML=(j.parent?`<div data-p="${esc(j.parent)}">⬆ Up one level</div>`:'')+(j.zips||[]).map(z=>`<div data-zip="${esc(base+'/'+z)}">📦 ${esc(z)}</div>`).join('')+(j.dirs.map(d=>`<div data-p="${esc(base+'/'+d)}">📁 ${esc(d)}</div>`).join('')||'<div style="cursor:default;color:var(--mute)">No folders in here</div>');
+  $('#pickInfo').textContent=pickMode==='zip'?`Click a .zip file to choose it${(j.zips||[]).length?'':' (none in this folder)'}`:j.audio?`${j.audio} audio file${j.audio>1?'s':''} in this folder`:pickMode==='folderzip'?'Choose this folder, or click a .zip file':'No audio files directly in this folder';
+  $('#pickOk').hidden=pickMode==='zip';
+  document.querySelectorAll('#pickDlg [data-zip]').forEach(el=>el.onclick=()=>{$('#pickDlg').close();if(pickCb)pickCb(el.dataset.zip)});
   document.querySelectorAll('#pickDlg [data-p]').forEach(el=>el.onclick=()=>pickLoad(el.dataset.p).catch(e=>{$('#pickInfo').textContent=e.message}));
 }
-function pickFolder(start,cb){pickCb=cb;$('#pickDlg').showModal();pickLoad(start).catch(()=>pickLoad('').catch(e=>{$('#pickInfo').textContent=e.message}))}
+function pickFolder(start,cb,kind){pickMode=kind||'folder';pickCb=cb;$('#pickDlg').showModal();pickLoad(start).catch(()=>pickLoad('').catch(e=>{$('#pickInfo').textContent=e.message}))}
 $('#pickOk').onclick=()=>{$('#pickDlg').close();if(pickCb)pickCb(pickCur)};
 $('#pickCancel').onclick=()=>$('#pickDlg').close();
-$('#newOk').onclick=async()=>{const b=$('#newOk');b.disabled=true;b.textContent='Creating… (first time downloads the starting voice)';
-  try{const r=await api('/api/voices',{method:'POST',body:JSON.stringify({name:$('#newName').value.trim(),base:$('#newBase').value,folder:$('#newFolder').value.trim(),voice_type:$('#newType').value})});cur=$('#newName').value.trim();localStorage.setItem('voice',cur);$('#newDlg').close();$('#newName').value='';$('#newFolder').value='';$('#newType').value='';if(r.license)alert('Licence of the starting voice (its original dataset):\n\n'+r.license.slice(0,600))}
+$('#newOk').onclick=async()=>{const b=$('#newOk');b.disabled=true;b.textContent=$('#newSrc').value==='backup'?'Starting the restore…':'Creating… (first time downloads the starting voice)';
+  try{const r=await api('/api/voices',{method:'POST',body:JSON.stringify({name:$('#newName').value.trim(),base:$('#newBase').value,source:$('#newSrc').value,folder:$('#newFolder').value.trim(),path:$('#newFolder').value.trim(),voice_type:$('#newType').value})});cur=$('#newName').value.trim();localStorage.setItem('voice',cur);$('#newDlg').close();$('#newName').value='';$('#newFolder').value='';$('#newType').value='';if(r.license)alert('Licence of the starting voice (its original dataset):\n\n'+r.license.slice(0,600))}
   catch(e){$('#newErr').textContent=e.message}b.disabled=false;b.textContent='Create';refresh(true)};
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});
 refresh(true);setInterval(()=>refresh(),4000);

@@ -7,7 +7,7 @@ import json, os, re, shutil, signal, subprocess, sys, tempfile, threading, time,
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote
-from . import base, compare, progress, speakers, train as train_mod, trim, voices
+from . import backup, base, compare, importer, progress, speakers, train as train_mod, trim, voices
 from .config import CFG
 
 WEB = Path(__file__).parent / "web"
@@ -31,7 +31,7 @@ def train_pid(n):
         return None
 
 
-JOB_KINDS = ("speakers", "match", "score", "prep", "trim", "export", "compare")
+JOB_KINDS = ("speakers", "match", "score", "prep", "trim", "export", "compare", "import", "restore")
 
 
 def job_pids(n):
@@ -140,7 +140,7 @@ def gpu_stats():
 
 
 _NOTE = {}      # (voice, job) -> was it running when we last looked
-JOBWORDS = {"compare": "comparing versions", "speakers": "speaker identification", "match": "matching your voice", "score": "checking your clips", "prep": "preparing your recordings",
+JOBWORDS = {"import": "importing the dataset", "restore": "restoring the backup", "compare": "comparing versions", "speakers": "speaker identification", "match": "matching your voice", "score": "checking your clips", "prep": "preparing your recordings",
             "trim": "reprocessing clips", "export": "making the test clip", "training": "training"}
 
 
@@ -282,7 +282,7 @@ def info(n):
         except Exception: pass
     return {"name": n, "base": m.get("base"), "base_used": m.get("base_used"),
             "people": sp["people"] if sp else None, "keep": m.get("keep_people") or [], 
-            "clean_voice": bool(m.get("clean_voice")), "scored": speakers.score_path(n).exists(), "words_seen": bool(m.get("words_seen")), "people_names": m.get("people_names") or {}, "voice_type": m.get("voice_type") or "", "ref_yes": m.get("ref_yes") or [], "ref_no": m.get("ref_no") or [], "strict": m.get("strict") or "normal", "use_match": bool(m.get("use_match")),
+            "clean_voice": bool(m.get("clean_voice")), "scored": speakers.score_path(n).exists(), "imported": bool(m.get("imported")), "restoring": bool(m.get("restoring")), "words_seen": bool(m.get("words_seen")), "people_names": m.get("people_names") or {}, "voice_type": m.get("voice_type") or "", "ref_yes": m.get("ref_yes") or [], "ref_no": m.get("ref_no") or [], "strict": m.get("strict") or "normal", "use_match": bool(m.get("use_match")),
             "match": ({k: sp["match"].get(k) for k in ("minutes", "stretches", "strict", "samples", "settled", "history")} if sp and sp.get("match") else None), "people_stale": speakers.stale(n) if sp else False, "folder": str(src) if src else None, "folder_ok": bool(src and src.is_dir()),
             "files": [{"name": speakers.rel(n, p), "mb": round(p.stat().st_size / 1e6, 1)} for p in files],
             "clips": clips, "clip_minutes": round(sum(_size(p) for p in (CFG.data / n / "wavs").glob("*.wav")) / (2 * 22050 * 60), 1), "prepared": md.exists(), "edited": len(trim.pending(n)),
@@ -293,8 +293,8 @@ def info(n):
             "compare": _compare_info(n)}
 
 
-def browse(path):
-    """List the sub-folders of a folder for the page's folder chooser (folders only, never file contents)."""
+def browse(path, zips=False):
+    """List the sub-folders of a folder for the page's folder chooser (folders, and .zip files when asked: never any other file contents)."""
     home = Path.home()
     p = Path(path).expanduser() if path else home
     try:
@@ -303,13 +303,14 @@ def browse(path):
         entries = sorted(p.iterdir(), key=lambda c: c.name.lower())
         dirs = [c.name for c in entries if not c.name.startswith(".") and c.is_dir()]
         audio = sum(1 for c in entries if c.is_file() and c.suffix.lower() in AUDIO_EXT)
+        zlist = [c.name for c in entries if zips and not c.name.startswith(".") and c.is_file() and c.suffix.lower() == ".zip"]
     except PermissionError:
         raise ValueError("You do not have permission to open that folder.")
     except OSError as e:
         raise ValueError(str(e))
     places = [str(x) for x in (home, home / "Music", home / "Downloads", home / "Documents", home / "Desktop", Path("/media"), Path("/mnt"),
                                Path("/run/media") / home.name) if x.is_dir()]
-    return {"path": str(p), "parent": str(p.parent) if p != p.parent else None, "dirs": dirs[:1500], "audio": audio, "places": places}
+    return {"path": str(p), "parent": str(p.parent) if p != p.parent else None, "dirs": dirs[:1500], "zips": zlist[:1500], "audio": audio, "places": places}
 
 
 class H(BaseHTTPRequestHandler):
@@ -390,12 +391,21 @@ class H(BaseHTTPRequestHandler):
         u = urlparse(self.path); q = parse_qs(u.query)
         try:
             if u.path == "/": return self._file(WEB / "index.html", "text/html; charset=utf-8")
-            if u.path == "/api/browse": return self._json(browse(q.get("path", [""])[0]))
+            if u.path == "/api/browse": return self._json(browse(q.get("path", [""])[0], q.get("zips", [""])[0] == "1"))
+            if u.path.startswith("/backup/") and u.path.endswith(".zip"):
+                n = CFG.check_name(os.path.basename(unquote(u.path))[:-4])
+                if not voices.exists(n): return self._err("no such voice", 404)
+                if train_pid(n) or job_pids(n): return self._err("A job is running for this voice. Back it up when it has finished.", 409)
+                self.send_response(200); self.send_header("Content-Type", "application/zip"); self.send_header("Content-Disposition", f'attachment; filename="{n}-backup.zip"')
+                self.send_header("Cache-Control", "no-store"); self.end_headers()
+                try: backup.write_zip(n, q.get("ckpt", ["0"])[0] == "1", self.wfile)
+                except (BrokenPipeError, ConnectionResetError): pass
+                return
             if u.path == "/api/gpu": return self._json(gpu_stats() or {"error": "no GPU information available"})
             if u.path == "/api/voices":
                 b = busy()
                 return self._json({"voices": [info(n) for n in voices.names()], "bases": {k: v[0] for k, v in base.BASES.items()},
-                                   "busy": {"voice": b[0], "kind": b[1]} if b else None, })
+                                   "busy": {"voice": b[0], "kind": b[1]} if b else None})
             if u.path == "/api/transcript":
                 n = CFG.check_name(q["voice"][0]); md = CFG.data / n / "metadata.csv"; rows = []
                 try: sc = json.loads(speakers.score_path(n).read_text()).get("scores", {})
@@ -436,9 +446,19 @@ class H(BaseHTTPRequestHandler):
         try:
             d = self._body()
             if u.path == "/api/voices":
-                n = CFG.check_name(d.get("name")); key = d.get("base") or base.AUTO
+                n = CFG.check_name(d.get("name")); key = d.get("base") or base.AUTO; mode = d.get("source") or "recordings"
                 if key != base.AUTO and key not in base.BASES: raise ValueError("unknown starting voice")
                 if voices.exists(n): raise ValueError(f"'{n}' already exists")
+                if mode in ("dataset", "backup"):
+                    path = Path((d.get("path") or "").strip()).expanduser()
+                    if not (d.get("path") or "").strip() or not path.exists(): raise ValueError("Choose the " + ("backup .zip file" if mode == "backup" else "folder or .zip file with the dataset") + " (use Browse).")
+                    if mode == "backup": backup.check(path); voices.write(n, restoring=True)
+                    else:
+                        if key != base.AUTO: base.ensure(key, log=lambda *_: None)
+                        voices.write(n, base=key, imported=True, voice_type=(d.get("voice_type") if d.get("voice_type") in ("male", "female") else ""))
+                    try: start_job(n, "restore" if mode == "backup" else "import", ["restore" if mode == "backup" else "import", n, str(path.resolve())])
+                    except Exception: voices.meta_path(n).unlink(missing_ok=True); raise
+                    return self._json({"ok": True, "license": ""})
                 if key != base.AUTO: base.ensure(key, log=lambda *_: None)
                 folder = (d.get("folder") or "").strip()
                 if not folder: raise ValueError("Choose the folder that has your recordings (use Browse).")
@@ -448,7 +468,9 @@ class H(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "license": (base.info(key) or {}).get("license", "") if key != base.AUTO else ""})
             n = CFG.check_name(d.get("voice"))
             if not voices.exists(n): raise ValueError("no such voice")
-            if u.path == "/api/prep": start_job(n, "prep", ["prep", n])
+            if u.path == "/api/prep":
+                if voices.read(n).get("imported"): raise ValueError("This voice was started from a prepared dataset, so there is nothing to prepare.")
+                start_job(n, "prep", ["prep", n])
             elif u.path == "/api/train":
                 ep = max(1, min(20000, int(d.get("epochs", 1000))))
                 if not (CFG.data / n / "metadata.csv").exists(): raise ValueError("Prepare the recordings first.")
@@ -474,6 +496,7 @@ class H(BaseHTTPRequestHandler):
                 start_job(n, "match", ["match", n])
             elif u.path == "/api/reset":
                 if busy() or train_pid(n): raise RuntimeError("A job is running. Wait for it or stop it first.")
+                if voices.read(n).get("imported"): raise ValueError("An imported voice cannot be started over (its clips are the dataset you imported). Delete it and import again instead.")
                 start_over(n, training=bool(d.get("training")))
             elif u.path == "/api/personname":
                 r = speakers.load(n)

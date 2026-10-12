@@ -18,6 +18,8 @@ def main(argv=None):
     p = sub.add_parser("score", help="find prepared clips that do not sound like the rest"); p.add_argument("name")
     p = sub.add_parser("keep", help="choose which people to train on"); p.add_argument("name"); p.add_argument("ids", nargs="*", type=int); p.add_argument("--all", action="store_true", help="use everyone (no filtering)")
     p = sub.add_parser("trim", help="reprocess: cut clips down to the words you kept when editing"); p.add_argument("name")
+    p = sub.add_parser("import", help="start a voice from a dataset folder or zip (metadata.csv + clips)"); p.add_argument("name"); p.add_argument("path")
+    p = sub.add_parser("restore", help="restore a voice from a backup zip, under this name"); p.add_argument("name"); p.add_argument("path")
     p = sub.add_parser("train", help="fine-tune (resumable)"); p.add_argument("name"); p.add_argument("epochs", nargs="?", type=int, default=1000); p.add_argument("batch", nargs="?", type=int, default=0)
     p = sub.add_parser("compare", help="make the same test sentence with each version of the voice"); p.add_argument("name"); p.add_argument("--text", default=None)
     p = sub.add_parser("export", help="make the .onnx/.json and a test clip"); p.add_argument("name"); p.add_argument("--text", default=None); p.add_argument("--which", choices=["best", "accurate", "latest"], default="best", help="best = best-sounding by quality score (default)")
@@ -66,6 +68,10 @@ def main(argv=None):
         else: speakers.keep(n, a.ids); print(f"Training on person(s) {a.ids} only.")
     elif a.cmd == "trim":
         from . import trim; trim.run(n)
+    elif a.cmd == "import":
+        from . import importer; importer.run(n, a.path)
+    elif a.cmd == "restore":
+        from . import backup; backup.restore(n, a.path)
     elif a.cmd == "train":
         from . import train; train.run(n, a.epochs, a.batch)
     elif a.cmd == "compare":
