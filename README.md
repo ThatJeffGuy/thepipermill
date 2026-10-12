@@ -38,12 +38,24 @@ Open the page and press **+ New voice**. Pick a starting voice that is close to 
 | Step | What to do |
 |---|---|
 | 1. Recordings | Drag audio files in, or paste a folder path ("use a folder") to read them straight from there. 30–60+ minutes works best. |
-| 2. Prepare | One click. Splits at pauses and transcribes with Whisper on the GPU. |
-| 3. Check the words | Press ▶ on a clip, fix the text, remove bad clips (✕), save. **The voice learns exactly what is written here.** |
-| 4. Train | Quick / Normal / Long. It keeps running if you close the tab; stop and resume any time. |
-| 5. Listen | Type a sentence, make a test clip, then download the two voice files. |
+| 2. Who is speaking? *(optional)* | Only if your recordings have more than one person (a conversation, a call). Finds each voice, groups the same person across files, and lets you listen to samples and tick whose voice to train on. See below. |
+| 3. Prepare | One click. Splits at pauses and transcribes with Whisper on the GPU. If you picked speakers in step 2, only their parts are used. |
+| 4. Check the words | Press ▶ on a clip, fix the text, remove bad clips (✕), save. **The voice learns exactly what is written here.** |
+| 5. Train | Quick / Normal / Long. It keeps running if you close the tab; stop and resume any time. |
+| 6. Listen | Type a sentence, make a test clip, then download the two voice files. |
 
 **Recording tips:** quiet room, same distance from the microphone, no music or fans, no clipping. Read naturally and vary it: questions, short and long sentences, numbers. The model copies how you speak, not just your tone. There is a list of sentences to read in the page ("Need something to read?").
+
+### Recordings with more than one person (optional step 2)
+
+Step 2 uses [pyannote.audio](https://github.com/pyannote/pyannote-audio) speaker diarization (the open `pyannote/speaker-diarization-community-1` model) to find who speaks when, then matches the same person across your files by comparing voice fingerprints. You listen to a couple of samples of each person and tick the ones to train on; everyone else is left out of the dataset. If a person is split into two entries, tick both. If two people are merged, lower `speaker_match_distance` in the config and run it again.
+
+That model is **gated on Hugging Face**, so once only:
+1. Log in at <https://huggingface.co>, open <https://huggingface.co/pyannote/speaker-diarization-community-1> and accept its conditions.
+2. Create a read token at <https://huggingface.co/settings/tokens>.
+3. Put it in your config as `hf_token = "..."`, or set `HF_TOKEN`, or run `.venv/bin/hf auth login`.
+
+Only use recordings of people who have agreed to it. Telling the tool how many people talk ("auto" by default) improves accuracy. From the command line: `voicestudio speakers myvoice [--num 2]`, then `voicestudio keep myvoice 1` (or `--all`).
 
 ### Command line
 
@@ -51,6 +63,7 @@ Everything the page does is also available as `.venv/bin/voicestudio`:
 
 ```
 voicestudio new myvoice --base ryan --folder ~/recordings   # create (base: ryan, amy, lessac, joe, john)
+voicestudio speakers myvoice      # optional: who speaks in the recordings; then: voicestudio keep myvoice 1
 voicestudio prep myvoice          # clips + transcripts  -> check data/myvoice/metadata.csv
 voicestudio train myvoice 1000    # extra epochs, resumable
 voicestudio export myvoice        # -> out/myvoice.onnx, out/myvoice.onnx.json, out/myvoice-test.wav
@@ -78,6 +91,7 @@ The page listens on `127.0.0.1` only and has **no login**. Do not expose it to a
 - It installs and drives [piper1-gpl](https://github.com/OHF-Voice/piper1-gpl) (GPL-3.0) as a separate program; it is downloaded by `install.sh` and not included here.
 - Starting voices come from [rhasspy/piper-checkpoints](https://huggingface.co/datasets/rhasspy/piper-checkpoints). **Each has its own dataset licence, often non-commercial** (for example Ryan is CC BY-NC-SA 4.0). A voice you train from one inherits those limits. The licence is shown when you create a voice and saved next to the file in `base/`.
 - Transcription uses OpenAI Whisper (MIT) through Hugging Face `transformers`.
+- Speaker finding uses pyannote.audio (MIT) with the `speaker-diarization-community-1` model (CC-BY-4.0, gated: accept its conditions on Hugging Face).
 
 ## Troubleshooting
 

@@ -7,7 +7,7 @@ import json, os, re, shutil, signal, subprocess, sys, threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote
-from . import base, install, voices
+from . import base, install, speakers, voices
 from .config import CFG
 
 WEB = Path(__file__).parent / "web"
@@ -78,7 +78,9 @@ def info(n):
     done = (int(ep[-1][0]) - (int(ep[-1][1]) - total)) if (ep and total) else None
     j = JOBS.get(n); job = None
     if j: job = {"kind": j["kind"], "running": j["proc"].poll() is None, "rc": j["proc"].poll(), "log": tail(j["log"])}
-    return {"name": n, "base": m.get("base"), "custom_source": m.get("source_dir") or None, "source": str(src),
+    sp = speakers.load(n)
+    return {"name": n, "base": m.get("base"),
+            "people": sp["people"] if sp else None, "keep": m.get("keep_people") or [], "people_stale": speakers.stale(n) if sp else False, "custom_source": m.get("source_dir") or None, "source": str(src),
             "inbox": [{"name": p.name, "mb": round(p.stat().st_size / 1e6, 1)} for p in files],
             "clips": clips, "prepared": md.exists(),
             "train": {"running": bool(train_pid(n)), "total": total, "done": max(0, done) if done is not None else None,
@@ -149,6 +151,9 @@ class H(BaseHTTPRequestHandler):
             if u.path.startswith("/audio/"):
                 _, _, n, f = u.path.split("/", 3)
                 return self._file(CFG.data / CFG.check_name(n) / "wavs" / os.path.basename(unquote(f)), "audio/wav")
+            if u.path.startswith("/speaker-sample/"):
+                _, _, n, f = u.path.split("/", 3)
+                return self._file(CFG.runs / CFG.check_name(n) / "speakers" / os.path.basename(unquote(f)), "audio/wav")
             if u.path.startswith("/out/"):
                 return self._file(CFG.out / os.path.basename(unquote(u.path[5:])), "audio/wav")
             if u.path.startswith("/download/"):
@@ -180,6 +185,13 @@ class H(BaseHTTPRequestHandler):
                 ep = max(1, min(20000, int(d.get("epochs", 1000))))
                 if not (CFG.data / n / "metadata.csv").exists(): raise ValueError("Prepare the recordings first.")
                 start_job(n, "train", ["train", n, str(ep)], meta={"epochs": ep})
+            elif u.path == "/api/speakers":
+                num = int(d["num"]) if str(d.get("num") or "").strip().isdigit() else None
+                start_job(n, "speakers", ["speakers", n] + (["--num", str(num)] if num else []))
+            elif u.path == "/api/keep":
+                ids = [int(i) for i in d.get("ids", [])]
+                if ids: speakers.keep(n, ids)
+                else: voices.write(n, keep_people=[])
             elif u.path == "/api/train/stop":
                 pid = train_pid(n)
                 if pid: os.killpg(os.getpgid(pid), signal.SIGINT)
@@ -196,7 +208,7 @@ class H(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "message": r.stdout.strip()[-300:]})
             else: return self._err("not found", 404)
             return self._json({"ok": True})
-        except (ValueError, KeyError, RuntimeError, subprocess.TimeoutExpired, OSError) as e:
+        except (ValueError, KeyError, RuntimeError, subprocess.TimeoutExpired, OSError, SystemExit) as e:
             self._err(e)
 
     def do_PUT(self):

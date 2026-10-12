@@ -85,7 +85,7 @@ async function refresh(force){
 }
 
 function render(){
-  const keep={txt:$('#txt')&&$('#txt').value,ep:$('#ep')&&$('#ep').value};
+  const keep={txt:$('#txt')&&$('#txt').value,ep:$('#ep')&&$('#ep').value,sp:$('#spNum')&&$('#spNum').value};
   const sel=$('#voiceSel');sel.innerHTML=S.voices.map(v=>`<option ${v.name===cur?'selected':''}>${esc(v.name)}</option>`).join('')||'<option>(no voices yet)</option>';
   $('#busyBar').innerHTML=S.busy?`<div class="card" style="padding:10px 16px"><span class="pill warn">Busy</span> <b>${esc(S.busy.voice)}</b>: ${esc(S.busy.kind)} is using the GPU. Other jobs wait until it finishes.</div>`:'';
   const v=S.voices.find(x=>x.name===cur);
@@ -108,21 +108,32 @@ function render(){
     <details><summary>Need something to read?</summary><ol class="sent" id="sent">Loading…</ol></details>
   </div>
 
-  <div class="card"><h2><span class="step ${prepDone?'done':''}">2</span>Prepare</h2>
-    <p class="hint">Cuts the recordings into short clips and writes down what you said (using the GPU). A few minutes.</p>
+  <div class="card"><h2><span class="step ${v.people?'done':''}">2</span>Who is speaking? <span class="pill">optional</span></h2>
+    <p class="hint">Only needed if your recordings have more than one person talking (a conversation, a call…). It finds each voice so you can listen and tick whose voice to train on. Everyone else is left out. Skip this if it is just you.</p>
+    <div class="row"><label>How many people talk? <input type="number" id="spNum" min="1" max="20" placeholder="auto" style="width:90px"></label>
+    <button id="spBtn" ${(!v.inbox.length||S.busy)?'disabled':''}>${v.people?'Find them again':'Find the speakers'}</button>${jobRun&&v.job.kind==='speakers'?'<span class="pill warn">working…</span>':''}</div>
+    ${v.job&&v.job.kind==='speakers'?`<pre>${esc(v.job.log)}</pre>`:''}
+    ${v.people_stale?'<div class="msg err">Your recordings changed since this scan: find the speakers again.</div>':''}
+    ${v.people?(v.people.length?`<ul class="files" style="margin-top:12px">${v.people.map(p=>`<li style="align-items:center;padding:8px 0"><label style="flex:1"><input type="checkbox" class="pk" value="${p.id}" ${(v.keep||[]).includes(p.id)?'checked':''}> <b>Person ${p.id}</b> <span class="hint" style="margin:0">${p.minutes} min · ${p.files} file(s)</span></label>${p.samples.map((sm,i)=>`<button class="sec" onclick="playS('${esc(v.name)}','${sm}')">▶ ${i+1}</button>`).join(' ')}</li>`).join('')}</ul>
+      <div class="row" style="margin-top:8px"><button id="keepBtn">Save my choice</button><span class="hint" style="margin:0">${(v.keep||[]).length?`Training on: ${v.keep.map(i=>'Person '+i).join(', ')}`:'Nothing ticked: all speech is used'}</span></div>`:'<p class="hint">No speech found.</p>'):''}
+    ${f('sp')}
+  </div>
+
+  <div class="card"><h2><span class="step ${prepDone?'done':''}">3</span>Prepare</h2>
+    <p class="hint">Cuts the recordings into short clips and writes down what you said (using the GPU). A few minutes.${(v.keep||[]).length?` Only the parts where ${v.keep.map(i=>'Person '+i).join(', ')} speak will be used.`:''}</p>
     <div class="row"><button id="prepBtn" ${(!v.inbox.length||S.busy)?'disabled':''}>${prepDone?'Prepare again':'Prepare my recordings'}</button>
     ${prepDone?`<span class="pill ok">${v.clips} clips ready</span>`:''}${jobRun&&v.job.kind==='prep'?'<span class="pill warn">working…</span>':''}</div>
     ${v.job&&v.job.kind==='prep'?`<pre>${esc(v.job.log)}</pre>`:''}${f('prep')}
   </div>
 
-  <div class="card"><h2><span class="step ${rows&&rowsFor===v.name&&!dirty?'done':''}">3</span>Check the words</h2>
+  <div class="card"><h2><span class="step ${rows&&rowsFor===v.name&&!dirty?'done':''}">4</span>Check the words</h2>
     <p class="hint">The voice learns exactly what is written here. Press ▶ to listen and fix any wrong words. Remove clips with noise, coughs or mistakes (✕).</p>
     <div class="row"><button class="sec" id="loadRows" ${prepDone?'':'disabled'}>${rows&&rowsFor===v.name?'Reload list':'Show my clips'}</button>
     <button id="saveRows" ${dirty?'':'disabled'}>Save changes</button></div>
     <div id="tbl"></div>${f('tr')}
   </div>
 
-  <div class="card"><h2><span class="step ${finished?'done':''}">4</span>Train</h2>
+  <div class="card"><h2><span class="step ${finished?'done':''}">5</span>Train</h2>
     <p class="hint">Teaches the voice on your GPU. Takes from half an hour to a couple of hours. It keeps going if you close this page, and you can stop and resume any time.</p>
     <div class="row"><label>Length <select id="ep"><option value="300">Quick (300)</option><option value="1000" selected>Normal (1000)</option><option value="2000">Long (2000)</option></select></label>
     ${t.running?'<button class="bad" id="stopBtn">Stop</button>':`<button id="trainBtn" ${(!prepDone||S.busy)?'disabled':''}>${t.checkpoints?'Resume training':'Start training'}</button>`}
@@ -132,7 +143,7 @@ function render(){
     ${t.log.length?`<pre>${esc(t.log.join('\n'))}</pre>`:''}${f('train')}
   </div>
 
-  <div class="card"><h2><span class="step ${v.exported?'done':''}">5</span>Listen, then use it</h2>
+  <div class="card"><h2><span class="step ${v.exported?'done':''}">6</span>Listen, then use it</h2>
     <p class="hint">Make a test clip from the latest training and listen. When you like it, download the two voice files.</p>
     <textarea id="txt">Good evening. This is a test of my new voice, and I hope it sounds like me.</textarea>
     <div class="row" style="margin-top:8px"><button id="expBtn" ${(!t.checkpoints||S.busy)?'disabled':''}>Make test clip</button>
@@ -144,7 +155,7 @@ function render(){
     ${v.job&&v.job.kind==='export'&&v.job.rc?`<pre>${esc(v.job.log)}</pre>`:''}${f('exp')}
   </div>
   <details style="margin-top:6px"><summary>Voice settings</summary><p class="hint">Starting voice: ${esc(S.bases[v.base]||v.base||'?')}</p><button class="sec bad" id="delBtn" style="color:#fff">Delete this voice…</button></details>`;
-  if(keep.txt!=null)$('#txt').value=keep.txt;if(keep.ep!=null&&$('#ep'))$('#ep').value=keep.ep;
+  if(keep.sp&&$('#spNum'))$('#spNum').value=keep.sp;if(keep.txt!=null)$('#txt').value=keep.txt;if(keep.ep!=null&&$('#ep'))$('#ep').value=keep.ep;
   wire(v);if(rows&&rowsFor===v.name)drawRows();
 }
 
@@ -159,6 +170,9 @@ function wire(v){
   b('#delBtn',async()=>{if(!confirm(`Delete "${v.name}" and its working files (prepared clips, training progress, exported voice)?\n\nRecordings in your own folder are never deleted.`))return;
     try{await api(`/api/voice?voice=${v.name}`,{method:'DELETE'});rows=null;cur='';refresh(true)}catch(e){say('exp',e.message,'err')}});
   b('#prepBtn',()=>act('/api/prep',{voice:v.name},'prep'));
+  b('#spBtn',()=>act('/api/speakers',{voice:v.name,num:$('#spNum').value},'sp'));
+  b('#keepBtn',async()=>{const ids=[...document.querySelectorAll('.pk:checked')].map(x=>+x.value);
+    try{await api('/api/keep',{method:'POST',body:JSON.stringify({voice:v.name,ids})});say('sp',ids.length?`Saved. Prepare will use only ${ids.map(i=>'Person '+i).join(', ')}.`:'Saved. All speech will be used.','ok');refresh(true)}catch(e){say('sp',e.message,'err')}});
   b('#loadRows',()=>loadRows(v.name));b('#saveRows',()=>saveRows(v.name));
   b('#trainBtn',()=>act('/api/train',{voice:v.name,epochs:+$('#ep').value},'train'));
   b('#stopBtn',()=>act('/api/train/stop',{voice:v.name},'train'));
@@ -195,7 +209,8 @@ function drawRows(){
 function edit(k,t){rows[k].text=t;dirty=true;$('#saveRows').disabled=false}
 function del(k){rows.splice(k,1);dirty=true;drawRows()}
 function pg(d){page+=d;drawRows()}
-let au;function play(f){if(au)au.pause();au=new Audio(`/audio/${cur}/${f}`);au.play()}
+let au;function playS(n,f){if(au)au.pause();au=new Audio(`/speaker-sample/${n}/${f}`);au.play()}
+function play(f){if(au)au.pause();au=new Audio(`/audio/${cur}/${f}`);au.play()}
 async function saveRows(name){try{const j=await api('/api/transcript',{method:'PUT',body:JSON.stringify({voice:name,rows})});dirty=false;say('tr',`Saved. ${j.kept} clips kept.`,'ok')}catch(e){say('tr',e.message,'err')}}
 
 $('#voiceSel').onchange=e=>{cur=e.target.value;localStorage.setItem('voice',cur);rows=null;dirty=false;flash={};render()};

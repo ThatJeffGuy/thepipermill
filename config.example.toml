@@ -7,6 +7,8 @@ espeak_voice = "en-us"              # language of your recordings (espeak-ng voi
 whisper_model = "openai/whisper-large-v3-turbo"   # writes down what you said; try "openai/whisper-small" on small GPUs
 batch_size = 0                      # 0 = automatic from GPU memory (8 GB -> 8, 12-16 GB -> 16)
 max_upload_gb = 4
+hf_token = ""                       # only needed for "Who is speaking?" (see README); or set HF_TOKEN / run `hf auth login`
+speaker_match_distance = 0.55       # lower = stricter about calling two voices the same person
 protected_names = []                # voice names that can never be created or installed over
 
 # What the "Install" button does. Without this the page still offers the .onnx/.json as downloads.

@@ -5,7 +5,7 @@ with Whisper, and saves  data/<voice>/wavs/*.wav  +  data/<voice>/metadata.csv  
 """
 import subprocess, sys, tempfile
 from pathlib import Path
-from . import voices
+from . import speakers, voices
 from .config import CFG
 
 SR = 22050
@@ -38,8 +38,12 @@ def run(name, top_db=35.0, min_s=1.5, max_s=15.0, join_gap=0.45, log=print):
     import soundfile as sf, torch
     from transformers import pipeline
     src = voices.source_dir(name)
-    files = sorted(p for p in src.rglob("*") if p.is_file() and p.suffix.lower() in EXTS) if src.exists() else []
+    files = speakers.audio_files(name)
     if not files: raise SystemExit(f"No audio files found in {src}")
+    chosen = voices.read(name).get("keep_people")
+    if chosen:
+        if speakers.stale(name): log("NOTE: the recordings changed since the speakers were found; press 'Find the speakers' again.")
+        log(f"Using only the parts where person(s) {', '.join(map(str, chosen))} speak.")
     root = CFG.data / name; wavs = root / "wavs"
     for old in wavs.glob("*.wav"): old.unlink()                      # re-preparing starts clean
     wavs.mkdir(parents=True, exist_ok=True)
@@ -51,9 +55,14 @@ def run(name, top_db=35.0, min_s=1.5, max_s=15.0, join_gap=0.45, log=print):
             try: _convert(f, tmp)
             except subprocess.CalledProcessError: log(f"skipped (could not read): {f.name}"); continue
             y, _ = sf.read(tmp, dtype="float32")
-            for s, e in _segments(y, top_db, min_s, max_s, join_gap):
-                n += 1; p = wavs / f"{name}_{n:05d}.wav"
-                sf.write(p, y[s:e], SR, subtype="PCM_16"); clips.append((p, (e - s) / SR))
+            iv = speakers.intervals(name, speakers.rel(name, f))         # None = no one chosen: use everything
+            spans = [(0, len(y))] if iv is None else [(int(a * SR), min(len(y), int(b * SR))) for a, b in iv]
+            for s0, e0 in spans:
+                part = y[s0:e0]
+                if len(part) < min_s * SR: continue
+                for s, e in _segments(part, top_db, min_s, max_s, join_gap):
+                    n += 1; p = wavs / f"{name}_{n:05d}.wav"
+                    sf.write(p, part[s:e], SR, subtype="PCM_16"); clips.append((p, (e - s) / SR))
             log(f"{f.name}: {n} clips so far")
     if not clips: raise SystemExit("No speech found. Try a quieter recording or a lower --top-db.")
     log(f"{len(clips)} clips, {sum(d for _, d in clips)/60:.1f} min of speech. Writing it down (Whisper)...")

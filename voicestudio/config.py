@@ -16,6 +16,9 @@ DEFAULTS = {
     "whisper_model": "openai/whisper-large-v3-turbo",   # used to write down what you said
     "batch_size": 0,                         # 0 = choose from your GPU memory
     "max_upload_gb": 4,
+    "hf_token": "",                          # Hugging Face read token (only for the speaker-finding model, which is gated)
+    "diarization_model": "pyannote/speaker-diarization-community-1",
+    "speaker_match_distance": 0.55,          # lower = stricter about calling two voices the same person
     "protected_names": [],                   # voice names that can never be created or installed over
     "install": {                             # what the "Install" button does (download links always work)
         "mode": "none",                      # none | local | ssh | script
