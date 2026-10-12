@@ -41,7 +41,7 @@ Open the page and press **+ New voice**. Give it a short name, choose the folder
 
 The **Advanced** button at the top only reveals extras: the console with each job's log, Voice settings (starting voice, free up disk space, delete the voice), the version choice when you listen, the "how many people talk" box, the starting-voice picker when you create a voice, and free jumping between steps. If a job fails, everyone gets a plain one-line reason.
 
-Voice names can use capital letters and are case-sensitive (**Joe** and **joe** are two different voices). Rename a voice with the ✎ next to its name at the top; its clips, training and exported files move with it (not while a job is running). Every long job has a **Stop** button. **Start over** (bottom of the page) clears a voice's speaker scan, choices and prepared clips so you can begin again; your recordings are never touched and training is only deleted if you choose that too.
+Voice names can use capital letters and are case-sensitive (**Joe** and **joe** are two different voices). Rename a voice under **Advanced → Voice settings**; its clips, training and exported files move with it (not while a job is running). Every long job has a **Stop** button. **Start over** (bottom of the page) clears a voice's speaker scan, choices and prepared clips so you can begin again; your recordings are never touched and training is only deleted if you choose that too.
 
 | Step | What to do |
 |---|---|

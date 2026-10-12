@@ -78,7 +78,7 @@ footer.foot a{color:var(--acc);text-decoration:none}footer.foot a:hover{text-dec
 <header>
   <h1>The Piper Mill</h1>
   <button class="sec advbtn" id="advBtn" aria-pressed="false" title="Show advanced options, the console and more">Advanced</button>
-  <select id="voiceSel" aria-label="Voice"></select><button class="sec" id="renameBtn" title="Rename this voice" hidden>✎</button>
+  <select id="voiceSel" aria-label="Voice"></select>
   <button class="sec" id="newBtn">+ New voice</button>
 </header>
 <div id="busyBar"></div>
@@ -234,7 +234,6 @@ function render(){
   const keep={txt:$('#txt')&&$('#txt').value,ep:$('#ep')&&$('#ep').value,sp:$('#spNum')&&$('#spNum').value,wh:$('#which')&&$('#which').value};
   const sel=$('#voiceSel');sel.innerHTML=S.voices.map(v=>`<option ${v.name===cur?'selected':''}>${esc(v.name)}</option>`).join('')||'<option>(no voices yet)</option>';
   $('#busyBar').innerHTML=S.busy&&S.busy.voice!==cur?`<div class="card" style="padding:10px 16px">${live('Busy')} <b>${esc(S.busy.voice)}</b>: the GPU is busy with ${jobName(S.busy.kind)}. Other jobs wait until it finishes.</div>`:'';
-  const rb=$('#renameBtn');rb.hidden=!S.voices.length;rb.disabled=!!S.busy;rb.onclick=()=>{const vv=S.voices.find(x=>x.name===cur);if(vv)openRename(vv)};
   const v=S.voices.find(x=>x.name===cur);
   if(!v){$('#main').innerHTML=`<div class="card empty"><h2>Welcome</h2><p>Create your first voice to begin. Use your own voice, or the voice of someone who has agreed to it.</p><button onclick="$('#newBtn').click()">+ New voice</button></div>`;return}
   const f=k=>flash[k]?`<div class="msg ${flash[k].cls||''}">${esc(flash[k].text)}</div>`:'';
@@ -352,6 +351,7 @@ function render(){
     ${stepNo===5&&t.running?'<p class="hint" style="text-align:center;margin:10px 0 0">You can close this page and come back any time: training keeps going.<br>To stop training, press the red <b>Stop</b> button above.</p>':''}
     <div style="text-align:center;margin-top:16px"><button class="sec" id="resetBtn" ${S.busy?'disabled':''}>Start over</button></div>
     ${ADV?`<details style="margin-top:14px"><summary>Voice settings</summary><p class="hint">Starting voice: ${v.base==='auto'||!v.base?`automatic${v.base_used?' (picked: '+esc(S.bases[v.base_used]||v.base_used)+')':' (chosen when training starts)'}`:esc(S.bases[v.base]||v.base)}</p>${t.checkpoints?`<p class="hint">Training checkpoints use ${t.disk_gb} GB (${t.checkpoints} files). <button class="sec" id="cleanBtn" ${S.busy?'disabled':''}>Free up space</button> keeps only the best and the latest.</p>`:''}
+      <p style="margin:8px 0"><button class="sec" id="renameBtn" ${S.busy?'disabled':''}>Rename this voice…</button> <span class="hint" style="margin:0">Capital letters count: Joe and joe are different names.</span></p>
       <button class="sec bad" id="delBtn" style="color:#fff">Delete this voice…</button></details>`:''}`;
   if(keep.sp&&$('#spNum'))$('#spNum').value=keep.sp;if(keep.wh&&$('#which'))$('#which').value=keep.wh;if(keep.txt!=null&&$('#txt'))$('#txt').value=keep.txt;if(keep.ep!=null&&$('#ep'))$('#ep').value=keep.ep;
   wire(v);if(rows&&rowsFor===v.name&&$('#tbl'))drawRows();
@@ -369,7 +369,7 @@ function wire(v){
     label.replaceWith(inp);el.remove();inp.focus();inp.select()});
   const ss=$('#spSort');if(ss)ss.onchange=()=>{spSort=ss.value;try{localStorage.setItem('spSort',spSort)}catch(e){}spTicks=[...document.querySelectorAll('.pk:checked')].map(x=>+x.value);render()};   // keep ticks you have not saved yet
   if(spTicks){document.querySelectorAll('.pk').forEach(c=>c.checked=spTicks.includes(+c.value));spTicks=null}
-  b('#resetBtn',()=>openReset(v));
+  b('#resetBtn',()=>openReset(v));b('#renameBtn',()=>openRename(v));
   b('#prevBtn',()=>go(v.name,wiz[v.name]-1));b('#nextBtn',()=>go(v.name,wiz[v.name]+1));b('#skipBtn',()=>go(v.name,wiz[v.name]+1));
   document.querySelectorAll('.sp[data-go]').forEach(el=>el.onclick=()=>go(v.name,+el.dataset.go));
   const saveSrc=async()=>{const val=$('#srcIn').value.trim();if(!val||val===(v.folder||''))return;delete flash.up;try{await api('/api/source',{method:'POST',body:JSON.stringify({voice:v.name,path:val})});refresh(true)}catch(e){say('up',e.message,'err')}};
