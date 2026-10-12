@@ -96,9 +96,6 @@ def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
         log(f"Using only the parts where person(s) {', '.join(map(str, chosen))} speak.")
     mm = voices.read(name)
     if mm.get("use_match"): log("Using only the parts that sound like the clips you ticked ('find more like these').")
-    if mm.get("keep_from") or mm.get("keep_until"):
-        t = lambda s: f"{int(s // 60)}:{int(s % 60):02d}"
-        log(f"Using only the audio {('after ' + t(float(mm['keep_from']))) if mm.get('keep_from') else ''}{' and ' if mm.get('keep_from') and mm.get('keep_until') else ''}{('before ' + t(float(mm['keep_until']))) if mm.get('keep_until') else ''} in each recording.")
     prog = Progress(name, "prep")
     root = CFG.data / name; wavs = root / "wavs"
     for old in wavs.glob("*.wav"): old.unlink()                      # re-preparing starts clean
@@ -113,7 +110,8 @@ def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
     with tempfile.TemporaryDirectory() as td:
         for i, f in enumerate(files, 1):
             key = speakers.rel(name, f)
-            prog.update("Cutting the recordings into clips", i - 1, len(files), key)
+            W1 = 0.35                                                           # share of the whole job spent reading + cutting (the rest is Whisper)
+            prog.update("Reading the recording", i - 1, len(files), key, frac=W1 * (i - 1) / len(files))
             tmp = Path(td) / "c.wav"
             try:
                 secs = audio.decode(f, tmp, SR, loudnorm=True, log=log)
@@ -121,7 +119,8 @@ def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
                 iv = speakers.intervals(name, key)                    # None = no one chosen: use everything
                 spans = [(0, len(y))] if iv is None else [(int(a * SR), min(len(y), int(b * SR))) for a, b in iv]
                 got = 0
-                for s0, e0 in spans:
+                for si, (s0, e0) in enumerate(spans):
+                    prog.update("Cutting into clips", i - 1, len(files), key, frac=W1 * ((i - 1) + 0.2 + 0.8 * si / max(1, len(spans))) / len(files))
                     part = y[s0:e0]
                     if len(part) < min_s * SR: continue
                     if sep: part = sep.span(y, s0, e0)                    # vocals only; the clips and their transcripts come from this
@@ -151,7 +150,7 @@ def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
     rows, dropped, batch, done = [], 0, 8, 0
     while done < len(clips):
         chunk = clips[done:done + batch]
-        prog.update("Writing down what was said", done, len(clips), f"{done}/{len(clips)} clips")
+        prog.update("Writing down what was said", done, len(clips), f"{done}/{len(clips)} clips", frac=0.35 + 0.65 * done / len(clips))
         res, batch = _transcribe(asr, [sf.read(p, dtype="float32")[0] for p, _ in chunk], gen, batch)
         for (p, d), r in zip(chunk, res):
             raw = " ".join(r["text"].split())

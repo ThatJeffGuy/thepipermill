@@ -37,20 +37,21 @@ Optional: `scripts/install-service.sh` starts it automatically when you log in.
 
 Open the page and press **+ New voice**. Give it a short name, choose the folder with your recordings, and say whether the voice is **male, female or not specified**. That choice helps find your voice in a mixed recording and picks the starting voice (it is only the starting point: the result learns your voice from your recordings).
 
-**Two ways to use the page** (switch at the top, it remembers your choice):
-- **Beginner**: a wizard. One step at a time with **Prev** / **Next**, and a **Skip** button on the optional steps. Next unlocks when a step is done and the message beside it says what is missing. While something runs, the message at the bottom pulses and shows what is happening. A strip at the top shows where you are: green ✓ done, solid blue current, pulsing red working, dashed dash skipped, grey not reached yet.
-- **Advanced**: all the steps on one page.
+**One step at a time.** The page is a wizard: **Prev** / **Next**, and a **Skip** button on the optional steps (Speakers, Refine, Words). Next unlocks when a step is done, and the message beside it says what is missing. While something runs, that message pulses (for example "Finding the speakers…"), the bar shows real progress with a time estimate, and the footer says what the GPU is busy with. A strip at the top shows where you are: green ✓ done, solid blue current, pulsing red working, dashed dash skipped, grey not reached yet.
+
+The **Advanced** button at the top only reveals extras: the console with each job's log, Voice settings (starting voice, free up disk space, delete the voice), the version choice when you listen, the "how many people talk" box, the starting-voice picker when you create a voice, and free jumping between steps. If a job fails, everyone gets a plain one-line reason.
 
 Every long job has a **Stop** button. **Start over** (bottom of the page) clears a voice's speaker scan, choices and prepared clips so you can begin again; your recordings are never touched and training is only deleted if you choose that too.
 
 | Step | What to do |
 |---|---|
 | 1. Recordings folder | Choose (Browse…) the folder on your computer that holds your recordings; they are read from there and never copied or changed. 30–60+ minutes works best. |
-| 2. Who is speaking? *(optional)* | Only if your recordings have more than one person (a conversation, a call, a film). Finds each voice, shows samples with the time each comes from, and lets you tick whose voice to train on. **Find more like my voice** refines it from clips you tick. See below. |
-| 3. Prepare | One click. Splits at pauses and transcribes with Whisper on the GPU. Uses only the people you chose (or the voice you matched) and, if you set it, only the audio between two times (for example from 21:30 if that is where you start speaking). Tick **Remove music and background noise** to keep only the voices (see below). |
-| 4. Check the words *(optional)* | Press ▶ on a clip, fix the text, remove bad clips (✕), save. **The voice learns exactly what is written here, so skipping this may reduce quality.** Words from another person can be cut out with **Reprocess**, below. **Export dataset (.zip)** saves the cleaned clips and transcript (22.05 kHz mono wavs + `metadata.csv`) to use anywhere. |
-| 5. Train | Quick / Normal / Long. It keeps running if you close the tab; stop and resume any time. |
-| 6. Listen | Type a sentence, make a test clip, then download the two voice files. (Advanced mode lets you choose the version; Beginner always uses the best-sounding one.) |
+| 2. Who is speaking? *(optional)* | Only if your recordings have more than one person (a conversation, a call, a film). Finds each voice, shows samples with the time each comes from, and lets you tick whose voice to train on. Tick ✓ the sample clips that are your speaker. See below. |
+| 3. Refine *(optional)* | **Find more like my voice**: looks through the whole recording for more speech that sounds like the clips you ticked, shows how many minutes it found, and lets you tick or cross more and repeat. When a round finds nothing new, it tells you your voice has settled and to go on. |
+| 4. Prepare | One click. Splits at pauses and transcribes with Whisper on the GPU. Uses only the people you chose (or the voice you matched). Tick **Remove music and background noise** to keep only the voices (see below). |
+| 5. Check the words *(optional)* | Press ▶ on a clip, fix the text, remove bad clips (✕), save. **The voice learns exactly what is written here, so skipping this may reduce quality.** Words from another person can be cut out with **Reprocess**, below. **Export dataset (.zip)** saves the cleaned clips and transcript (22.05 kHz mono wavs + `metadata.csv`) to use anywhere. |
+| 6. Train | Quick / Normal / Long. It keeps running if you close the tab; stop and resume any time. |
+| 7. Listen | Type a sentence, make a test clip, then download the two voice files. It uses the best-sounding version; **Advanced** lets you choose another. |
 
 **Recording tips:** quiet room, same distance from the microphone, no music or fans, no clipping. Read or talk naturally and vary it: questions, short and long sentences, numbers. The model copies how you speak, not just your tone.
 
@@ -82,8 +83,6 @@ Each person has **▶ samples spread through the recording** (the number is the 
 
 **Find more like my voice:** voices can still be mixed up (a person may contain your speaker and similar-sounding others). Press **✓** on sample clips that are your speaker (and **✗** on ones that are not), choose Strict / Normal / Loose, and press *Find more like these*. It compares every stretch of speech in the whole recording with your ticked clips, across all the people found, and shows how many minutes it found plus new samples to check (the ones marked **?** are the least sure). Tick or cross more and run it again to improve it, then choose *Train on the matched voice* or *the ticked people instead*. Two or more ticked clips work best; stretches under one second are skipped because they are too short to recognise reliably.
 
-**Time window:** in Prepare, "only use audio from … to …" cuts out everything outside that range, which is the surest way to drop a stretch you know is someone else.
-
 That model is **gated on Hugging Face**, so once only:
 1. Log in at <https://huggingface.co>, open <https://huggingface.co/pyannote/speaker-diarization-community-1> and accept its conditions.
 2. Create a read token at <https://huggingface.co/settings/tokens>.
@@ -93,7 +92,7 @@ Only use recordings of people who have agreed to it. Telling the tool how many p
 
 ### Removing music and background noise (Prepare)
 
-For films, videos and noisy recordings, tick **Remove music and background noise** in Prepare. It uses [Demucs](https://github.com/facebookresearch/demucs) to keep only the voices, and it runs only on the parts Prepare keeps (your chosen speaker or matched voice, within your time window), so it adds very little time. The clips and their transcripts are then made from the cleaned audio. The first use downloads a small model (about 80 MB). A clean recording of just you does not need it, and it is off by default. From the command line: `voicestudio prep myvoice --clean`.
+For films, videos and noisy recordings, tick **Remove music and background noise** in Prepare. It uses [Demucs](https://github.com/facebookresearch/demucs) to keep only the voices, and it runs only on the parts Prepare keeps (your chosen speaker or matched voice), so it adds very little time. The clips and their transcripts are then made from the cleaned audio. The first use downloads a small model (about 80 MB). A clean recording of just you does not need it, and it is off by default. From the command line: `voicestudio prep myvoice --clean`.
 
 ### Two voices in one clip: Reprocess (step 4)
 
@@ -145,7 +144,7 @@ The page listens on `127.0.0.1` only and has **no login**. Do not expose it to a
 - **Out of memory while training**: set `batch_size = 8` (or 4) in the config.
 - **Whisper is slow or runs out of memory**: set `whisper_model = "openai/whisper-small"`.
 - **Transcripts have mistakes**: normal. Fix them in *Check the words* (step 4); it matters more than anything else for quality.
-- **Clips are of the wrong person**: pick the right person in step 2, use **Find more like my voice**, set the time window in Prepare, and use **Reprocess** for clips that mix two people. **Start over** clears it all if you want a clean run.
+- **Clips are of the wrong person**: pick the right person in step 2, use **Find more like my voice** (step 3), and use **Reprocess** for clips that mix two people. **Start over** clears it all if you want a clean run.
 - **The speaker scan seems stuck**: the bar shows real progress; a long recording can take several minutes. **Stop** cancels it.
 - **Voice sounds robotic or mumbles**: more (and cleaner) audio, and more training rounds. Listen to test clips as it trains and stop when it sounds right; more is not always better.
 

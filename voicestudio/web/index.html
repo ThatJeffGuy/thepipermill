@@ -48,6 +48,7 @@ dialog::backdrop{background:#0008}
 footer.foot{margin:36px 0 0;padding-top:14px;border-top:1px solid var(--line);text-align:center;color:var(--mute);font-size:13px;line-height:1.7}
 footer.foot a{color:var(--acc);text-decoration:none}footer.foot a:hover{text-decoration:underline}footer.foot b{color:var(--ink)}
 .empty{text-align:center;padding:40px 10px;color:var(--mute)}
+.advbtn.on{background:var(--acc);color:#fff}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .seg button{background:var(--card);color:var(--mute);border-radius:0;padding:7px 12px;font-size:14px}.seg button.on{background:var(--acc);color:#fff}
 .strip{display:flex;gap:4px;margin-bottom:10px}
@@ -75,7 +76,7 @@ footer.foot a{color:var(--acc);text-decoration:none}footer.foot a:hover{text-dec
 <div class="wrap">
 <header>
   <h1>The Piper Mill</h1>
-  <div class="seg" id="modeSeg" role="group" aria-label="Mode"><button data-mode="beginner" title="One step at a time">Beginner</button><button data-mode="advanced" title="Everything on one page">Advanced</button></div>
+  <button class="sec advbtn" id="advBtn" aria-pressed="false" title="Show advanced options, the console and more">Advanced</button>
   <select id="voiceSel" aria-label="Voice"></select>
   <button class="sec" id="newBtn">+ New voice</button>
 </header>
@@ -107,7 +108,7 @@ footer.foot a{color:var(--acc);text-decoration:none}footer.foot a:hover{text-dec
   <h2>New voice</h2>
   <p class="hint">Use your own voice, or the voice of someone who has agreed to it. The new voice is always learned from your recordings. Training begins from a similar-sounding voice to save time; that is chosen for you automatically.</p>
   <p><input type="text" id="newName" placeholder="a short name, e.g. my-voice" style="width:100%" autocomplete="off"></p>
-  <details style="margin-bottom:8px"><summary>Advanced: choose the starting voice myself</summary><p><select id="newBase" style="width:100%"></select></p></details>
+  <details id="advStart" style="margin-bottom:8px"><summary>Advanced: choose the starting voice myself</summary><p><select id="newBase" style="width:100%"></select></p></details>
   <p class="row"><input type="text" id="newFolder" placeholder="folder with your recordings (required)" style="flex:1;min-width:0" autocomplete="off"><button class="sec" type="button" id="newBrowse">Browse…</button></p>
   <p class="row"><label>This voice is <select id="newType"><option value="">not specified</option><option value="male">male</option><option value="female">female</option></select></label><span class="hint" style="margin:0">helps find your voice and pick the starting voice</span></p>
   <p class="hint">The starting voice has its own dataset licence (usually non-commercial). It is saved next to the file and shown after creation.</p>
@@ -120,7 +121,7 @@ const $=s=>document.querySelector(s);
 const api=async(path,opt={})=>{const r=await fetch(path,{...opt,headers:{'X-Studio':'1','Content-Type':'application/json',...(opt.headers||{})}});
   const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||r.statusText);return j};
 let spSort=(()=>{try{return localStorage.getItem('spSort')==='first'?'first':'minutes'}catch(e){return'minutes'}})(),spTicks=null;
-let marks={};
+let marks={},plOpen=false;
 let mode=(()=>{try{return localStorage.getItem('mode')==='advanced'?'advanced':'beginner'}catch(e){return'beginner'}})(),wiz={};
 let S={voices:[],bases:{},busy:null},cur=localStorage.getItem('voice')||'',page=0,rows=null,rowsFor='',dirty=false,flash={};
 
@@ -129,8 +130,15 @@ function fmt(sec){if(sec==null)return'';if(sec<60)return Math.max(5,Math.round(s
 function pbar(j){if(!j||!j.running||!j.progress)return'';const p=j.progress,pct=p.frac!=null?Math.round(100*p.frac):p.total?Math.round(100*p.done/p.total):0;
   const what=p.frac!=null?`${pct}%`:`${p.done} of ${p.total}`;
   return `<div class="bar"><div style="width:${pct}%"></div></div><div class="hint">${esc(p.stage)}: ${what}${p.eta!=null?' · about '+fmt(p.eta)+' left':''}${p.note?' · '+esc(p.note):''}</div>`}
-let logOpen=false;
-const logBox=(B,t)=>B?`<details ${logOpen?'open':''} ontoggle="logOpen=this.open"><summary>Show details</summary><pre>${esc(t)}</pre></details>`:`<pre>${esc(t)}</pre>`;
+const JOBNAME={speakers:'speaker identification',match:'matching your voice',prep:'preparing your recordings',trim:'reprocessing clips',export:'making the test clip',training:'training'};
+const jobName=k=>JOBNAME[k]||k;
+const logBox=t=>mode==='advanced'?`<pre>${esc(t)}</pre>`:'';          // the console is an Advanced extra
+// Beginner mode has no console: a job that failed gets one plain line instead (a job you stopped says so)
+function jobNote(v,kind,force){
+  const j=v.job;if(!j||j.kind!==kind||j.running||!j.rc)return'';
+  if(j.rc<0)return'<div class="msg">Stopped.</div>';
+  const last=(j.log||'').split('\n').map(x=>x.trim()).filter(Boolean).pop()||'Something went wrong.';
+  return`<div class="msg err">That did not finish: ${esc(last.replace(/^[A-Za-z.]*(Error|Exception|SystemExit):\s*/,''))}</div>`}
 const live=t=>`<span class="pill live" role="status">${t}</span>`;
 const pn=(v,id)=>(v.people_names&&v.people_names[id])||'Person '+id;      // a name you gave them, else "Person N"
 const fitsJS=(vt,hz)=>vt==='male'?(hz==null||hz<=170):vt==='female'?(hz==null||hz>=145):true;
@@ -146,16 +154,21 @@ function syncMarks(){
   document.querySelectorAll('[data-mk]').forEach(el=>el.classList.toggle('on',mm[el.dataset.mk]===el.dataset.v));
   const y=markRanges(v,'y').length,n=markRanges(v,'n').length,c=$('#markCount'),b=$('#matchBtn');
   if(c)c.textContent=`${y} ✓ · ${n} ✗`;if(b)b.disabled=!y||!!S.busy}
-function matchHtml(v,B,jobRun){
-  const y=markRanges(v,'y').length,n=markRanges(v,'n').length,running=jobRun&&v.job.kind==='match',M=v.match;
+function matchHtml(v,jobRun,short){
+  const ys=markRanges(v,'y'),ns=markRanges(v,'n'),y=ys.length,n=ns.length,running=jobRun&&v.job.kind==='match',M=v.match;
+  const same=(a,b)=>a.length===b.length&&a.every(x=>b.some(z=>z[0]===x[0]&&Math.abs(z[1]-x[1])<.05&&Math.abs(z[2]-x[2])<.05));
+  const unchanged=!!M&&!M.settled&&!running&&same(ys,v.ref_yes||[])&&same(ns,v.ref_no||[])&&(window._mStrict||v.strict||'normal')===(M.strict||'normal');
   const lbl={strict:'strict',normal:'normal',loose:'loose'};
-  return `<div class="sub"><b>Find more like my voice</b>
-    <p class="hint">Hear your speaker in some clips of a person but not others? Press <b>✓</b> on the clips that are your voice (and <b>✗</b> on ones that are not), then press the button. It compares every stretch of speech in the whole recording with your ticked clips, across all the people found. Two or more ticked clips work best. Repeat with the new samples to improve it.</p>
+  return `<div class="${short?'':'sub'}">${short?'':'<b>Find more like my voice</b>'}
+    ${short?'':`<p class="hint">Hear your speaker in some clips of a person but not others? Press <b>✓</b> on the clips that are your voice (and <b>✗</b> on ones that are not), then press the button. It compares every stretch of speech in the whole recording with your ticked clips, across all the people found. Two or more ticked clips work best. Repeat with the new samples to improve it.</p>`}
+    ${short&&!y&&!M?'<p class="hint">You have not ticked any clips yet. Go back, press ✓ on a few clips of your speaker, then come here.</p>':''}
     <div class="row"><label>How close <select id="mStrict"><option value="strict">Strict</option><option value="normal">Normal</option><option value="loose">Loose</option></select></label>
-    <button id="matchBtn" ${(!y||S.busy)?'disabled':''}>Find more like these (<span id="markCount">${y} ✓ · ${n} ✗</span>)</button>${running?(B?'':live('Matching your voice…'))+'<button class="bad stopjob">Stop</button>':''}</div>
-    ${v.job&&v.job.kind==='match'?pbar(v.job)+`${logBox(B,v.job.log)}`:''}
-    ${M?`<div class="hint" style="margin:12px 0 4px"><b>Matched ${M.minutes} min</b> of speech in ${M.stretches} stretches (${lbl[M.strict]||M.strict}). Check these samples; the ones marked ? are the least sure:</div>
+    <button id="matchBtn" ${(!y||S.busy)?'disabled':''}>Find more like these (<span id="markCount">${y} ✓ · ${n} ✗</span>)</button>${running?'<button class="bad stopjob">Stop</button>':''}</div>
+    ${v.job&&v.job.kind==='match'?pbar(v.job)+`${logBox(v.job.log)}`:''}${jobNote(v,'match')}
+    ${unchanged?'<div class="hint">Nothing has changed since the last round, so the result would be identical. Tick or cross some more clips first.</div>':''}
+    ${M?`<div class="hint" style="margin:12px 0 4px"><b>Matched ${M.minutes} min</b> of speech in ${M.stretches} stretches (${lbl[M.strict]||M.strict}).${M.history&&M.history.length>1?' Rounds so far: '+M.history.join(' → ')+' min.':''} Check these samples; the ones marked ? are the least sure:</div>
       <div class="row">${M.samples.map(x=>smp(v,x.file,x.time,x.range,mmss(x.time)+(x.border?' ?':''))).join(' ')}</div>
+      ${M.settled&&!running?'<div class="msg ok" style="margin-top:8px"><b>Nothing new found.</b> Your voice has settled: running it again will not change anything. Go on to the next step.</div>':''}
       <div class="row" style="margin-top:8px"><label><input type="radio" name="useSrc" value="match" ${v.use_match?'checked':''}> Train on the matched voice</label><label><input type="radio" name="useSrc" value="people" ${!v.use_match?'checked':''}> Train on the ticked people instead</label></div>`:''}
     ${flash.match?`<div class="msg ${flash.match.cls||''}">${esc(flash.match.text)}</div>`:''}</div>`}
 function esc(t){return String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
@@ -165,7 +178,7 @@ function say(key,text,cls){flash[key]={text,cls};render()}
 function wizStep(v,c){
   if(wiz[v.name]==null){
     const k=v.job&&v.job.running?v.job.kind:'',tr=v.train;
-    wiz[v.name]=tr.running?4:k==='export'?5:k==='prep'?2:k==='speakers'?1:!v.files.length?0:!c.prepDone?1:!(c.finished||tr.checkpoints)?4:5;
+    wiz[v.name]=tr.running?5:k==='export'?6:k==='prep'?3:k==='match'?2:k==='speakers'?1:!v.files.length?0:!c.prepDone?(!v.people?1:v.match?3:2):!(c.finished||tr.checkpoints)?5:6;
   }
   return wiz[v.name];
 }
@@ -173,7 +186,7 @@ function openReset(v){
   const t=v.train,hasTrain=t.checkpoints>0||v.exported;
   $('#resetErr').textContent='';
   $('#resetBody').innerHTML=`<p>Go back to the beginning with <b>${esc(v.name)}</b>.</p>
-    <p><b>Cleared:</b> the speaker scan and your choices, ticked clips, the time window, and the prepared clips (including any words you edited).</p>
+    <p><b>Cleared:</b> the speaker scan and your choices, ticked clips, and the prepared clips (including any words you edited).</p>
     <p><b>Kept:</b> your recordings (never touched), the voice name and its male/female setting.</p>
     ${hasTrain?`<p><b>Training progress${v.exported?' and the exported voice':''}</b> (${t.checkpoints} checkpoints, ${t.disk_gb} GB) is <b>kept</b> unless you choose to delete it below.</p>`:''}`;
   $('#resetAll').hidden=!hasTrain;
@@ -181,14 +194,14 @@ function openReset(v){
   $('#resetKeep').onclick=()=>go(false);$('#resetAll').onclick=()=>go(true);$('#resetCancel').onclick=()=>$('#resetDlg').close();
   $('#resetDlg').showModal();
 }
-function go(name,i){wiz[name]=Math.max(0,Math.min(5,i));render();window.scrollTo(0,0)}
+function go(name,i){wiz[name]=Math.max(0,Math.min(6,i));render();window.scrollTo(0,0)}
 function setMode(m){mode=m;try{localStorage.setItem('mode',m)}catch(e){}render()}
 
 let last='';
 async function refresh(force){
   let n;try{n=await api('/api/voices')}catch(e){return}
-  const nv=n.voices.length;$('#sub').textContent=`Updated ${new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})} · ${nv} voice${nv===1?'':'s'} · ${n.busy?'GPU busy ('+n.busy.kind+')':'GPU free'}`;
-  const ae=document.activeElement, typing=ae&&(ae.closest&&ae.closest('#tbl')||['txt','srcIn','spNum','winFrom','winUntil','pnameIn'].includes(ae.id));
+  $('#sub').textContent=n.busy?(n.busy.kind==='training'?`${n.busy.voice} is training on the GPU`:`GPU is busy with ${jobName(n.busy.kind)}`):'GPU is free';
+  const ae=document.activeElement, typing=ae&&(ae.closest&&ae.closest('#tbl')||['txt','srcIn','spNum','pnameIn'].includes(ae.id));
   const sig=JSON.stringify(n);
   if(!force&&(sig===last||typing))return;      // never redraw under your fingers
   last=sig;S=n;
@@ -197,9 +210,9 @@ async function refresh(force){
 }
 
 function render(){
-  const keep={txt:$('#txt')&&$('#txt').value,ep:$('#ep')&&$('#ep').value,sp:$('#spNum')&&$('#spNum').value,wf:$('#winFrom')&&$('#winFrom').value,wu:$('#winUntil')&&$('#winUntil').value,wh:$('#which')&&$('#which').value};
+  const keep={txt:$('#txt')&&$('#txt').value,ep:$('#ep')&&$('#ep').value,sp:$('#spNum')&&$('#spNum').value,wh:$('#which')&&$('#which').value};
   const sel=$('#voiceSel');sel.innerHTML=S.voices.map(v=>`<option ${v.name===cur?'selected':''}>${esc(v.name)}</option>`).join('')||'<option>(no voices yet)</option>';
-  $('#busyBar').innerHTML=S.busy&&!(mode==='beginner'&&S.busy.voice===cur)?`<div class="card" style="padding:10px 16px">${live('Busy')} <b>${esc(S.busy.voice)}</b>: ${esc(S.busy.kind)} is using the GPU. Other jobs wait until it finishes.</div>`:'';
+  $('#busyBar').innerHTML=S.busy&&S.busy.voice!==cur?`<div class="card" style="padding:10px 16px">${live('Busy')} <b>${esc(S.busy.voice)}</b>: the GPU is busy with ${jobName(S.busy.kind)}. Other jobs wait until it finishes.</div>`:'';
   const v=S.voices.find(x=>x.name===cur);
   if(!v){$('#main').innerHTML=`<div class="card empty"><h2>Welcome</h2><p>Create your first voice to begin. Use your own voice, or the voice of someone who has agreed to it.</p><button onclick="$('#newBtn').click()">+ New voice</button></div>`;return}
   const f=k=>flash[k]?`<div class="msg ${flash[k].cls||''}">${esc(flash[k].text)}</div>`:'';
@@ -208,8 +221,8 @@ function render(){
   const pct=t.total&&t.done!=null?Math.min(100,Math.round(100*t.done/t.total)):0;
   const finished=!t.running&&t.total&&t.done!=null&&t.done>=t.total;
   let mosTxt='';if(t.mos!=null){mosTxt=t.mos>=4?'<span class="pill ok">sounds great</span>':t.mos>=3.4?'<span class="pill">getting good</span>':'<span class="pill warn">still learning</span>'}
-  const B=mode==='beginner';
-  const hd=(n,done,title)=>`<h2><span class="step ${done?'done':''}">${n}</span>${title}</h2>`;
+  const ADV=mode==='advanced';                       // Advanced only reveals extras; there is one layout
+  const hd=(n,done,title)=>`<h2><span class="step ${done?'done':''}">${n>=3?n+1:n}</span>${title}</h2>`;
   const rowsLoaded=!!(rows&&rowsFor===v.name);
   const cards=[
   ()=>`<div class="card">${hd(1,v.files.length,'Your recordings folder')}
@@ -223,35 +236,34 @@ function render(){
   ()=>`<div class="card">${hd(2,v.people,'Who is speaking? <span class="pill">optional</span>')}
     <p class="hint">Only needed if your recordings have more than one person talking (a conversation, a call…). It finds each voice so you can listen and tick whose voice to train on. Everyone else is left out. Skip this if it is just you.</p>
     <p class="hint">Press ✎ next to a person to give them a name if you like (optional; leave it as "Person N" if you prefer). The ▶ samples are spread through the recording (the number is the time each one comes from), so you hear typical clips, not only the clearest. Voices can still be mixed up now and then: listen to a few in Check the words and remove the wrong ones.</p>
-    <div class="row"><label>How many people talk? <input type="number" id="spNum" min="1" max="20" placeholder="auto" style="width:90px"></label>
+    <div class="row">${ADV?'<label>How many people talk? <input type="number" id="spNum" min="1" max="20" placeholder="auto" style="width:90px"></label>':''}
     <label>Looking for <select id="vtSel"><option value="">any voice</option><option value="male" ${v.voice_type==='male'?'selected':''}>a male voice</option><option value="female" ${v.voice_type==='female'?'selected':''}>a female voice</option></select></label>
-    <button id="spBtn" ${(!v.files.length||S.busy)?'disabled':''}>${v.people?'Find them again':'Find the speakers'}</button>${jobRun&&v.job.kind==='speakers'?(B?'':live('Finding the speakers…'))+'<button class="bad stopjob">Stop</button>':''}</div>
-    ${v.job&&v.job.kind==='speakers'?pbar(v.job)+`${logBox(B,v.job.log)}`:''}
+    <button id="spBtn" ${(!v.files.length||S.busy)?'disabled':''}>${v.people?'Find them again':'Find the speakers'}</button>${jobRun&&v.job.kind==='speakers'?'<button class="bad stopjob">Stop</button>':''}</div>
+    ${v.job&&v.job.kind==='speakers'?pbar(v.job)+`${logBox(v.job.log)}`:''}${jobNote(v,'speakers')}
     ${v.people_stale?'<div class="msg err">Your recordings changed since this scan: find the speakers again.</div>':''}
     ${v.people?(v.people.length?`<div class="row" style="margin-top:12px"><label class="hint" style="margin:0">Sort by <select id="spSort"><option value="minutes" ${spSort==='minutes'?'selected':''}>Most speech</option><option value="first" ${spSort==='first'?'selected':''}>First heard</option></select></label></div><ul class="files" style="margin-top:6px">${[...v.people].sort((a,b)=>spSort==='first'?((a.first??1e12)-(b.first??1e12)||a.id-b.id):(b.minutes-a.minutes||a.id-b.id)).map(p=>{const fit=fitsJS(v.voice_type,p.pitch);return `<li style="align-items:center;padding:8px 0;flex-wrap:wrap${fit?'':';opacity:.5'}"><label style="flex:1;min-width:200px"><input type="checkbox" class="pk" value="${p.id}" ${(v.keep||[]).includes(p.id)?'checked':''}> <b>${esc(pn(v,p.id))}</b><button class="x pedit" data-pid="${p.id}" title="Give this person a name (optional)">✎</button> <span class="hint" style="margin:0">${p.minutes} min${p.first!=null?' · first heard at '+mmss(p.first):''}${p.files>1?' · '+p.files+' file(s)':''}${p.pitch!=null?' · '+pitchTag(p.pitch):''}${fit?'':' · probably not a '+v.voice_type+' voice'}</span></label>${p.samples.map((sm,i)=>smp(v,sm,p.sample_times?p.sample_times[i]:null,p.sample_ranges?p.sample_ranges[i]:null,p.sample_times?mmss(p.sample_times[i]):i+1)).join(' ')}</li>`}).join('')}</ul>
-      <div class="row" style="margin-top:8px"><button id="keepBtn">Save my choice</button><span class="hint" style="margin:0">${v.use_match&&v.match?`Training on: your matched voice (${v.match.minutes} min)`:(v.keep||[]).length?`Training on: ${v.keep.map(i=>esc(pn(v,i))).join(', ')}`:'Nothing ticked: all speech is used'}</span></div>${matchHtml(v,B,jobRun)}`:'<p class="hint">No speech found.</p>'):''}
+      <div class="row" style="margin-top:8px"><button id="keepBtn">Save my choice</button><span class="hint" style="margin:0">${v.use_match&&v.match?`Training on: your matched voice (${v.match.minutes} min)`:(v.keep||[]).length?`Training on: ${v.keep.map(i=>esc(pn(v,i))).join(', ')}`:'Nothing ticked: all speech is used'}</span></div><p class="hint" style="margin-top:12px">Pressed ✓ on some clips of your speaker? Press <b>Next</b> to find more like them across the whole recording.</p>`:'<p class="hint">No speech found.</p>'):''}
     ${f('sp')}
   </div>`,
 
   ()=>`<div class="card">${hd(3,prepDone,'Prepare')}
     <p class="hint">Cuts the recordings into short clips and writes down what you said (using the GPU). A few minutes.${v.use_match&&v.match?' Only the parts that sound like your ticked clips will be used.':(v.keep||[]).length?` Only the parts where ${v.keep.map(i=>esc(pn(v,i))).join(', ')} speak will be used.`:''}</p>
-    <div class="row" style="margin-bottom:10px"><label>Only use audio from <input type="text" id="winFrom" value="${v.keep_from?mmss(v.keep_from):''}" placeholder="0:00" style="width:80px"></label><label>to <input type="text" id="winUntil" value="${v.keep_until?mmss(v.keep_until):''}" placeholder="the end" style="width:92px"></label><span class="hint" style="margin:0">optional, like 21:30. Handy if you know when your voice starts to speak.</span></div>
     <div class="row" style="margin-bottom:10px"><label><input type="checkbox" id="cleanChk" ${v.clean_voice?'checked':''}> Remove music and background noise (keep only the voices)</label></div>
     <p class="hint" style="margin:-4px 0 10px">Recommended for films, videos or noisy recordings; not needed for a clean recording. It only cleans the parts being kept, so it adds little time. The first use downloads a small model (about 80 MB).</p>
     <div class="row"><button id="prepBtn" ${(!v.files.length||S.busy)?'disabled':''}>${prepDone?'Prepare again':'Prepare my recordings'}</button>
-    ${prepDone?`<span class="pill ok">${v.clips} clips ready</span>`:''}${jobRun&&v.job.kind==='prep'?(B?'':live('Preparing…'))+'<button class="bad stopjob">Stop</button>':''}</div>
-    ${v.job&&v.job.kind==='prep'?pbar(v.job)+`${logBox(B,v.job.log)}`:''}${f('prep')}
+    ${prepDone?`<span class="pill ok">${v.clips} clips ready</span>`:''}${jobRun&&v.job.kind==='prep'?'<button class="bad stopjob">Stop</button>':''}</div>
+    ${pbar(v.job&&v.job.kind==='prep'?v.job:null)}${jobNote(v,'prep',true)}${f('prep')}
   </div>`,
 
-  ()=>`<div class="card">${hd(4,rowsLoaded&&!dirty,'Check the words'+(B?' <span class="pill">optional</span>':''))}
+  ()=>`<div class="card">${hd(4,rowsLoaded&&!dirty,'Check the words <span class="pill">optional</span>')}
     <p class="hint">The voice learns exactly what is written here. Press ▶ to listen and fix any wrong words. Remove clips with noise, coughs or mistakes (✕).</p>
-    ${B?'<p class="hint"><b>Skipping this may reduce quality.</b> Any wrong words or noisy clips left in will be learned too, and the finished voice can mispronounce or sound rough. If your recordings are clean, skipping is fine.</p>':''}
+    <p class="hint"><b>Skipping this may reduce quality.</b> Any wrong words or noisy clips left in will be learned too, and the finished voice can mispronounce or sound rough. If your recordings are clean, skipping is fine.</p>
     <div class="row"><button class="sec" id="loadRows" ${prepDone?'':'disabled'}>${rowsLoaded?'Reload list':'Show my clips'}</button>
     <button id="saveRows" ${dirty?'':'disabled'}>Save changes</button>
-    <button id="trimBtn" title="Cut each edited clip's audio down to the words you kept" ${(!v.edited||dirty||S.busy)?'disabled':''}>Reprocess edited clips${v.edited?' ('+v.edited+')':''}</button>${jobRun&&v.job.kind==='trim'?(B?'':live('Reprocessing…'))+'<button class="bad stopjob">Stop</button>':''}</div>
+    <button id="trimBtn" title="Cut each edited clip's audio down to the words you kept" ${(!v.edited||dirty||S.busy)?'disabled':''}>Reprocess edited clips${v.edited?' ('+v.edited+')':''}</button>${jobRun&&v.job.kind==='trim'?'<button class="bad stopjob">Stop</button>':''}</div>
     <div class="row" style="margin-top:8px"><button class="sec" id="dsBtn" title="Your cleaned clips and transcript as one zip, ready to use anywhere" ${(!prepDone||v.edited)?'disabled':''}>⬇ Export dataset (.zip)</button><span class="hint" style="margin:0">${v.edited?'Reprocess your edited clips first.':'The clips and transcript as they are now (22.05 kHz mono wav + metadata.csv).'}</span></div>
     <p class="hint" style="margin:8px 0 0">Two voices in one clip? Delete the words the wrong person says from the start or end of the text, press Save, then <b>Reprocess</b>: the audio is cut to just the words you kept.</p>
-    ${v.job&&v.job.kind==='trim'?pbar(v.job)+`${logBox(B,v.job.log)}`:''}
+    ${v.job&&v.job.kind==='trim'?pbar(v.job)+`${logBox(v.job.log)}`:''}${jobNote(v,'trim')}
     <div id="tbl"></div>${f('tr')}
   </div>`,
 
@@ -259,62 +271,63 @@ function render(){
     <p class="hint">Teaches the voice on your GPU. Takes from half an hour to a couple of hours. It keeps going if you close this page, and you can stop and resume any time.</p>
     <div class="row"><label>Length <select id="ep"><option value="300">Quick (300)</option><option value="1000" selected>Normal (1000)</option><option value="2000">Long (2000)</option></select></label>
     ${t.running?'<button class="bad" id="stopBtn">Stop</button>':`<button id="trainBtn" ${(!prepDone||S.busy)?'disabled':''}>${t.checkpoints?'Resume training':'Start training'}</button>`}
-    ${t.running?(B?'':live('Training…')):finished?'<span class="pill ok">finished</span>':''}</div>
+    ${t.running?'':finished?'<span class="pill ok">finished</span>':''}</div>
     ${(t.running||t.done!=null)?`<div class="bar"><div style="width:${pct}%"></div></div>
       <div class="hint">${t.done!=null?`${t.done} of ${t.total} rounds (${pct}%)`:'starting…'} ${t.mos!=null?` · quality score ${t.mos.toFixed(2)} ${mosTxt}`:''}</div>`:''}
-    ${t.log.length?`${logBox(B,t.log.join('\n'))}`:''}${f('train')}
+    ${t.log.length?`${logBox(t.log.join('\n'))}`:''}${f('train')}
   </div>`,
 
   ()=>`<div class="card">${hd(6,v.exported,'Listen, then use it')}
     <p class="hint">Make a test clip from the latest training and listen. When you like it, download the two voice files.</p>
     <textarea id="txt">Good evening. This is a test of my new voice, and I hope it sounds like me.</textarea>
-    <div class="row" style="margin-top:8px">${B?'':'<label>Version <select id="which"><option value="best">Best sounding (recommended)</option><option value="accurate">Most accurate</option><option value="latest">Latest</option></select></label>'}
+    <div class="row" style="margin-top:8px">${ADV?'<label>Version <select id="which"><option value="best">Best sounding (recommended)</option><option value="accurate">Most accurate</option><option value="latest">Latest</option></select></label>':''}
     <button id="expBtn" ${(!t.checkpoints||S.busy)?'disabled':''}>Make test clip</button>
-    ${jobRun&&v.job.kind==='export'?(B?'':live('Making the test clip…'))+'<button class="bad stopjob">Stop</button>':''}
+    ${jobRun&&v.job.kind==='export'?'<button class="bad stopjob">Stop</button>':''}
     ${S.install?`<button class="sec" id="instBtn" ${v.exported?'':'disabled'}>Install on my Piper…</button>`:''}</div>
     ${v.exported?`<div class="row" style="margin-top:10px"><a href="/download/${esc(v.name)}.onnx"><button class="sec">⬇ ${esc(v.name)}.onnx</button></a><a href="/download/${esc(v.name)}.onnx.json"><button class="sec">⬇ ${esc(v.name)}.onnx.json</button></a></div>
       <p class="hint">Put both files in your Piper voices folder. They must keep the same name.${S.install?'':' (Automatic install is off: set it up in config.toml if you want a button for it.)'}</p>`:''}
     ${v.exported?`<p><audio controls src="/out/${esc(v.name)}-test.wav?t=${Date.now()>>14}" style="width:100%"></audio></p>`:''}
-    ${v.job&&v.job.kind==='export'&&v.job.rc?`${logBox(B,v.job.log)}`:''}${f('exp')}
+    ${v.job&&v.job.kind==='export'&&v.job.rc?`${logBox(v.job.log)}`:''}${jobNote(v,'export')}${f('exp')}
   </div>`];
-  document.querySelectorAll('#modeSeg button').forEach(b=>b.classList.toggle('on',b.dataset.mode===mode));
-  if(!B){
-    $('#main').innerHTML=cards.map(c=>c()).join('')+`
-  <details style="margin-top:6px"><summary>Voice settings</summary><p class="hint">Starting voice: ${v.base==='auto'||!v.base?`automatic${v.base_used?' (picked: '+esc(S.bases[v.base_used]||v.base_used)+')':' (chosen when training starts, from your recordings)'}`:esc(S.bases[v.base]||v.base)}</p>${t.checkpoints?`<p class="hint">Training checkpoints use ${t.disk_gb} GB (${t.checkpoints} files). <button class="sec" id="cleanBtn" ${S.busy?'disabled':''}>Free up space</button> keeps only the best and the latest.</p>`:''}
-    <button class="sec bad" id="delBtn" style="color:#fff">Delete this voice…</button></details>
-  <div style="margin-top:12px"><button class="sec" id="resetBtn" ${S.busy?'disabled':''}>Start over</button></div>`;
-  }else{
+  const ab=$('#advBtn');ab.classList.toggle('on',ADV);ab.setAttribute('aria-pressed',ADV);
     // wizard: one step at a time, Prev / Next, and Skip on the optional steps
-    const names=['Recordings','Speakers','Prepare','Words','Train','Listen'];
-    const isDone=[v.files.length>0,!!v.people,prepDone,rowsLoaded&&!dirty,finished||t.checkpoints>0,v.exported];   // what lets you press Next
-    const shownDone=[v.files.length>0,!!v.people,prepDone,rowsLoaded&&!dirty&&!v.edited,!!finished,v.exported];     // what the strip shows as finished (training: only when all rounds are done)
-    const optional=[false,true,false,true,false,false];
+    const refineCard=()=>`<div class="card"><h2><span class="step ${v.match?'done':''}">3</span>Refine your voice <span class="pill">optional</span></h2>
+      <p class="hint">Hear your speaker in some clips but not others? This looks through the whole recording for more speech that sounds like the clips you ticked ✓ on the last page. Skip it if you already picked the right person.</p>
+      ${matchHtml(v,jobRun,true)}</div>`;
+    const wcards=[cards[0],cards[1],refineCard,cards[2],cards[3],cards[4],cards[5]];
+    const names=['Recordings','Speakers','Refine','Prepare','Words','Train','Listen'];
+    const isDone=[v.files.length>0,!!v.people,!!v.match,prepDone,rowsLoaded&&!dirty,finished||t.checkpoints>0,v.exported];   // what lets you press Next
+    const shownDone=[v.files.length>0,!!v.people,!!v.match,prepDone,rowsLoaded&&!dirty&&!v.edited,!!finished,v.exported];     // what the strip shows as finished (training: only when all rounds are done)
+    const optional=[false,true,true,false,true,false,false];
     const run=k=>jobRun&&v.job.kind===k;
     const gate=[
       !(v.files.length&&v.folder_ok)?'Choose a folder that has audio files to continue.':'',
-      run('speakers')||run('match')?'Working on the speakers… please wait.':!v.people?'Find the speakers, or press Skip if it is just you.':'',
+      run('speakers')?'Finding the speakers… please wait.':!v.people?'Find the speakers, or press Skip if it is just you.':'',
+      run('match')?'Matching your voice… please wait.':'',
       run('prep')?'Preparing… please wait.':!prepDone?'Prepare your recordings to continue.':'',
       dirty?'Save your changes first, or press Skip.':run('trim')?'Reprocessing… please wait.':v.edited?'Press Reprocess so the audio matches your edited words.':!rowsLoaded?'Open your clips to check them, or press Skip.':'',
-      t.running?'Training is running. You can close this page and come back any time.':!t.checkpoints?'Start training to continue.':'',
+      t.running?`${v.name} is training on the GPU…`:!t.checkpoints?'Start training to continue.':'',
       ''];
-    const working=[null,run('speakers')?'Finding the speakers… please wait.':run('match')?'Finding more like your ticked clips… please wait.':null,run('prep')?'Preparing… please wait.':null,run('trim')?'Reprocessing… please wait.':null,
-      t.running?'Training is running. You can close this page and come back any time.':null,run('export')?'Making the test clip… please wait.':null];
-    const cur=wizStep(v,{prepDone,finished});
+    const working=[null,run('speakers')?'Finding the speakers… please wait.':null,run('match')?'Finding more like your ticked clips… please wait.':null,run('prep')?'Preparing… please wait.':null,run('trim')?'Reprocessing… please wait.':null,
+      t.running?`${v.name} is training on the GPU…`:null,run('export')?'Making the test clip… please wait.':null];
+    const stepNo=wizStep(v,{prepDone,finished});
     $('#main').innerHTML=`
     <div class="strip">${names.map((n,i)=>{
-      const working=[false,run('speakers')||run('match'),run('prep'),run('trim'),!!t.running,run('export')][i];
-      const st=working?(i===cur?'cur run':'run'):i===cur?(shownDone[i]?'cur ok':'cur'):shownDone[i]?'ok':i<cur?(optional[i]?'skip':'warn'):(i===4&&t.checkpoints>0&&!t.running)?'part':'todo';
-      const mark=working?'':st.includes('ok')?'✓':st==='skip'?'–':st==='warn'?'!':st==='part'?'…':i+1;
+      const busyNow=[false,run('speakers'),run('match'),run('prep'),run('trim'),!!t.running,run('export')][i];
+      const st=busyNow?(i===stepNo?'cur run':'run'):i===stepNo?(shownDone[i]?'cur ok':'cur'):shownDone[i]?'ok':i<stepNo?(optional[i]?'skip':'warn'):(i===5&&t.checkpoints>0&&!t.running)?'part':'todo';
+      const mark=busyNow?'':st.includes('ok')?'✓':st==='skip'?'–':st==='warn'?'!':st==='part'?'…':i+1;
       const tip={run:'working now','cur run':'working now (you are here)','cur':'you are here','cur ok':'you are here (done)',ok:'done',skip:'skipped',warn:'not finished',part:'started, not finished',todo:'not started yet'}[st];
-      return `<button class="sp ${st}" data-go="${i}" title="${n}: ${tip}" aria-label="${n}: ${tip}" ${i<cur?'':'disabled'} ${i===cur?'aria-current="step"':''}><i>${mark}</i><span>${n}</span></button>`}).join('')}</div>
-    <div class="hint" style="margin:0 0 8px">Step ${cur+1} of ${names.length}</div>
-    ${cards[cur]()}
-    <div class="nav"><button class="sec" id="prevBtn" ${cur>0?'':'disabled'}>‹ Prev</button>
-      <span class="hint nm" id="navMsg">${working[cur]?live(esc(working[cur])):esc(gate[cur])}</span>
-      <span class="row">${optional[cur]?`<button class="sec" id="skipBtn" ${(run('speakers')||run('match')||run('trim')||(cur===3&&v.edited))?'disabled':''}>Skip ›</button>`:''}${cur<names.length-1?`<button id="nextBtn" ${gate[cur]?'disabled':''}>Next ›</button>`:''}</span></div>
-    <div style="text-align:center;margin-top:16px"><button class="sec" id="resetBtn" ${S.busy?'disabled':''}>Start over</button></div>`;
-  }
-  if(keep.sp&&$('#spNum'))$('#spNum').value=keep.sp;if(keep.wf!=null&&$('#winFrom'))$('#winFrom').value=keep.wf;if(keep.wu!=null&&$('#winUntil'))$('#winUntil').value=keep.wu;if(keep.wh&&$('#which'))$('#which').value=keep.wh;if(keep.txt!=null&&$('#txt'))$('#txt').value=keep.txt;if(keep.ep!=null&&$('#ep'))$('#ep').value=keep.ep;
+      return `<button class="sp ${st}" data-go="${i}" title="${n}: ${tip}" aria-label="${n}: ${tip}" ${i<stepNo||ADV?'':'disabled'} ${i===stepNo?'aria-current="step"':''}><i>${mark}</i><span>${n}</span></button>`}).join('')}</div>
+    <div class="hint" style="margin:0 0 8px">Step ${stepNo+1} of ${names.length}</div>
+    ${wcards[stepNo]()}
+    <div class="nav"><button class="sec" id="prevBtn" ${stepNo>0?'':'disabled'}>‹ Prev</button>
+      <span class="hint nm" id="navMsg">${working[stepNo]?live(esc(working[stepNo])):esc(gate[stepNo])}</span>
+      <span class="row">${optional[stepNo]?`<button class="sec" id="skipBtn" ${(run('speakers')||run('match')||run('trim')||(stepNo===4&&v.edited))?'disabled':''}>Skip ›</button>`:''}${stepNo<names.length-1?`<button id="nextBtn" ${gate[stepNo]?'disabled':''}>Next ›</button>`:''}</span></div>
+    ${stepNo===5&&t.running?'<p class="hint" style="text-align:center;margin:10px 0 0">You can close this page and come back any time: training keeps going.<br>To stop training, press the red <b>Stop</b> button above.</p>':''}
+    <div style="text-align:center;margin-top:16px"><button class="sec" id="resetBtn" ${S.busy?'disabled':''}>Start over</button></div>
+    ${ADV?`<details style="margin-top:14px"><summary>Voice settings</summary><p class="hint">Starting voice: ${v.base==='auto'||!v.base?`automatic${v.base_used?' (picked: '+esc(S.bases[v.base_used]||v.base_used)+')':' (chosen when training starts)'}`:esc(S.bases[v.base]||v.base)}</p>${t.checkpoints?`<p class="hint">Training checkpoints use ${t.disk_gb} GB (${t.checkpoints} files). <button class="sec" id="cleanBtn" ${S.busy?'disabled':''}>Free up space</button> keeps only the best and the latest.</p>`:''}
+      <button class="sec bad" id="delBtn" style="color:#fff">Delete this voice…</button></details>`:''}`;
+  if(keep.sp&&$('#spNum'))$('#spNum').value=keep.sp;if(keep.wh&&$('#which'))$('#which').value=keep.wh;if(keep.txt!=null&&$('#txt'))$('#txt').value=keep.txt;if(keep.ep!=null&&$('#ep'))$('#ep').value=keep.ep;
   wire(v);if(rows&&rowsFor===v.name&&$('#tbl'))drawRows();
 }
 
@@ -337,7 +350,7 @@ function wire(v){
   b('#cleanBtn',async()=>{try{const r=await api('/api/clean',{method:'POST',body:JSON.stringify({voice:v.name})});say('exp',`Freed ${r.freed_gb} GB.`,'ok');refresh(true)}catch(e){say('exp',e.message,'err')}});
   b('#delBtn',async()=>{if(!confirm(`Delete "${v.name}" and its working files (prepared clips, training progress, exported voice)?\n\nRecordings in your own folder are never deleted.`))return;
     try{await api(`/api/voice?voice=${v.name}`,{method:'DELETE'});rows=null;cur='';refresh(true)}catch(e){say('exp',e.message,'err')}});
-  b('#prepBtn',async()=>{try{await api('/api/window',{method:'POST',body:JSON.stringify({voice:v.name,from:$('#winFrom').value,until:$('#winUntil').value,clean:$('#cleanChk').checked})})}catch(e){return say('prep',e.message,'err')}act('/api/prep',{voice:v.name},'prep')});
+  b('#prepBtn',async()=>{try{await api('/api/prepopts',{method:'POST',body:JSON.stringify({voice:v.name,clean:$('#cleanChk').checked})})}catch(e){return say('prep',e.message,'err')}act('/api/prep',{voice:v.name},'prep')});
   document.querySelectorAll('.stopjob').forEach(el=>el.onclick=async()=>{el.disabled=true;el.textContent='Stopping…';try{await api('/api/job/stop',{method:'POST',body:JSON.stringify({voice:v.name})})}catch(e){say('prep',e.message,'err')}setTimeout(()=>refresh(true),800)});
   document.querySelectorAll('[data-mk]').forEach(el=>el.onclick=()=>{const mm=marksFor(v),id=el.dataset.mk;if(mm[id]===el.dataset.v)delete mm[id];else mm[id]=el.dataset.v;syncMarks()});
   const ms=$('#mStrict');if(ms){ms.value=window._mStrict||v.strict||'normal';ms.onchange=()=>{window._mStrict=ms.value}}
@@ -346,7 +359,7 @@ function wire(v){
   document.querySelectorAll('[name=useSrc]').forEach(r=>r.onchange=async()=>{try{await api('/api/usematch',{method:'POST',body:JSON.stringify({voice:v.name,on:r.value==='match'})})}catch(e){say('match',e.message,'err')}refresh(true)});
   b('#dsBtn',()=>{location.href=`/dataset/${encodeURIComponent(v.name)}.zip`});
   b('#trimBtn',()=>act('/api/trim',{voice:v.name},'tr'));
-  b('#spBtn',()=>act('/api/speakers',{voice:v.name,num:$('#spNum').value},'sp'));
+  b('#spBtn',()=>act('/api/speakers',{voice:v.name,num:($('#spNum')||{}).value||''},'sp'));
   b('#keepBtn',async()=>{const ids=[...document.querySelectorAll('.pk:checked')].map(x=>+x.value);
     try{await api('/api/keep',{method:'POST',body:JSON.stringify({voice:v.name,ids})});say('sp',ids.length?`Saved. Prepare will use only ${ids.map(i=>pn(v,i)).join(', ')}.`:'Saved. All speech will be used.','ok');refresh(true)}catch(e){say('sp',e.message,'err')}});
   b('#loadRows',()=>loadRows(v.name));b('#saveRows',()=>saveRows(v.name));
@@ -376,9 +389,9 @@ let au;function playS(n,f){if(au)au.pause();au=new Audio(`/speaker-sample/${n}/$
 function play(f){if(au)au.pause();au=new Audio(`/audio/${cur}/${f}`);au.play()}
 async function saveRows(name){try{const j=await api('/api/transcript',{method:'PUT',body:JSON.stringify({voice:name,rows})});dirty=false;say('tr',`Saved. ${j.kept} clips kept.${j.edited?` ${j.edited} clip(s) have changed words: press Reprocess to cut their audio to match.`:''}`,'ok');refresh(true)}catch(e){say('tr',e.message,'err')}}
 
-document.querySelectorAll('#modeSeg button').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
+$('#advBtn').onclick=()=>setMode(mode==='advanced'?'beginner':'advanced');
 $('#voiceSel').onchange=e=>{cur=e.target.value;localStorage.setItem('voice',cur);rows=null;dirty=false;flash={};render()};
-$('#newBtn').onclick=()=>{$('#newErr').textContent='';$('#newBase').innerHTML='<option value="auto">Automatic: matched to my recordings (recommended)</option>'+Object.entries(S.bases).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');$('#newDlg').showModal()};
+$('#newBtn').onclick=()=>{$('#advStart').hidden=mode!=='advanced';$('#newErr').textContent='';$('#newBase').innerHTML='<option value="auto">Automatic: matched to my recordings (recommended)</option>'+Object.entries(S.bases).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');$('#newDlg').showModal()};
 $('#newCancel').onclick=()=>$('#newDlg').close();
 $('#newBrowse').onclick=()=>pickFolder($('#newFolder').value,p=>{$('#newFolder').value=p});
 

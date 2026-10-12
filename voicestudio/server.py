@@ -86,7 +86,7 @@ def start_over(n, training=False):
         for g in (CFG.out.glob(f"{n}.*"), CFG.out.glob(f"{n}-*")):
             for p in g: p.unlink(missing_ok=True)
     JOBS.pop(n, None)
-    kw = dict(keep_people=[], keep_from=None, keep_until=None, ref_yes=[], ref_no=[], use_match=False, people_names={})
+    kw = dict(keep_people=[], ref_yes=[], ref_no=[], use_match=False, people_names={})
     if training: kw["base_used"] = None
     voices.write(n, **kw)
 
@@ -113,6 +113,12 @@ def info(n):
     try: total = json.loads((runs / "train.meta").read_text())["epochs"]
     except (OSError, ValueError, KeyError): total = None
     done = (int(ep[-1][0]) - (int(ep[-1][1]) - total)) if (ep and total) else None
+    if done is None and ck and total:             # the trainer prints no "Epoch n/m" lines into a log file: read progress from the checkpoint names (epoch=NNNN-...) instead
+        try:
+            m0 = re.search(r"base is at (\d+)", open(runs / "train.log", "rb").read(8000).decode(errors="ignore"))
+            eps = [int(e) for p in ck for e in re.findall(r"epoch=(\d+)", p.name)]
+            if m0 and eps: done = min(total, max(0, max(eps) - int(m0.group(1))))
+        except OSError: pass
     j = JOBS.get(n); job = None
     if j: job = {"kind": j["kind"], "running": j["proc"].poll() is None, "rc": j["proc"].poll(), "log": tail(j["log"]), "progress": progress.read(n, j["kind"])}
     sp = speakers.load(n)
@@ -120,9 +126,9 @@ def info(n):
         try: sp = speakers.person_pitches(n) or sp          # older scan: add pitch + clip ranges once (a couple of seconds, no GPU)
         except Exception: pass
     return {"name": n, "base": m.get("base"), "base_used": m.get("base_used"),
-            "people": sp["people"] if sp else None, "keep": m.get("keep_people") or [], "keep_from": m.get("keep_from"), "keep_until": m.get("keep_until"),
+            "people": sp["people"] if sp else None, "keep": m.get("keep_people") or [], 
             "clean_voice": bool(m.get("clean_voice")), "people_names": m.get("people_names") or {}, "voice_type": m.get("voice_type") or "", "ref_yes": m.get("ref_yes") or [], "ref_no": m.get("ref_no") or [], "strict": m.get("strict") or "normal", "use_match": bool(m.get("use_match")),
-            "match": ({k: sp["match"][k] for k in ("minutes", "stretches", "strict", "samples")} if sp and sp.get("match") else None), "people_stale": speakers.stale(n) if sp else False, "folder": str(src) if src else None, "folder_ok": bool(src and src.is_dir()),
+            "match": ({k: sp["match"].get(k) for k in ("minutes", "stretches", "strict", "samples", "settled", "history")} if sp and sp.get("match") else None), "people_stale": speakers.stale(n) if sp else False, "folder": str(src) if src else None, "folder_ok": bool(src and src.is_dir()),
             "files": [{"name": speakers.rel(n, p), "mb": round(p.stat().st_size / 1e6, 1)} for p in files],
             "clips": clips, "prepared": md.exists(), "edited": len(trim.pending(n)),
             "train": {"running": bool(train_pid(n)), "total": total, "done": max(0, done) if done is not None else None,
@@ -314,17 +320,8 @@ class H(BaseHTTPRequestHandler):
                 if ids: speakers.keep(n, ids)
                 else: voices.write(n, keep_people=[])
                 voices.write(n, use_match=False)                       # saving ticked people means: use the people, not a match
-            elif u.path == "/api/window":
-                def secs(v):
-                    v = str(v or "").strip()
-                    if not v: return None
-                    parts = [float(x) for x in v.split(":")]
-                    if len(parts) > 3 or any(x < 0 for x in parts): raise ValueError("Times look like 21:30 (minutes:seconds) or 1:05:00.")
-                    return sum(x * 60 ** i for i, x in enumerate(reversed(parts)))
-                try: a, b = secs(d.get("from")), secs(d.get("until"))
-                except ValueError: raise ValueError("Times look like 21:30 (minutes:seconds) or 1:05:00.")
-                if a is not None and b is not None and b <= a: raise ValueError("The end time must be after the start time.")
-                voices.write(n, keep_from=a, keep_until=b, clean_voice=bool(d.get("clean")))
+            elif u.path == "/api/prepopts":
+                voices.write(n, clean_voice=bool(d.get("clean")))
             elif u.path == "/api/job/stop":
                 running = job_pids(n)
                 if not running: raise ValueError("Nothing is running for this voice.")

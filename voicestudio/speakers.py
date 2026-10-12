@@ -283,10 +283,20 @@ def match(name, log=print, pipeline=None):
             b = min(b, a + MAX_SAMPLE_S); y, _ = sf.read(_wavpath(name, key), start=int(a * SR), stop=int(b * SR), dtype="float32")
             fn = f"match_{len(samples) + 1}.wav"; sf.write(outdir / fn, y, SR, subtype="PCM_16")
             samples.append({"file": fn, "time": round(a, 1), "range": [key, round(a, 2), round(b, 2)], "border": border})
-    r["match"] = {"files": files, "minutes": round(minutes, 1), "stretches": stretches, "strict": m.get("strict") or "normal", "samples": samples}
+    prev = r.get("match"); history = list((prev or {}).get("history") or [])
+    def covered(a, b):                                                   # seconds of audio that both results contain
+        return sum(max(0.0, min(x1, y1) - max(x0, y0)) for k, iv in a.items() for x0, x1 in iv for y0, y1 in b.get(k, []))
+    secs = lambda f: sum(b - a for v in f.values() for a, b in v)
+    settled = False
+    if prev:
+        both = covered(files, prev["files"]); union = secs(files) + secs(prev["files"]) - both
+        settled = union > 0 and both / union >= 0.95                      # essentially the same audio as last round
+    history.append(round(minutes, 1))
+    r["match"] = {"files": files, "minutes": round(minutes, 1), "stretches": stretches, "strict": m.get("strict") or "normal", "samples": samples, "settled": settled, "history": history}
     result_path(name).write_text(json.dumps(r))
     voices.write(name, use_match=True)
     log(f"\nDone: found {minutes:.1f} min of speech ({stretches} stretches) that sounds like your ticked clips.")
+    if settled: log("Nothing new was found: this is almost exactly the same as the last round. Your voice has settled, and running it again will not change anything.")
     log("Listen to the new samples (the ones marked '?' are the least sure). Tick or cross some more and press the button again to improve it.")
     prog.finish(f"{minutes:.1f} min found")
     return r["match"]
@@ -310,16 +320,13 @@ def stale(name):
 def intervals(name, key, gap=0.5):
     """(start, end) seconds where the chosen people speak in one file, or None when no one was chosen."""
     m = voices.read(name); ids = m.get("keep_people") or []
-    t0, t1 = float(m.get("keep_from") or 0), m.get("keep_until"); t1 = float(t1) if t1 else 1e9      # optional "only between these times"
     r = load(name)
     if m.get("use_match") and r and r.get("match"):                     # "find more like these": the stretches that sounded like the marked clips
-        iv = sorted((max(a, t0), min(b, t1)) for a, b in r["match"]["files"].get(key, []) if b > t0 and a < t1)
-        return [(a, b) for a, b in iv]
-    if not ids or not r:
-        return None if (t0 <= 0 and t1 >= 1e9) else [(t0, t1)]
+        return [(a, b) for a, b in sorted(r["match"]["files"].get(key, []))]
+    if not ids or not r: return None
     if key not in r["files"]: raise SystemExit(f"'{key}' was added after the speakers were found: press 'Find the speakers' again.")
     want = {f"P{i}" for i in ids}
-    iv = sorted((max(a, t0), min(b, t1)) for a, b, l in r["files"][key]["segments"] if l in want and b > t0 and a < t1)
+    iv = sorted((a, b) for a, b, l in r["files"][key]["segments"] if l in want)
     out = []
     for a, b in iv:
         if out and a - out[-1][1] <= gap: out[-1][1] = max(out[-1][1], b)

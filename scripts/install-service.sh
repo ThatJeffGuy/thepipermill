@@ -12,6 +12,8 @@ ExecStart=$DIR/.venv/bin/python -m voicestudio serve
 WorkingDirectory=$DIR
 Restart=on-failure
 RestartSec=3
+# Restarting the page must never stop a job: only the web page process is stopped, so training and other jobs keep running
+KillMode=process
 
 [Install]
 WantedBy=default.target
