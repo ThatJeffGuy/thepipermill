@@ -1,0 +1,256 @@
+"""The web page and its small JSON API. Standard library only. Localhost by default.
+
+Long jobs (prepare, train, export) run as separate processes that keep going if you close the page.
+Only one job runs at a time because they share the GPU.
+"""
+import json, os, re, shutil, signal, subprocess, sys, threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import urlparse, parse_qs, unquote
+from . import base, install, voices
+from .config import CFG
+
+WEB = Path(__file__).parent / "web"
+AUDIO_EXT = {".wav", ".mp3", ".m4a", ".flac", ".ogg", ".opus", ".aac", ".wma", ".mp4", ".mkv", ".webm"}
+JOBS = {}   # voice -> {"kind", "proc", "log"}
+
+
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+        with open(f"/proc/{pid}/stat") as f:        # a finished child nobody waited for is a zombie: not alive
+            return f.read().rsplit(")", 1)[1].split()[0] != "Z"
+    except (OSError, IndexError):
+        return False
+
+
+def train_pid(n):
+    try:
+        pid = int((CFG.runs / n / "train.pid").read_text().strip()); return pid if alive(pid) else None
+    except (OSError, ValueError):
+        return None
+
+
+def busy():
+    if CFG.runs.exists():
+        for pf in CFG.runs.glob("*/train.pid"):
+            if train_pid(pf.parent.name): return pf.parent.name, "training"
+    for n, j in JOBS.items():
+        if j["proc"].poll() is None: return n, j["kind"]
+    return None
+
+
+def start_job(n, kind, args, meta=None):
+    b = busy()
+    if b: raise RuntimeError(f"'{b[0]}' is busy ({b[1]}). Only one job at a time: they share the GPU.")
+    d = CFG.runs / n; d.mkdir(parents=True, exist_ok=True)
+    log = d / f"{kind}.log"
+    p = subprocess.Popen([sys.executable, "-u", "-m", "voicestudio", *args], stdout=open(log, "wb"), stderr=subprocess.STDOUT,
+                         start_new_session=True)
+    threading.Thread(target=p.wait, daemon=True).start()           # reap it when it ends
+    if kind == "train":
+        (d / "train.pid").write_text(str(p.pid)); (d / "train.meta").write_text(json.dumps(meta or {}))
+    else:
+        JOBS[n] = {"kind": kind, "proc": p, "log": log}
+
+
+def tail(path, n=2500):
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, 2); f.seek(max(0, f.tell() - n)); t = f.read().decode(errors="ignore")
+    except OSError:
+        return ""
+    ls = [l.strip() for l in re.split(r"[\r\n]+", t) if l.strip() and "arn" not in l[:12]]
+    return "\n".join(ls[-6:])
+
+
+def info(n):
+    m = voices.read(n); src = voices.source_dir(n)
+    files = sorted(p for p in src.glob("*") if p.is_file() and p.suffix.lower() in AUDIO_EXT) if src.exists() else []
+    md = CFG.data / n / "metadata.csv"
+    clips = sum(1 for _ in open(md, encoding="utf-8")) if md.exists() else 0
+    runs = CFG.runs / n
+    ck = list(runs.glob("lightning_logs/version_*/checkpoints/*.ckpt")) if runs.exists() else []
+    tl = tail(runs / "train.log", 6000) if (runs / "train.log").exists() else ""
+    ep = re.findall(r"Epoch (\d+)/(\d+)", tl); mos = re.findall(r"val_mos[:=]\s*([\d.]+)", tl)
+    try: total = json.loads((runs / "train.meta").read_text())["epochs"]
+    except (OSError, ValueError, KeyError): total = None
+    done = (int(ep[-1][0]) - (int(ep[-1][1]) - total)) if (ep and total) else None
+    j = JOBS.get(n); job = None
+    if j: job = {"kind": j["kind"], "running": j["proc"].poll() is None, "rc": j["proc"].poll(), "log": tail(j["log"])}
+    return {"name": n, "base": m.get("base"), "custom_source": m.get("source_dir") or None, "source": str(src),
+            "inbox": [{"name": p.name, "mb": round(p.stat().st_size / 1e6, 1)} for p in files],
+            "clips": clips, "prepared": md.exists(),
+            "train": {"running": bool(train_pid(n)), "total": total, "done": max(0, done) if done is not None else None,
+                      "mos": float(mos[-1]) if mos else None, "checkpoints": len(ck), "log": tl.split("\n")[-3:] if tl else []},
+            "job": job, "exported": (CFG.out / f"{n}.onnx").exists()}
+
+
+class H(BaseHTTPRequestHandler):
+    server_version = "VoiceStudio"
+    def log_message(self, *a): pass
+
+    def _guard(self):
+        host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]")
+        if host not in CFG["allowed_hosts"]: self._err("bad host", 403); return False
+        if self.command != "GET":
+            if self.headers.get("X-Studio") != "1": self._err("forbidden", 403); return False
+            o = self.headers.get("Origin")
+            if o and urlparse(o).netloc != self.headers.get("Host"): self._err("forbidden", 403); return False
+        return True
+
+    def _json(self, obj, code=200):
+        b = json.dumps(obj).encode()
+        self.send_response(code); self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(b)))
+        self.end_headers(); self.wfile.write(b)
+
+    def _err(self, msg, code=400): self._json({"error": str(msg)}, code)
+
+    def _file(self, path, ctype, download=None):
+        try: size = path.stat().st_size; f = open(path, "rb")
+        except OSError: return self._err("not found", 404)
+        start, end, code = 0, size - 1, 200
+        rng = self.headers.get("Range")
+        if rng and rng.startswith("bytes="):
+            a, _, b = rng[6:].partition("-"); start = int(a or 0); end = int(b) if b else size - 1; code = 206
+        self.send_response(code)
+        if code == 206: self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.send_header("Content-Type", ctype); self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(end - start + 1)); self.send_header("Cache-Control", "no-store")
+        if download: self.send_header("Content-Disposition", f'attachment; filename="{download}"')
+        self.end_headers(); f.seek(start); left = end - start + 1
+        while left > 0:
+            c = f.read(min(1 << 20, left))
+            if not c: break
+            self.wfile.write(c); left -= len(c)
+        f.close()
+
+    def _body(self):
+        return json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+
+    def do_GET(self):
+        if not self._guard(): return
+        u = urlparse(self.path); q = parse_qs(u.query)
+        try:
+            if u.path == "/": return self._file(WEB / "index.html", "text/html; charset=utf-8")
+            if u.path == "/api/sentences": return self._file(WEB / "sentences.txt", "text/plain; charset=utf-8")
+            if u.path == "/api/voices":
+                b = busy()
+                return self._json({"voices": [info(n) for n in voices.names()], "bases": {k: v[0] for k, v in base.BASES.items()},
+                                   "busy": {"voice": b[0], "kind": b[1]} if b else None, "install": install.configured(),
+                                   "max_upload_gb": CFG["max_upload_gb"]})
+            if u.path == "/api/transcript":
+                n = CFG.check_name(q["voice"][0]); md = CFG.data / n / "metadata.csv"; rows = []
+                if md.exists():
+                    for line in open(md, encoding="utf-8"):
+                        f, _, t = line.rstrip("\n").partition("|")
+                        if f: rows.append({"file": f, "text": t})
+                return self._json({"rows": rows})
+            if u.path.startswith("/audio/"):
+                _, _, n, f = u.path.split("/", 3)
+                return self._file(CFG.data / CFG.check_name(n) / "wavs" / os.path.basename(unquote(f)), "audio/wav")
+            if u.path.startswith("/out/"):
+                return self._file(CFG.out / os.path.basename(unquote(u.path[5:])), "audio/wav")
+            if u.path.startswith("/download/"):
+                f = os.path.basename(unquote(u.path[10:]))
+                if not (f.endswith(".onnx") or f.endswith(".onnx.json")): return self._err("not found", 404)
+                return self._file(CFG.out / f, "application/octet-stream", download=f)
+        except (KeyError, ValueError) as e:
+            return self._err(e)
+        self._err("not found", 404)
+
+    def do_POST(self):
+        if not self._guard(): return
+        u = urlparse(self.path)
+        try:
+            d = self._body()
+            if u.path == "/api/voices":
+                n = CFG.check_name(d.get("name")); key = d.get("base", "ryan")
+                if voices.exists(n): raise ValueError(f"'{n}' already exists")
+                base.ensure(key, log=lambda *_: None)
+                folder = (d.get("folder") or "").strip()
+                if folder and not Path(folder).expanduser().is_dir(): raise ValueError("That folder does not exist.")
+                voices.write(n, base=key, **({"source_dir": str(Path(folder).expanduser())} if folder else {}))
+                (CFG.inbox / n).mkdir(parents=True, exist_ok=True)
+                return self._json({"ok": True, "license": (base.info(key) or {}).get("license", "")})
+            n = CFG.check_name(d.get("voice"))
+            if not voices.exists(n): raise ValueError("no such voice")
+            if u.path == "/api/prep": start_job(n, "prep", ["prep", n])
+            elif u.path == "/api/train":
+                ep = max(1, min(20000, int(d.get("epochs", 1000))))
+                if not (CFG.data / n / "metadata.csv").exists(): raise ValueError("Prepare the recordings first.")
+                start_job(n, "train", ["train", n, str(ep)], meta={"epochs": ep})
+            elif u.path == "/api/train/stop":
+                pid = train_pid(n)
+                if pid: os.killpg(os.getpgid(pid), signal.SIGINT)
+            elif u.path == "/api/export":
+                start_job(n, "export", ["export", n, "--text", (d.get("text") or "")[:400]])
+            elif u.path == "/api/source":
+                p = (d.get("path") or "").strip()
+                if p and not Path(p).expanduser().is_dir(): raise ValueError("That folder does not exist.")
+                voices.write(n, source_dir=str(Path(p).expanduser()) if p else None)
+            elif u.path == "/api/install":
+                if not install.configured(): raise ValueError("Install is not set up. Use the download buttons and copy the two files to your Piper voices folder.")
+                r = subprocess.run([sys.executable, "-m", "voicestudio", "install", n], capture_output=True, text=True, timeout=300)
+                if r.returncode: raise RuntimeError((r.stdout + r.stderr)[-600:])
+                return self._json({"ok": True, "message": r.stdout.strip()[-300:]})
+            else: return self._err("not found", 404)
+            return self._json({"ok": True})
+        except (ValueError, KeyError, RuntimeError, subprocess.TimeoutExpired, OSError) as e:
+            self._err(e)
+
+    def do_PUT(self):
+        if not self._guard(): return
+        u = urlparse(self.path); q = parse_qs(u.query)
+        try:
+            if u.path == "/api/upload":
+                n = CFG.check_name(q["voice"][0])
+                if not voices.exists(n): raise ValueError("no such voice")
+                if voices.read(n).get("source_dir"): raise ValueError("This voice reads from your own folder: put the files there.")
+                fn = re.sub(r"[^A-Za-z0-9._ -]", "_", os.path.basename(q["filename"][0]))[:120]
+                if Path(fn).suffix.lower() not in AUDIO_EXT: raise ValueError("not an audio file")
+                size = int(self.headers.get("Content-Length") or 0)
+                if size > CFG["max_upload_gb"] * 2**30: raise ValueError(f"file too large ({CFG['max_upload_gb']} GB max)")
+                dest = CFG.inbox / n / fn; dest.parent.mkdir(parents=True, exist_ok=True); tmp = dest.with_suffix(dest.suffix + ".part")
+                with open(tmp, "wb") as f:
+                    left = size
+                    while left > 0:
+                        c = self.rfile.read(min(1 << 20, left))
+                        if not c: raise ValueError("upload interrupted")
+                        f.write(c); left -= len(c)
+                tmp.replace(dest); return self._json({"ok": True})
+            if u.path == "/api/transcript":
+                d = self._body(); n = CFG.check_name(d["voice"]); md = CFG.data / n / "metadata.csv"
+                if not md.exists(): raise ValueError("nothing prepared yet")
+                shutil.copy(md, md.with_suffix(".csv.bak")); wavs = CFG.data / n / "wavs"; lines = []
+                for r in d["rows"]:
+                    f = os.path.basename(r["file"]); t = " ".join(str(r["text"]).split()).replace("|", " ")
+                    if t and (wavs / f).exists(): lines.append(f"{f}|{t}")
+                md.write_text("\n".join(lines) + "\n", encoding="utf-8"); return self._json({"ok": True, "kept": len(lines)})
+            self._err("not found", 404)
+        except (ValueError, KeyError, OSError) as e:
+            self._err(e)
+
+    def do_DELETE(self):
+        if not self._guard(): return
+        u = urlparse(self.path); q = parse_qs(u.query)
+        try:
+            n = CFG.check_name(q["voice"][0])
+            if u.path == "/api/inbox":
+                if voices.read(n).get("source_dir"): raise ValueError("Files in your own folder are never deleted from here.")
+                (CFG.inbox / n / os.path.basename(q["filename"][0])).unlink(missing_ok=True); return self._json({"ok": True})
+            if u.path == "/api/voice":
+                if busy(): raise RuntimeError("A job is running. Wait for it or stop it first.")
+                voices.delete(n); return self._json({"ok": True})
+            self._err("not found", 404)
+        except (ValueError, KeyError, RuntimeError, OSError) as e:
+            self._err(e)
+
+
+def serve():
+    CFG.ensure_dirs()
+    host, port = CFG["host"], int(CFG["port"])
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        print("WARNING: listening beyond this computer. There is no login. Only do this on a network you trust.", flush=True)
+    print(f"Voice Studio on http://{host}:{port}   (data: {CFG.home})", flush=True)
+    ThreadingHTTPServer((host, port), H).serve_forever()

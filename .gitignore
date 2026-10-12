@@ -1,0 +1,11 @@
+.venv/
+vendor/
+__pycache__/
+*.pyc
+*.egg-info/
+config.toml
+*.onnx
+*.ckpt
+*.wav
+*.mp3
+voice-studio-data/

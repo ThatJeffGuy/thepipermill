@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice Studio</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1c2230;--mute:#6a7385;--line:#e3e6ec;--acc:#2f6fed;--acc2:#e8efff;--ok:#1f9d55;--warn:#c27c0e;--bad:#c93a3a}
+@media (prefers-color-scheme:dark){:root{--bg:#12151c;--card:#1b2029;--ink:#e8ecf4;--mute:#97a0b3;--line:#2a313f;--acc:#6b9bff;--acc2:#202c47;--ok:#4cc985;--warn:#e0a53c;--bad:#ef6b6b}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,Segoe UI,Roboto,sans-serif}
+.wrap{max-width:860px;margin:0 auto;padding:20px 16px 80px}
+header{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
+h1{font-size:22px;margin:0;flex:1}
+h2{font-size:17px;margin:0 0 4px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:14px}
+.step{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--acc2);color:var(--acc);font-weight:700;font-size:14px;margin-right:8px}
+.step.done{background:var(--ok);color:#fff}
+.hint{color:var(--mute);font-size:14px;margin:2px 0 12px}
+button,select,input,textarea{font:inherit;color:inherit}
+button{background:var(--acc);color:#fff;border:0;border-radius:10px;padding:9px 16px;cursor:pointer;font-weight:600}
+button.sec{background:var(--acc2);color:var(--acc)}button.bad{background:var(--bad)}button:disabled{opacity:.45;cursor:default}
+select,input[type=text],input[type=number],textarea{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+textarea{width:100%;min-height:64px}
+.drop{border:2px dashed var(--line);border-radius:12px;padding:26px;text-align:center;color:var(--mute);cursor:pointer}
+.drop.on{border-color:var(--acc);background:var(--acc2);color:var(--acc)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.files{margin:10px 0 0;padding:0;list-style:none;font-size:14px}.files li{display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--line)}
+.files li span:first-child{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.x{background:none;color:var(--mute);padding:0 6px}
+.bar{height:12px;background:var(--acc2);border-radius:8px;overflow:hidden;margin:10px 0 6px}.bar>div{height:100%;background:var(--acc);width:0;transition:width .6s}
+.pill{display:inline-block;padding:2px 10px;border-radius:99px;font-size:13px;background:var(--acc2);color:var(--acc);font-weight:600}
+.pill.ok{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)}.pill.warn{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
+pre{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;font-size:12.5px;white-space:pre-wrap;max-height:150px;overflow:auto;margin:10px 0 0}
+table{width:100%;border-collapse:collapse}td{padding:5px 4px;border-bottom:1px solid var(--line);vertical-align:middle}
+td input{width:100%}td.p{width:42px}td.d{width:36px}
+.msg{margin-top:8px;font-size:14px}.msg.err{color:var(--bad)}.msg.ok{color:var(--ok)}
+details{margin-top:10px}summary{cursor:pointer;color:var(--acc);font-size:14px}
+.sent{font-size:14px;color:var(--mute);columns:1;margin:8px 0 0;padding-left:20px}
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);padding:20px;max-width:420px}
+dialog::backdrop{background:#0008}
+.pager{display:flex;gap:8px;align-items:center;margin-top:10px}
+.empty{text-align:center;padding:40px 10px;color:var(--mute)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Voice Studio</h1>
+  <select id="voiceSel" aria-label="Voice"></select>
+  <button class="sec" id="newBtn">+ New voice</button>
+</header>
+<div id="busyBar"></div>
+<div id="main"></div>
+</div>
+
+<dialog id="newDlg">
+  <h2>New voice</h2>
+  <p class="hint">Use your own voice, or someone who has agreed to it. Pick a starting voice that is close to yours: it only changes the starting point, the result will sound like your recordings.</p>
+  <p><input type="text" id="newName" placeholder="a short name, e.g. my-voice" style="width:100%" autocomplete="off"></p>
+  <p><select id="newBase" style="width:100%"></select></p>
+  <p><input type="text" id="newFolder" placeholder="optional: folder with your recordings" style="width:100%" autocomplete="off"></p>
+  <p class="hint">The starting voice has its own dataset licence (usually non-commercial). It is saved next to the file and shown after creation.</p>
+  <div class="row" style="justify-content:flex-end"><button class="sec" id="newCancel">Cancel</button><button id="newOk">Create</button></div>
+  <div class="msg err" id="newErr"></div>
+</dialog>
+
+<script>
+const $=s=>document.querySelector(s);
+const api=async(path,opt={})=>{const r=await fetch(path,{...opt,headers:{'X-Studio':'1','Content-Type':'application/json',...(opt.headers||{})}});
+  const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||r.statusText);return j};
+let S={voices:[],bases:{},busy:null},cur=localStorage.getItem('voice')||'',page=0,rows=null,rowsFor='',dirty=false,uploading=null,flash={};
+
+function esc(t){return String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function say(key,text,cls){flash[key]={text,cls};render()}
+
+let last='';
+async function refresh(force){
+  let n;try{n=await api('/api/voices')}catch(e){return}
+  const ae=document.activeElement, typing=ae&&(ae.closest&&ae.closest('#tbl')||ae.id==='txt');
+  const sig=JSON.stringify(n);
+  if(!force&&(sig===last||typing))return;      // never redraw under your fingers
+  last=sig;S=n;
+  if(!S.voices.find(v=>v.name===cur))cur=S.voices[0]?S.voices[0].name:'';
+  render();
+}
+
+function render(){
+  const keep={txt:$('#txt')&&$('#txt').value,ep:$('#ep')&&$('#ep').value};
+  const sel=$('#voiceSel');sel.innerHTML=S.voices.map(v=>`<option ${v.name===cur?'selected':''}>${esc(v.name)}</option>`).join('')||'<option>(no voices yet)</option>';
+  $('#busyBar').innerHTML=S.busy?`<div class="card" style="padding:10px 16px"><span class="pill warn">Busy</span> <b>${esc(S.busy.voice)}</b>: ${esc(S.busy.kind)} is using the GPU. Other jobs wait until it finishes.</div>`:'';
+  const v=S.voices.find(x=>x.name===cur);
+  if(!v){$('#main').innerHTML=`<div class="card empty"><h2>Welcome</h2><p>Create your first voice to begin. Use your own voice, or the voice of someone who has agreed to it.</p><button onclick="$('#newBtn').click()">+ New voice</button></div>`;return}
+  const f=k=>flash[k]?`<div class="msg ${flash[k].cls||''}">${esc(flash[k].text)}</div>`:'';
+  const totalMB=v.inbox.reduce((a,b)=>a+b.mb,0);
+  const t=v.train, jobRun=v.job&&v.job.running, prepDone=v.prepared;
+  const pct=t.total&&t.done!=null?Math.min(100,Math.round(100*t.done/t.total)):0;
+  const finished=!t.running&&t.total&&t.done!=null&&t.done>=t.total;
+  let mosTxt='';if(t.mos!=null){mosTxt=t.mos>=4?'<span class="pill ok">sounds great</span>':t.mos>=3.4?'<span class="pill">getting good</span>':'<span class="pill warn">still learning</span>'}
+  $('#main').innerHTML=`
+  <div class="card"><h2><span class="step ${v.inbox.length?'done':''}">1</span>Your recordings</h2>
+    <p class="hint">Aim for 30–60 minutes of clear, natural speech in a quiet room (wav, mp3, m4a, flac…). Longer files are fine.</p>
+    ${v.custom_source?`<div class="msg">Reading recordings from your folder: <b>${esc(v.custom_source)}</b> <button class="sec" id="clrSrc">Use drop-box instead</button></div>`
+      :`<div class="drop" id="drop">Drag audio files here, or click to choose</div><input type="file" id="fileIn" multiple accept="audio/*,video/mp4,.m4a,.opus" hidden>
+      <div class="row" style="margin-top:10px"><span class="hint" style="margin:0">or use a folder that is already on this computer:</span>
+      <input type="text" id="srcIn" placeholder="/path/to/recordings" style="flex:1;min-width:180px"><button class="sec" id="setSrc">Use this folder</button></div>`}
+    ${uploading?`<div class="msg">Uploading ${esc(uploading)}…</div>`:''}${f('up')}
+    ${v.inbox.length?`<ul class="files">${v.inbox.map(x=>`<li><span>${esc(x.name)}</span><span>${x.mb} MB</span>${v.custom_source?'':`<button class="x" title="Remove" onclick="rmFile('${esc(x.name).replace(/'/g,"\\'")}')">✕</button>`}</li>`).join('')}</ul><div class="hint">${v.inbox.length} file(s), ${totalMB.toFixed(0)} MB</div>`:`<div class="hint">No audio files found yet in ${esc(v.source)}</div>`}
+    <details><summary>Need something to read?</summary><ol class="sent" id="sent">Loading…</ol></details>
+  </div>
+
+  <div class="card"><h2><span class="step ${prepDone?'done':''}">2</span>Prepare</h2>
+    <p class="hint">Cuts the recordings into short clips and writes down what you said (using the GPU). A few minutes.</p>
+    <div class="row"><button id="prepBtn" ${(!v.inbox.length||S.busy)?'disabled':''}>${prepDone?'Prepare again':'Prepare my recordings'}</button>
+    ${prepDone?`<span class="pill ok">${v.clips} clips ready</span>`:''}${jobRun&&v.job.kind==='prep'?'<span class="pill warn">working…</span>':''}</div>
+    ${v.job&&v.job.kind==='prep'?`<pre>${esc(v.job.log)}</pre>`:''}${f('prep')}
+  </div>
+
+  <div class="card"><h2><span class="step ${rows&&rowsFor===v.name&&!dirty?'done':''}">3</span>Check the words</h2>
+    <p class="hint">The voice learns exactly what is written here. Press ▶ to listen and fix any wrong words. Remove clips with noise, coughs or mistakes (✕).</p>
+    <div class="row"><button class="sec" id="loadRows" ${prepDone?'':'disabled'}>${rows&&rowsFor===v.name?'Reload list':'Show my clips'}</button>
+    <button id="saveRows" ${dirty?'':'disabled'}>Save changes</button></div>
+    <div id="tbl"></div>${f('tr')}
+  </div>
+
+  <div class="card"><h2><span class="step ${finished?'done':''}">4</span>Train</h2>
+    <p class="hint">Teaches the voice on your GPU. Takes from half an hour to a couple of hours. It keeps going if you close this page, and you can stop and resume any time.</p>
+    <div class="row"><label>Length <select id="ep"><option value="300">Quick (300)</option><option value="1000" selected>Normal (1000)</option><option value="2000">Long (2000)</option></select></label>
+    ${t.running?'<button class="bad" id="stopBtn">Stop</button>':`<button id="trainBtn" ${(!prepDone||S.busy)?'disabled':''}>${t.checkpoints?'Resume training':'Start training'}</button>`}
+    ${t.running?'<span class="pill warn">training…</span>':finished?'<span class="pill ok">finished</span>':''}</div>
+    ${(t.running||t.done!=null)?`<div class="bar"><div style="width:${pct}%"></div></div>
+      <div class="hint">${t.done!=null?`${t.done} of ${t.total} rounds (${pct}%)`:'starting…'} ${t.mos!=null?` · quality score ${t.mos.toFixed(2)} ${mosTxt}`:''}</div>`:''}
+    ${t.log.length?`<pre>${esc(t.log.join('\n'))}</pre>`:''}${f('train')}
+  </div>
+
+  <div class="card"><h2><span class="step ${v.exported?'done':''}">5</span>Listen, then use it</h2>
+    <p class="hint">Make a test clip from the latest training and listen. When you like it, download the two voice files.</p>
+    <textarea id="txt">Good evening. This is a test of my new voice, and I hope it sounds like me.</textarea>
+    <div class="row" style="margin-top:8px"><button id="expBtn" ${(!t.checkpoints||S.busy)?'disabled':''}>Make test clip</button>
+    ${jobRun&&v.job.kind==='export'?'<span class="pill warn">working…</span>':''}
+    ${S.install?`<button class="sec" id="instBtn" ${v.exported?'':'disabled'}>Install on my Piper…</button>`:''}</div>
+    ${v.exported?`<div class="row" style="margin-top:10px"><a href="/download/${esc(v.name)}.onnx"><button class="sec">⬇ ${esc(v.name)}.onnx</button></a><a href="/download/${esc(v.name)}.onnx.json"><button class="sec">⬇ ${esc(v.name)}.onnx.json</button></a></div>
+      <p class="hint">Put both files in your Piper voices folder. They must keep the same name.${S.install?'':' (Automatic install is off: set it up in config.toml if you want a button for it.)'}</p>`:''}
+    ${v.exported?`<p><audio controls src="/out/${esc(v.name)}-test.wav?t=${Date.now()>>14}" style="width:100%"></audio></p>`:''}
+    ${v.job&&v.job.kind==='export'&&v.job.rc?`<pre>${esc(v.job.log)}</pre>`:''}${f('exp')}
+  </div>
+  <details style="margin-top:6px"><summary>Voice settings</summary><p class="hint">Starting voice: ${esc(S.bases[v.base]||v.base||'?')}</p><button class="sec bad" id="delBtn" style="color:#fff">Delete this voice…</button></details>`;
+  if(keep.txt!=null)$('#txt').value=keep.txt;if(keep.ep!=null&&$('#ep'))$('#ep').value=keep.ep;
+  wire(v);if(rows&&rowsFor===v.name)drawRows();
+}
+
+function wire(v){
+  const drop=$('#drop'),fin=$('#fileIn');
+  drop.onclick=()=>fin.click();fin.onchange=()=>upload(v.name,[...fin.files]);
+  drop.ondragover=e=>{e.preventDefault();drop.classList.add('on')};drop.ondragleave=()=>drop.classList.remove('on');
+  drop.ondrop=e=>{e.preventDefault();drop.classList.remove('on');upload(v.name,[...e.dataTransfer.files])};
+  const b=(id,fn)=>{const el=$(id);if(el)el.onclick=fn};
+  b('#setSrc',async()=>{try{await api('/api/source',{method:'POST',body:JSON.stringify({voice:v.name,path:$('#srcIn').value})});refresh(true)}catch(e){say('up',e.message,'err')}});
+  b('#clrSrc',async()=>{await api('/api/source',{method:'POST',body:JSON.stringify({voice:v.name,path:''})});refresh(true)});
+  b('#delBtn',async()=>{if(!confirm(`Delete "${v.name}" and its working files (prepared clips, training progress, exported voice)?\n\nRecordings in your own folder are never deleted.`))return;
+    try{await api(`/api/voice?voice=${v.name}`,{method:'DELETE'});rows=null;cur='';refresh(true)}catch(e){say('exp',e.message,'err')}});
+  b('#prepBtn',()=>act('/api/prep',{voice:v.name},'prep'));
+  b('#loadRows',()=>loadRows(v.name));b('#saveRows',()=>saveRows(v.name));
+  b('#trainBtn',()=>act('/api/train',{voice:v.name,epochs:+$('#ep').value},'train'));
+  b('#stopBtn',()=>act('/api/train/stop',{voice:v.name},'train'));
+  b('#expBtn',()=>act('/api/export',{voice:v.name,text:$('#txt').value},'exp'));
+  b('#instBtn',async()=>{if(!confirm(`Install "${v.name}" using the install step from your config?`))return;
+    say('exp','Installing…');try{const r=await api('/api/install',{method:'POST',body:JSON.stringify({voice:v.name})});say('exp',r.message||'Installed.','ok')}catch(e){say('exp',e.message,'err')}});
+  if($('#sent')&&!$('#sent').dataset.l){$('#sent').dataset.l=1;fetch('/api/sentences').then(r=>r.text()).then(t=>{$('#sent').innerHTML=t.trim().split('\n').map(s=>`<li>${esc(s)}</li>`).join('')})}
+}
+
+async function act(path,body,key){delete flash[key];try{await api(path,{method:'POST',body:JSON.stringify(body)});if(key==='prep'){rows=null}}catch(e){say(key,e.message,'err')}refresh(true)}
+async function rmFile(n){await api(`/api/inbox?voice=${cur}&filename=${encodeURIComponent(n)}`,{method:'DELETE'});refresh(true)}
+
+async function upload(name,files){
+  delete flash.up;
+  for(const f of files){
+    uploading=f.name;render();
+    try{await fetch(`/api/upload?voice=${encodeURIComponent(name)}&filename=${encodeURIComponent(f.name)}`,{method:'PUT',headers:{'X-Studio':'1'},body:f}).then(async r=>{if(!r.ok)throw new Error((await r.json()).error)})}
+    catch(e){say('up',`${f.name}: ${e.message}`,'err')}
+  }
+  uploading=null;refresh(true);
+}
+
+async function loadRows(name){
+  const j=await api(`/api/transcript?voice=${name}`);rows=j.rows;rowsFor=name;page=0;dirty=false;render();
+}
+function drawRows(){
+  const per=25,n=Math.ceil(rows.length/per)||1;page=Math.min(page,n-1);
+  const slice=rows.slice(page*per,page*per+per);
+  $('#tbl').innerHTML=rows.length?`<table>${slice.map((r,i)=>{const k=page*per+i;
+    return `<tr><td class="p"><button class="sec" onclick="play('${esc(r.file)}')">▶</button></td><td><input type="text" value="${esc(r.text)}" oninput="edit(${k},this.value)"></td><td class="d"><button class="x" title="Remove this clip" onclick="del(${k})">✕</button></td></tr>`}).join('')}</table>
+    <div class="pager"><button class="sec" ${page?'':'disabled'} onclick="pg(-1)">‹ Prev</button><span class="hint" style="margin:0">Page ${page+1} of ${n} · ${rows.length} clips</span><button class="sec" ${page<n-1?'':'disabled'} onclick="pg(1)">Next ›</button></div>`:'<p class="hint">No clips.</p>';
+  $('#saveRows').disabled=!dirty;
+}
+function edit(k,t){rows[k].text=t;dirty=true;$('#saveRows').disabled=false}
+function del(k){rows.splice(k,1);dirty=true;drawRows()}
+function pg(d){page+=d;drawRows()}
+let au;function play(f){if(au)au.pause();au=new Audio(`/audio/${cur}/${f}`);au.play()}
+async function saveRows(name){try{const j=await api('/api/transcript',{method:'PUT',body:JSON.stringify({voice:name,rows})});dirty=false;say('tr',`Saved. ${j.kept} clips kept.`,'ok')}catch(e){say('tr',e.message,'err')}}
+
+$('#voiceSel').onchange=e=>{cur=e.target.value;localStorage.setItem('voice',cur);rows=null;dirty=false;flash={};render()};
+$('#newBtn').onclick=()=>{$('#newErr').textContent='';$('#newBase').innerHTML=Object.entries(S.bases).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');$('#newDlg').showModal()};
+$('#newCancel').onclick=()=>$('#newDlg').close();
+$('#newOk').onclick=async()=>{const b=$('#newOk');b.disabled=true;b.textContent='Creating… (first time downloads the starting voice)';
+  try{const r=await api('/api/voices',{method:'POST',body:JSON.stringify({name:$('#newName').value.trim().toLowerCase(),base:$('#newBase').value,folder:$('#newFolder').value.trim()})});cur=$('#newName').value.trim().toLowerCase();localStorage.setItem('voice',cur);$('#newDlg').close();$('#newName').value='';$('#newFolder').value='';if(r.license)alert('Licence of the starting voice (its original dataset):\n\n'+r.license.slice(0,600))}
+  catch(e){$('#newErr').textContent=e.message}b.disabled=false;b.textContent='Create';refresh(true)};
+window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});
+refresh(true);setInterval(()=>{if(!uploading)refresh()},4000);
+</script>
+</body>
+</html>

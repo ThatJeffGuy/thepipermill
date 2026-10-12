@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "voicestudio"
+version = "0.1.0"
+description = "Train your own Piper text-to-speech voice from your recordings, with a simple local web page."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+[project.scripts]
+voicestudio = "voicestudio.cli:main"
+
+[tool.setuptools]
+packages = ["voicestudio"]
+
+[tool.setuptools.package-data]
+voicestudio = ["web/*"]

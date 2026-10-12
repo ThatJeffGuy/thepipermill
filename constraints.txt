@@ -1,0 +1,8 @@
+# Versions this was tested with (Python 3.11, Linux, NVIDIA RTX 5070). Used by install.sh as constraints.
+torch>=2.8
+pytorch-lightning==2.6.6
+lightning==2.6.6
+transformers>=5,<6
+numpy>=2
+librosa==0.11.0
+soundfile>=0.13

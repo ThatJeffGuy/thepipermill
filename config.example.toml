@@ -1,0 +1,25 @@
+# Copy to ~/.config/voice-studio/config.toml (or point VOICESTUDIO_CONFIG at it). Every line is optional.
+
+home = "~/voice-studio-data"        # recordings, prepared clips, checkpoints and finished voices live here
+host = "127.0.0.1"                  # keep on localhost: the page has no login
+port = 8765
+espeak_voice = "en-us"              # language of your recordings (espeak-ng voice name; the base voices are English)
+whisper_model = "openai/whisper-large-v3-turbo"   # writes down what you said; try "openai/whisper-small" on small GPUs
+batch_size = 0                      # 0 = automatic from GPU memory (8 GB -> 8, 12-16 GB -> 16)
+max_upload_gb = 4
+protected_names = []                # voice names that can never be created or installed over
+
+# What the "Install" button does. Without this the page still offers the .onnx/.json as downloads.
+[install]
+mode = "none"                       # none | local | ssh | script
+
+# mode = "local"   copy into the folder your Piper reads voices from
+local_dir = ""                      # e.g. "~/piper-voices"
+# mode = "ssh"     scp to another machine
+ssh_host = ""                       # e.g. "me@my-server"
+ssh_port = 22
+remote_dir = ""                     # e.g. "/opt/piper/voices"
+# local/ssh: command to run afterwards, e.g. restart Piper so it sees the new voice
+post_command = ""                   # e.g. "systemctl --user restart piper"
+# mode = "script"  run  your-script <voice-name> <path-to.onnx> <path-to.onnx.json>
+script = ""
