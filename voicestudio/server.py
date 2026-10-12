@@ -363,5 +363,5 @@ def serve():
     host, port = CFG["host"], int(CFG["port"])
     if host not in ("127.0.0.1", "localhost", "::1"):
         print("WARNING: listening beyond this computer. There is no login. Only do this on a network you trust.", flush=True)
-    print(f"Voice Studio on http://{host}:{port}   (data: {CFG.home})", flush=True)
+    print(f"The Piper Pepper Mill on http://{host}:{port}   (data: {CFG.home})", flush=True)
     ThreadingHTTPServer((host, port), H).serve_forever()

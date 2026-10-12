@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Voice Studio</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232f6fed'/%3E%3Cpath d='M12 26h10l20-11v34L22 38H12z' fill='%23fff'/%3E%3Crect x='16' y='38' width='8' height='12' rx='2' fill='%23fff'/%3E%3Cpath d='M48 24q6 8 0 16M53 18q10 14 0 28' fill='none' stroke='%23fff' stroke-width='3.5' stroke-linecap='round'/%3E%3C/svg%3E">
+<title>The Piper Pepper Mill</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232f6fed'/%3E%3Ccircle cx='32' cy='11' r='4.5' fill='%23fff'/%3E%3Crect x='27' y='15' width='10' height='6' rx='2' fill='%23fff'/%3E%3Cpath d='M22 22h20l4 28H18z' fill='%23fff'/%3E%3Cpath d='M24.5 31h15M23 40h18' stroke='%232f6fed' stroke-width='2.5' fill='none'/%3E%3Crect x='15' y='50' width='34' height='6' rx='3' fill='%23fff'/%3E%3Ccircle cx='28' cy='60.5' r='1.8' fill='%23fff'/%3E%3Ccircle cx='34' cy='61.3' r='1.8' fill='%23fff'/%3E%3Ccircle cx='39.5' cy='59.8' r='1.5' fill='%23fff'/%3E%3C/svg%3E">
 <style>
 :root{--bg:#f6f7f9;--card:#fff;--ink:#1c2230;--mute:#6a7385;--line:#e3e6ec;--acc:#2f6fed;--acc2:#e8efff;--ok:#1f9d55;--warn:#c27c0e;--bad:#c93a3a}
 @media (prefers-color-scheme:dark){:root{--bg:#12151c;--card:#1b2029;--ink:#e8ecf4;--mute:#97a0b3;--line:#2a313f;--acc:#6b9bff;--acc2:#202c47;--ok:#4cc985;--warn:#e0a53c;--bad:#ef6b6b}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,Segoe UI,Roboto,sans-serif}
 .wrap{max-width:860px;margin:0 auto;padding:20px 16px 80px}
 header{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
-h1{font-size:22px;margin:0;flex:1}
+h1{font-size:22px;margin:0;flex:1}@media (max-width:520px){h1{font-size:19px}}
 h2{font-size:17px;margin:0 0 4px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:14px}
 .step{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--acc2);color:var(--acc);font-weight:700;font-size:14px;margin-right:8px}
@@ -74,7 +74,7 @@ footer.foot a{color:var(--acc);text-decoration:none}footer.foot a:hover{text-dec
 <body>
 <div class="wrap">
 <header>
-  <h1>Voice Studio</h1>
+  <h1>The Piper Pepper Mill</h1>
   <div class="seg" id="modeSeg" role="group" aria-label="Mode"><button data-mode="beginner" title="One step at a time">Beginner</button><button data-mode="advanced" title="Everything on one page">Advanced</button></div>
   <select id="voiceSel" aria-label="Voice"></select>
   <button class="sec" id="newBtn">+ New voice</button>
