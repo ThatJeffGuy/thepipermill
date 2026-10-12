@@ -3,7 +3,7 @@
 Long jobs (prepare, train, export) run as separate processes that keep going if you close the page.
 Only one job runs at a time because they share the GPU.
 """
-import json, os, re, shutil, signal, subprocess, sys, threading
+import json, os, re, shutil, signal, subprocess, sys, tempfile, threading, zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote
@@ -191,6 +191,25 @@ class H(BaseHTTPRequestHandler):
     def _body(self):
         return json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
 
+    def _dataset(self, n):
+        """The prepared clips + transcript as one zip (what training reads): wavs/*.wav (22.05 kHz mono) + metadata.csv + a short README."""
+        root = CFG.data / n; md = root / "metadata.csv"
+        if not md.exists(): return self._err("Nothing is prepared yet.", 404)
+        if trim.pending(n): return self._err("Some clips have edited words but were not reprocessed. Press 'Reprocess edited clips' first.", 409)
+        names = [l.split("|", 1)[0] for l in md.read_text(encoding="utf-8").splitlines() if "|" in l]
+        spool = tempfile.SpooledTemporaryFile(max_size=64 << 20)
+        with zipfile.ZipFile(spool, "w", zipfile.ZIP_STORED) as z:
+            z.write(md, "metadata.csv")
+            for f in names:
+                if (root / "wavs" / f).exists(): z.write(root / "wavs" / f, f"wavs/{f}")
+            z.writestr("README.txt", "Dataset made with The Piper Pepper Mill.\n\nwavs/*.wav  mono, 16-bit, 22.05 kHz clips (1.5-12 s) of one speaker, levelled to the same loudness\n"
+                       "metadata.csv  one line per clip:  file.wav|transcript   (the transcript is in spoken form, as Piper reads it)\n\n"
+                       "Only use recordings of people who have agreed to it.\n")
+        size = spool.tell(); spool.seek(0)
+        self.send_response(200); self.send_header("Content-Type", "application/zip"); self.send_header("Content-Length", str(size))
+        self.send_header("Content-Disposition", f'attachment; filename="{n}-dataset.zip"'); self.send_header("Cache-Control", "no-store"); self.end_headers()
+        shutil.copyfileobj(spool, self.wfile); spool.close()
+
     def do_GET(self):
         if not self._guard(): return
         u = urlparse(self.path); q = parse_qs(u.query)
@@ -208,6 +227,8 @@ class H(BaseHTTPRequestHandler):
                         f, _, t = line.rstrip("\n").partition("|")
                         if f: rows.append({"file": f, "text": t})
                 return self._json({"rows": rows})
+            if u.path.startswith("/dataset/") and u.path.endswith(".zip"):
+                return self._dataset(CFG.check_name(os.path.basename(unquote(u.path))[:-4]))
             if u.path.startswith("/audio/"):
                 _, _, n, f = u.path.split("/", 3)
                 return self._file(CFG.data / CFG.check_name(n) / "wavs" / os.path.basename(unquote(f)), "audio/wav")

@@ -244,6 +244,7 @@ function render(){
     <div class="row"><button class="sec" id="loadRows" ${prepDone?'':'disabled'}>${rowsLoaded?'Reload list':'Show my clips'}</button>
     <button id="saveRows" ${dirty?'':'disabled'}>Save changes</button>
     <button id="trimBtn" title="Cut each edited clip's audio down to the words you kept" ${(!v.edited||dirty||S.busy)?'disabled':''}>Reprocess edited clips${v.edited?' ('+v.edited+')':''}</button>${jobRun&&v.job.kind==='trim'?(B?'':live('Reprocessing…'))+'<button class="bad stopjob">Stop</button>':''}</div>
+    <div class="row" style="margin-top:8px"><button class="sec" id="dsBtn" title="Your cleaned clips and transcript as one zip, ready to use anywhere" ${(!prepDone||v.edited)?'disabled':''}>⬇ Export dataset (.zip)</button><span class="hint" style="margin:0">${v.edited?'Reprocess your edited clips first.':'The clips and transcript as they are now (22.05 kHz mono wav + metadata.csv).'}</span></div>
     <p class="hint" style="margin:8px 0 0">Two voices in one clip? Delete the words the wrong person says from the start or end of the text, press Save, then <b>Reprocess</b>: the audio is cut to just the words you kept.</p>
     ${v.job&&v.job.kind==='trim'?pbar(v.job)+`<pre>${esc(v.job.log)}</pre>`:''}
     <div id="tbl"></div>${f('tr')}
@@ -331,6 +332,7 @@ function wire(v){
   b('#matchBtn',()=>act('/api/match',{voice:v.name,yes:markRanges(v,'y'),no:markRanges(v,'n'),strict:$('#mStrict').value},'match'));
   const vt=$('#vtSel');if(vt)vt.onchange=async()=>{try{await api('/api/voicetype',{method:'POST',body:JSON.stringify({voice:v.name,type:vt.value})})}catch(e){say('sp',e.message,'err')}refresh(true)};
   document.querySelectorAll('[name=useSrc]').forEach(r=>r.onchange=async()=>{try{await api('/api/usematch',{method:'POST',body:JSON.stringify({voice:v.name,on:r.value==='match'})})}catch(e){say('match',e.message,'err')}refresh(true)});
+  b('#dsBtn',()=>{location.href=`/dataset/${encodeURIComponent(v.name)}.zip`});
   b('#trimBtn',()=>act('/api/trim',{voice:v.name},'tr'));
   b('#spBtn',()=>act('/api/speakers',{voice:v.name,num:$('#spNum').value},'sp'));
   b('#keepBtn',async()=>{const ids=[...document.querySelectorAll('.pk:checked')].map(x=>+x.value);

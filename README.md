@@ -48,7 +48,7 @@ Every long job has a **Stop** button. **Start over** (bottom of the page) clears
 | 1. Recordings folder | Choose (Browse…) the folder on your computer that holds your recordings; they are read from there and never copied or changed. 30–60+ minutes works best. |
 | 2. Who is speaking? *(optional)* | Only if your recordings have more than one person (a conversation, a call, a film). Finds each voice, shows samples with the time each comes from, and lets you tick whose voice to train on. **Find more like my voice** refines it from clips you tick. See below. |
 | 3. Prepare | One click. Splits at pauses and transcribes with Whisper on the GPU. Uses only the people you chose (or the voice you matched) and, if you set it, only the audio between two times (for example from 21:30 if that is where you start speaking). |
-| 4. Check the words *(optional)* | Press ▶ on a clip, fix the text, remove bad clips (✕), save. **The voice learns exactly what is written here, so skipping this may reduce quality.** Words from another person can be cut out with **Reprocess**, below. |
+| 4. Check the words *(optional)* | Press ▶ on a clip, fix the text, remove bad clips (✕), save. **The voice learns exactly what is written here, so skipping this may reduce quality.** Words from another person can be cut out with **Reprocess**, below. **Export dataset (.zip)** saves the cleaned clips and transcript (22.05 kHz mono wavs + `metadata.csv`) to use anywhere. |
 | 5. Train | Quick / Normal / Long. It keeps running if you close the tab; stop and resume any time. |
 | 6. Listen | Type a sentence, make a test clip, then download the two voice files. (Advanced mode lets you choose the version; Beginner always uses the best-sounding one.) |
 

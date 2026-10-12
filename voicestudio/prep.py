@@ -90,7 +90,7 @@ def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
     src = voices.source_dir(name)
     files = speakers.audio_files(name)
     if not files: raise SystemExit(f"No audio files found in {src or 'a folder (choose your recordings folder first)'}")
-    chosen = voices.read(name).get("keep_people")
+    chosen = None if voices.read(name).get("use_match") else voices.read(name).get("keep_people")      # a matched voice replaces the ticked people
     if chosen:
         if speakers.stale(name): log("NOTE: the recordings changed since the speakers were found; press 'Find the speakers' again.")
         log(f"Using only the parts where person(s) {', '.join(map(str, chosen))} speak.")
