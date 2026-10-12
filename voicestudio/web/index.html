@@ -78,7 +78,7 @@ footer.foot a{color:var(--acc);text-decoration:none}footer.foot a:hover{text-dec
 <header>
   <h1>The Piper Mill</h1>
   <button class="sec advbtn" id="advBtn" aria-pressed="false" title="Show advanced options, the console and more">Advanced</button>
-  <select id="voiceSel" aria-label="Voice"></select>
+  <select id="voiceSel" aria-label="Voice"></select><button class="sec" id="renameBtn" title="Rename this voice" hidden>✎</button>
   <button class="sec" id="newBtn">+ New voice</button>
 </header>
 <div id="busyBar"></div>
@@ -98,6 +98,14 @@ footer.foot a{color:var(--acc);text-decoration:none}footer.foot a:hover{text-dec
     <span class="row"><button class="sec" id="pickCancel">Cancel</button><button id="pickOk">Use this folder</button></span></div>
 </dialog>
 
+<dialog id="renameDlg">
+  <h2>Rename this voice</h2>
+  <p class="hint" style="margin:0 0 10px">Letters, digits, - and _ (1 to 40). Capital letters count, so <b>Joe</b> and <b>joe</b> are different names. Everything moves with it: your clips, training and any exported files.</p>
+  <p><input type="text" id="renameIn" maxlength="40" style="width:100%" autocomplete="off"></p>
+  <div class="row" style="justify-content:flex-end"><button class="sec" id="renameCancel">Cancel</button><button id="renameOk">Rename</button></div>
+  <div class="msg err" id="renameErr"></div>
+</dialog>
+
 <dialog id="resetDlg">
   <h2>Start over?</h2>
   <div id="resetBody" class="hint" style="margin:0 0 12px"></div>
@@ -108,7 +116,8 @@ footer.foot a{color:var(--acc);text-decoration:none}footer.foot a:hover{text-dec
 <dialog id="newDlg">
   <h2>New voice</h2>
   <p class="hint">Use your own voice, or the voice of someone who has agreed to it. The new voice is always learned from your recordings. Training begins from a similar-sounding voice to save time; that is chosen for you automatically.</p>
-  <p><input type="text" id="newName" placeholder="a short name, e.g. my-voice" style="width:100%" autocomplete="off"></p>
+  <p><input type="text" id="newName" placeholder="a short name, e.g. my-voice or Joe" style="width:100%" autocomplete="off"></p>
+  <p class="hint" style="margin-top:-6px">Letters, digits, - and _. Capital letters count: Joe and joe are different names.</p>
   <details id="advStart" style="margin-bottom:8px"><summary>Advanced: choose the starting voice myself</summary><p><select id="newBase" style="width:100%"></select></p></details>
   <p class="row"><input type="text" id="newFolder" placeholder="folder with your recordings (required)" style="flex:1;min-width:0" autocomplete="off"><button class="sec" type="button" id="newBrowse">Browse…</button></p>
   <p class="row"><label>This voice is <select id="newType"><option value="">not specified</option><option value="male">male</option><option value="female">female</option></select></label><span class="hint" style="margin:0">helps find your voice and pick the starting voice</span></p>
@@ -183,6 +192,16 @@ function wizStep(v,c){
   }
   return wiz[v.name];
 }
+function openRename(v){
+  const dlg=$('#renameDlg'),inp=$('#renameIn');$('#renameErr').textContent='';inp.value=v.name;
+  const done=async()=>{const nn=inp.value.trim();if(nn===v.name){$('#renameErr').textContent='That is already its name.';return}
+    $('#renameOk').disabled=true;
+    try{await api('/api/rename',{method:'POST',body:JSON.stringify({voice:v.name,name:nn})});
+      marks[nn]=marks[v.name];delete marks[v.name];wiz[nn]=wiz[v.name];delete wiz[v.name];rows=null;dirty=false;cur=nn;try{localStorage.setItem('voice',nn)}catch(e){}
+      dlg.close();refresh(true)}catch(e){$('#renameErr').textContent=e.message}$('#renameOk').disabled=false};
+  $('#renameOk').onclick=done;$('#renameCancel').onclick=()=>dlg.close();inp.onkeydown=e=>{if(e.key==='Enter')done()};
+  dlg.showModal();inp.focus();inp.select();
+}
 function openReset(v){
   const t=v.train,hasTrain=t.checkpoints>0||v.exported;
   $('#resetErr').textContent='';
@@ -215,6 +234,7 @@ function render(){
   const keep={txt:$('#txt')&&$('#txt').value,ep:$('#ep')&&$('#ep').value,sp:$('#spNum')&&$('#spNum').value,wh:$('#which')&&$('#which').value};
   const sel=$('#voiceSel');sel.innerHTML=S.voices.map(v=>`<option ${v.name===cur?'selected':''}>${esc(v.name)}</option>`).join('')||'<option>(no voices yet)</option>';
   $('#busyBar').innerHTML=S.busy&&S.busy.voice!==cur?`<div class="card" style="padding:10px 16px">${live('Busy')} <b>${esc(S.busy.voice)}</b>: the GPU is busy with ${jobName(S.busy.kind)}. Other jobs wait until it finishes.</div>`:'';
+  const rb=$('#renameBtn');rb.hidden=!S.voices.length;rb.disabled=!!S.busy;rb.onclick=()=>{const vv=S.voices.find(x=>x.name===cur);if(vv)openRename(vv)};
   const v=S.voices.find(x=>x.name===cur);
   if(!v){$('#main').innerHTML=`<div class="card empty"><h2>Welcome</h2><p>Create your first voice to begin. Use your own voice, or the voice of someone who has agreed to it.</p><button onclick="$('#newBtn').click()">+ New voice</button></div>`;return}
   const f=k=>flash[k]?`<div class="msg ${flash[k].cls||''}">${esc(flash[k].text)}</div>`:'';
@@ -422,7 +442,7 @@ function pickFolder(start,cb){pickCb=cb;$('#pickDlg').showModal();pickLoad(start
 $('#pickOk').onclick=()=>{$('#pickDlg').close();if(pickCb)pickCb(pickCur)};
 $('#pickCancel').onclick=()=>$('#pickDlg').close();
 $('#newOk').onclick=async()=>{const b=$('#newOk');b.disabled=true;b.textContent='Creating… (first time downloads the starting voice)';
-  try{const r=await api('/api/voices',{method:'POST',body:JSON.stringify({name:$('#newName').value.trim().toLowerCase(),base:$('#newBase').value,folder:$('#newFolder').value.trim(),voice_type:$('#newType').value})});cur=$('#newName').value.trim().toLowerCase();localStorage.setItem('voice',cur);$('#newDlg').close();$('#newName').value='';$('#newFolder').value='';$('#newType').value='';if(r.license)alert('Licence of the starting voice (its original dataset):\n\n'+r.license.slice(0,600))}
+  try{const r=await api('/api/voices',{method:'POST',body:JSON.stringify({name:$('#newName').value.trim(),base:$('#newBase').value,folder:$('#newFolder').value.trim(),voice_type:$('#newType').value})});cur=$('#newName').value.trim();localStorage.setItem('voice',cur);$('#newDlg').close();$('#newName').value='';$('#newFolder').value='';$('#newType').value='';if(r.license)alert('Licence of the starting voice (its original dataset):\n\n'+r.license.slice(0,600))}
   catch(e){$('#newErr').textContent=e.message}b.disabled=false;b.textContent='Create';refresh(true)};
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});
 refresh(true);setInterval(()=>refresh(),4000);

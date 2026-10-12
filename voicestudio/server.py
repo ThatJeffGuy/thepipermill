@@ -118,6 +118,47 @@ def _read_metrics(n, m):
     finally: m["t"] = time.time(); m["busy"] = False
 
 
+def _size(p):
+    """File size, or 0 if the file has just been deleted (training removes old checkpoints while the page is reading)."""
+    try: return p.stat().st_size
+    except OSError: return 0
+
+
+def rename_voice(old, new):
+    """Give a voice a new name (case matters: Joe and joe are different). Moves its folders, clip names, exported files and settings."""
+    new = CFG.check_name(new)
+    if new == old: raise ValueError("That is already its name.")
+    if voices.exists(new) or any((b / new).exists() for b in (CFG.data, CFG.runs, CFG.cache)): raise ValueError(f"A voice called '{new}' already exists.")
+    if busy() or train_pid(old) or job_pids(old): raise RuntimeError("A job is running. Wait for it or stop it first.")
+    moved = []
+    def mv(a, b):
+        if a.exists(): a.rename(b); moved.append((a, b))
+    try:
+        for base in (CFG.data, CFG.runs, CFG.cache): mv(base / old, base / new)
+        mv(voices.meta_path(old), voices.meta_path(new))
+        for pat in (f"{old}.*", f"{old}-*"):                             # the exported voice files and test clip
+            for p in list(CFG.out.glob(pat)): mv(p, CFG.out / (new + p.name[len(old):]))
+        root = CFG.data / new                                             # clips are named <voice>_00001.wav: keep them matching
+        for d in (root / "wavs", root / "wavs.untrimmed"):
+            if d.exists():
+                for p in list(d.glob(f"{old}_*.wav")): mv(p, d / (new + p.name[len(old):]))
+        for fn in ("metadata.csv", "metadata.orig.csv"):
+            f = root / fn
+            if f.exists():
+                lines = []
+                for line in f.read_text(encoding="utf-8").splitlines():
+                    name, sep, text = line.partition("|")
+                    lines.append((new + name[len(old):] if name.startswith(old + "_") else name) + sep + text)
+                f.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except Exception:
+        for a, b in reversed(moved):                                      # put everything back
+            try: b.rename(a)
+            except OSError: pass
+        raise
+    shutil.rmtree(CFG.cache / new, ignore_errors=True)                    # Piper's cache is keyed by clip name: start it fresh
+    JOBS.pop(old, None); _MET.pop(old, None)
+
+
 def tail(path, n=2500):
     try:
         with open(path, "rb") as f:
@@ -160,7 +201,7 @@ def info(n):
             "files": [{"name": speakers.rel(n, p), "mb": round(p.stat().st_size / 1e6, 1)} for p in files],
             "clips": clips, "prepared": md.exists(), "edited": len(trim.pending(n)),
             "train": {"running": bool(train_pid(n)), "total": total, "done": max(0, done) if done is not None else None,
-                      "mos": met["mos"] if met["mos"] is not None else (float(mos[-1]) if mos else None), "mos_first": met["first"], "checkpoints": len(ck), "disk_gb": round(sum(p.stat().st_size for p in ck) / 2**30, 1), "log": tl.split("\n")[-3:] if tl else []},
+                      "mos": met["mos"] if met["mos"] is not None else (float(mos[-1]) if mos else None), "mos_first": met["first"], "checkpoints": len(ck), "disk_gb": round(sum(_size(p) for p in ck) / 2**30, 1), "log": tl.split("\n")[-3:] if tl else []},
             "job": job, "exported": (CFG.out / f"{n}.onnx").exists()}
 
 
@@ -348,6 +389,9 @@ class H(BaseHTTPRequestHandler):
                 if ids: speakers.keep(n, ids)
                 else: voices.write(n, keep_people=[])
                 voices.write(n, use_match=False)                       # saving ticked people means: use the people, not a match
+            elif u.path == "/api/rename":
+                rename_voice(n, d.get("name"))
+                return self._json({"ok": True, "name": CFG.check_name(d.get("name"))})
             elif u.path == "/api/wordsseen":
                 voices.write(n, words_seen=True)
             elif u.path == "/api/prepopts":

@@ -30,7 +30,7 @@ DEFAULTS = {
     },
 }
 
-NAME_RX = re.compile(r"^[a-z0-9_-]{1,40}$")
+NAME_RX = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 
 
 def _merge(a, b):
@@ -58,7 +58,7 @@ class Config:
 
     def check_name(self, n):
         n = (n or "").strip()
-        if not NAME_RX.match(n): raise ValueError("Voice name: 1-40 characters, lowercase letters, digits, - and _ only.")
+        if not NAME_RX.match(n): raise ValueError("Voice name: 1-40 characters: letters, digits, - and _ only. Capital letters count (Joe and joe are different names).")
         if n in self.d["protected_names"]: raise ValueError(f"'{n}' is a protected name.")
         return n
 
