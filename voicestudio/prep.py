@@ -94,6 +94,11 @@ def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
     if chosen:
         if speakers.stale(name): log("NOTE: the recordings changed since the speakers were found; press 'Find the speakers' again.")
         log(f"Using only the parts where person(s) {', '.join(map(str, chosen))} speak.")
+    mm = voices.read(name)
+    if mm.get("use_match"): log("Using only the parts that sound like the clips you ticked ('find more like these').")
+    if mm.get("keep_from") or mm.get("keep_until"):
+        t = lambda s: f"{int(s // 60)}:{int(s % 60):02d}"
+        log(f"Using only the audio {('after ' + t(float(mm['keep_from']))) if mm.get('keep_from') else ''}{' and ' if mm.get('keep_from') and mm.get('keep_until') else ''}{('before ' + t(float(mm['keep_until']))) if mm.get('keep_until') else ''} in each recording.")
     prog = Progress(name, "prep")
     root = CFG.data / name; wavs = root / "wavs"
     for old in wavs.glob("*.wav"): old.unlink()                      # re-preparing starts clean
@@ -153,6 +158,8 @@ def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
         done += len(chunk)
         if done % 80 < len(chunk): log(f"  {done}/{len(clips)}")
     (root / "metadata.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
+    (root / "metadata.orig.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")        # as written by Whisper: lets "reprocess" see which clips you edited
+    shutil.rmtree(root / "wavs.untrimmed", ignore_errors=True)
     mins = sum(d for p, d in clips if p.exists()) / 60
     log(f"\nDone: {len(rows)} clips ({mins:.1f} min), {dropped} dropped.")
     if skipped:

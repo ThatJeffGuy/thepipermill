@@ -7,7 +7,7 @@ import json, os, re, shutil, signal, subprocess, sys, threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote
-from . import base, install, progress, speakers, train as train_mod, voices
+from . import base, install, progress, speakers, train as train_mod, trim, voices
 from .config import CFG
 
 WEB = Path(__file__).parent / "web"
@@ -31,10 +31,27 @@ def train_pid(n):
         return None
 
 
+JOB_KINDS = ("speakers", "match", "prep", "trim", "export")
+
+
+def job_pids(n):
+    """Running one-off jobs (not training) of a voice: [(kind, pid)]. Their pids are on disk so this survives a page-server restart."""
+    out = []
+    for k in JOB_KINDS:
+        try:
+            pid = int((CFG.runs / n / f"{k}.pid").read_text().strip())
+            if alive(pid): out.append((k, pid))
+        except (OSError, ValueError): pass
+    return out
+
+
 def busy():
     if CFG.runs.exists():
         for pf in CFG.runs.glob("*/train.pid"):
             if train_pid(pf.parent.name): return pf.parent.name, "training"
+        for d in CFG.runs.iterdir():
+            j = job_pids(d.name) if d.is_dir() else []
+            if j: return d.name, j[0][0]
     for n, j in JOBS.items():
         if j["proc"].poll() is None: return n, j["kind"]
     return None
@@ -52,6 +69,26 @@ def start_job(n, kind, args, meta=None):
         (d / "train.pid").write_text(str(p.pid)); (d / "train.meta").write_text(json.dumps(meta or {}))
     else:
         JOBS[n] = {"kind": kind, "proc": p, "log": log}
+        (d / f"{kind}.pid").write_text(str(p.pid))
+
+
+def start_over(n, training=False):
+    """Back to the beginning for one voice. Keeps: the recordings folder (never touched), the name, male/female, the decoded-audio cache.
+    Clears: the speaker scan and your choices, ticked clips, time window, prepared clips and edits. Training only if asked."""
+    runs = CFG.runs / n
+    if runs.exists():
+        for c in list(runs.iterdir()):
+            if c.name == "diar": continue
+            if training or c.name.startswith(("speakers", "match", "prep", "trim", "export")):
+                shutil.rmtree(c, ignore_errors=True) if c.is_dir() else c.unlink(missing_ok=True)
+    shutil.rmtree(CFG.data / n, ignore_errors=True); shutil.rmtree(CFG.cache / n, ignore_errors=True)
+    if training:
+        for g in (CFG.out.glob(f"{n}.*"), CFG.out.glob(f"{n}-*")):
+            for p in g: p.unlink(missing_ok=True)
+    JOBS.pop(n, None)
+    kw = dict(keep_people=[], keep_from=None, keep_until=None, ref_yes=[], ref_no=[], use_match=False)
+    if training: kw["base_used"] = None
+    voices.write(n, **kw)
 
 
 def tail(path, n=2500):
@@ -79,10 +116,15 @@ def info(n):
     j = JOBS.get(n); job = None
     if j: job = {"kind": j["kind"], "running": j["proc"].poll() is None, "rc": j["proc"].poll(), "log": tail(j["log"]), "progress": progress.read(n, j["kind"])}
     sp = speakers.load(n)
+    if sp and any(("pitch" not in p) or ("sample_ranges" not in p and p.get("sample_times")) for p in sp["people"]):
+        try: sp = speakers.person_pitches(n) or sp          # older scan: add pitch + clip ranges once (a couple of seconds, no GPU)
+        except Exception: pass
     return {"name": n, "base": m.get("base"), "base_used": m.get("base_used"),
-            "people": sp["people"] if sp else None, "keep": m.get("keep_people") or [], "people_stale": speakers.stale(n) if sp else False, "folder": str(src) if src else None, "folder_ok": bool(src and src.is_dir()),
+            "people": sp["people"] if sp else None, "keep": m.get("keep_people") or [], "keep_from": m.get("keep_from"), "keep_until": m.get("keep_until"),
+            "voice_type": m.get("voice_type") or "", "ref_yes": m.get("ref_yes") or [], "ref_no": m.get("ref_no") or [], "strict": m.get("strict") or "normal", "use_match": bool(m.get("use_match")),
+            "match": ({k: sp["match"][k] for k in ("minutes", "stretches", "strict", "samples")} if sp and sp.get("match") else None), "people_stale": speakers.stale(n) if sp else False, "folder": str(src) if src else None, "folder_ok": bool(src and src.is_dir()),
             "files": [{"name": speakers.rel(n, p), "mb": round(p.stat().st_size / 1e6, 1)} for p in files],
-            "clips": clips, "prepared": md.exists(),
+            "clips": clips, "prepared": md.exists(), "edited": len(trim.pending(n)),
             "train": {"running": bool(train_pid(n)), "total": total, "done": max(0, done) if done is not None else None,
                       "mos": float(mos[-1]) if mos else None, "checkpoints": len(ck), "disk_gb": round(sum(p.stat().st_size for p in ck) / 2**30, 1), "log": tl.split("\n")[-3:] if tl else []},
             "job": job, "exported": (CFG.out / f"{n}.onnx").exists()}
@@ -195,7 +237,8 @@ class H(BaseHTTPRequestHandler):
                 folder = (d.get("folder") or "").strip()
                 if not folder: raise ValueError("Choose the folder that has your recordings (use Browse).")
                 if not Path(folder).expanduser().is_dir(): raise ValueError("That folder does not exist.")
-                voices.write(n, base=key, source_dir=str(Path(folder).expanduser().resolve()))
+                vt = d.get("voice_type") if d.get("voice_type") in ("male", "female") else ""
+                voices.write(n, base=key, source_dir=str(Path(folder).expanduser().resolve()), voice_type=vt)
                 return self._json({"ok": True, "license": (base.info(key) or {}).get("license", "") if key != base.AUTO else ""})
             n = CFG.check_name(d.get("voice"))
             if not voices.exists(n): raise ValueError("no such voice")
@@ -203,7 +246,36 @@ class H(BaseHTTPRequestHandler):
             elif u.path == "/api/train":
                 ep = max(1, min(20000, int(d.get("epochs", 1000))))
                 if not (CFG.data / n / "metadata.csv").exists(): raise ValueError("Prepare the recordings first.")
+                if trim.pending(n): raise ValueError(f"{len(trim.pending(n))} clip(s) have edited words but their audio was not cut to match. Press 'Reprocess edited clips' in Check the words first.")
                 start_job(n, "train", ["train", n, str(ep)], meta={"epochs": ep})
+            elif u.path == "/api/match":
+                def ranges(v):
+                    out = []
+                    for x in v or []:
+                        if len(x) == 3 and isinstance(x[0], str): out.append([x[0], float(x[1]), float(x[2])])
+                    return out[:300]
+                yes, no = ranges(d.get("yes")), ranges(d.get("no"))
+                if not yes: raise ValueError("Tick at least one clip (this is my speaker) first.")
+                if not speakers.load(n): raise ValueError("Find the speakers first.")
+                strict = d.get("strict") if d.get("strict") in speakers.STRICT else "normal"
+                voices.write(n, ref_yes=yes, ref_no=no, strict=strict)
+                start_job(n, "match", ["match", n])
+            elif u.path == "/api/reset":
+                if busy() or train_pid(n): raise RuntimeError("A job is running. Wait for it or stop it first.")
+                start_over(n, training=bool(d.get("training")))
+            elif u.path == "/api/voicetype":
+                vt = d.get("type") if d.get("type") in ("male", "female") else ""
+                voices.write(n, voice_type=vt)
+                if vt and speakers.load(n):
+                    try: speakers.person_pitches(n)          # a few seconds, no GPU: so the list can show who fits
+                    except Exception: pass
+            elif u.path == "/api/usematch":
+                r = speakers.load(n)
+                if d.get("on") and not (r and r.get("match")): raise ValueError("Nothing has been matched yet.")
+                voices.write(n, use_match=bool(d.get("on")))
+            elif u.path == "/api/trim":
+                if not trim.pending(n): raise ValueError("No clip's words have been changed, so there is nothing to reprocess. Save your edits first.")
+                start_job(n, "trim", ["trim", n])
             elif u.path == "/api/speakers":
                 num = int(d["num"]) if str(d.get("num") or "").strip().isdigit() else None
                 start_job(n, "speakers", ["speakers", n] + (["--num", str(num)] if num else []))
@@ -211,6 +283,24 @@ class H(BaseHTTPRequestHandler):
                 ids = [int(i) for i in d.get("ids", [])]
                 if ids: speakers.keep(n, ids)
                 else: voices.write(n, keep_people=[])
+                voices.write(n, use_match=False)                       # saving ticked people means: use the people, not a match
+            elif u.path == "/api/window":
+                def secs(v):
+                    v = str(v or "").strip()
+                    if not v: return None
+                    parts = [float(x) for x in v.split(":")]
+                    if len(parts) > 3 or any(x < 0 for x in parts): raise ValueError("Times look like 21:30 (minutes:seconds) or 1:05:00.")
+                    return sum(x * 60 ** i for i, x in enumerate(reversed(parts)))
+                try: a, b = secs(d.get("from")), secs(d.get("until"))
+                except ValueError: raise ValueError("Times look like 21:30 (minutes:seconds) or 1:05:00.")
+                if a is not None and b is not None and b <= a: raise ValueError("The end time must be after the start time.")
+                voices.write(n, keep_from=a, keep_until=b)
+            elif u.path == "/api/job/stop":
+                running = job_pids(n)
+                if not running: raise ValueError("Nothing is running for this voice.")
+                for _, pid in running:
+                    try: os.killpg(os.getpgid(pid), signal.SIGTERM)
+                    except OSError: pass
             elif u.path == "/api/train/stop":
                 pid = train_pid(n)
                 if pid: os.killpg(os.getpgid(pid), signal.SIGINT)
@@ -242,13 +332,15 @@ class H(BaseHTTPRequestHandler):
             if u.path == "/api/transcript":
                 d = self._body(); n = CFG.check_name(d["voice"]); md = CFG.data / n / "metadata.csv"
                 if not md.exists(): raise ValueError("nothing prepared yet")
-                shutil.copy(md, md.with_suffix(".csv.bak")); wavs = CFG.data / n / "wavs"; lines = []
+                shutil.copy(md, md.with_suffix(".csv.bak"))
+                if not (md.parent / "metadata.orig.csv").exists(): shutil.copy(md, md.parent / "metadata.orig.csv")   # first edit: remember the transcript as it was
+                wavs = CFG.data / n / "wavs"; lines = []
                 for r in d["rows"]:
                     f = os.path.basename(r["file"]); t = " ".join(str(r["text"]).split()).replace("|", " ")
                     if t and (wavs / f).exists(): lines.append(f"{f}|{t}")
                 md.write_text("\n".join(lines) + "\n", encoding="utf-8")
                 shutil.rmtree(CFG.cache / n, ignore_errors=True)              # Piper's cache is keyed by row+text: start fresh
-                return self._json({"ok": True, "kept": len(lines)})
+                return self._json({"ok": True, "kept": len(lines), "edited": len(trim.pending(n))}) 
             self._err("not found", 404)
         except (ValueError, KeyError, OSError) as e:
             self._err(e)

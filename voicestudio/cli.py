@@ -14,7 +14,9 @@ def main(argv=None):
     p = sub.add_parser("new", help="create a voice"); p.add_argument("name"); p.add_argument("--base", default="auto", help="auto (matched to your recordings) or: ryan, amy, lessac, joe, john"); p.add_argument("--folder", required=True, help="the folder with your recordings")
     p = sub.add_parser("prep", help="recordings -> dataset"); p.add_argument("name"); p.add_argument("--top-db", type=float, default=None, help="silence threshold (default: chosen automatically for each recording)")
     p = sub.add_parser("speakers", help="find who is speaking in the recordings"); p.add_argument("name"); p.add_argument("--num", type=int, default=None, help="how many people talk (default: detect)")
+    p = sub.add_parser("match", help="find more speech that sounds like the clips you ticked"); p.add_argument("name")
     p = sub.add_parser("keep", help="choose which people to train on"); p.add_argument("name"); p.add_argument("ids", nargs="*", type=int); p.add_argument("--all", action="store_true", help="use everyone (no filtering)")
+    p = sub.add_parser("trim", help="reprocess: cut clips down to the words you kept when editing"); p.add_argument("name")
     p = sub.add_parser("train", help="fine-tune (resumable)"); p.add_argument("name"); p.add_argument("epochs", nargs="?", type=int, default=1000); p.add_argument("batch", nargs="?", type=int, default=0)
     p = sub.add_parser("export", help="make the .onnx/.json and a test clip"); p.add_argument("name"); p.add_argument("--text", default=None); p.add_argument("--which", choices=["best", "accurate", "latest"], default="best", help="best = best-sounding by quality score (default)")
     p = sub.add_parser("install", help="run the configured install step"); p.add_argument("name")
@@ -51,10 +53,14 @@ def main(argv=None):
         from . import prep; prep.run(n, top_db=a.top_db)
     elif a.cmd == "speakers":
         from . import speakers; speakers.run(n, a.num)
+    elif a.cmd == "match":
+        from . import speakers; speakers.match(n)
     elif a.cmd == "keep":
         from . import speakers
         if a.all or not a.ids: voices.write(n, keep_people=[]); print("Using everyone in the recordings.")
         else: speakers.keep(n, a.ids); print(f"Training on person(s) {a.ids} only.")
+    elif a.cmd == "trim":
+        from . import trim; trim.run(n)
     elif a.cmd == "train":
         from . import train; train.run(n, a.epochs, a.batch)
     elif a.cmd == "export":
