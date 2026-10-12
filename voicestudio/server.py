@@ -79,13 +79,32 @@ def info(n):
     j = JOBS.get(n); job = None
     if j: job = {"kind": j["kind"], "running": j["proc"].poll() is None, "rc": j["proc"].poll(), "log": tail(j["log"])}
     sp = speakers.load(n)
-    return {"name": n, "base": m.get("base"),
+    return {"name": n, "base": m.get("base"), "base_used": m.get("base_used"),
             "people": sp["people"] if sp else None, "keep": m.get("keep_people") or [], "people_stale": speakers.stale(n) if sp else False, "custom_source": m.get("source_dir") or None, "source": str(src),
             "inbox": [{"name": p.name, "mb": round(p.stat().st_size / 1e6, 1)} for p in files],
             "clips": clips, "prepared": md.exists(),
             "train": {"running": bool(train_pid(n)), "total": total, "done": max(0, done) if done is not None else None,
                       "mos": float(mos[-1]) if mos else None, "checkpoints": len(ck), "log": tl.split("\n")[-3:] if tl else []},
             "job": job, "exported": (CFG.out / f"{n}.onnx").exists()}
+
+
+def browse(path):
+    """List the sub-folders of a folder for the page's folder chooser (folders only, never file contents)."""
+    home = Path.home()
+    p = Path(path).expanduser() if path else home
+    try:
+        p = p.resolve()
+        if not p.is_dir(): p = p.parent if p.exists() else home
+        entries = sorted(p.iterdir(), key=lambda c: c.name.lower())
+        dirs = [c.name for c in entries if not c.name.startswith(".") and c.is_dir()]
+        audio = sum(1 for c in entries if c.is_file() and c.suffix.lower() in AUDIO_EXT)
+    except PermissionError:
+        raise ValueError("You do not have permission to open that folder.")
+    except OSError as e:
+        raise ValueError(str(e))
+    places = [str(x) for x in (home, home / "Music", home / "Downloads", home / "Documents", home / "Desktop", Path("/media"), Path("/mnt"),
+                               Path("/run/media") / home.name) if x.is_dir()]
+    return {"path": str(p), "parent": str(p.parent) if p != p.parent else None, "dirs": dirs[:1500], "audio": audio, "places": places}
 
 
 class H(BaseHTTPRequestHandler):
@@ -135,6 +154,7 @@ class H(BaseHTTPRequestHandler):
         u = urlparse(self.path); q = parse_qs(u.query)
         try:
             if u.path == "/": return self._file(WEB / "index.html", "text/html; charset=utf-8")
+            if u.path == "/api/browse": return self._json(browse(q.get("path", [""])[0]))
             if u.path == "/api/sentences": return self._file(WEB / "sentences.txt", "text/plain; charset=utf-8")
             if u.path == "/api/voices":
                 b = busy()
@@ -170,14 +190,15 @@ class H(BaseHTTPRequestHandler):
         try:
             d = self._body()
             if u.path == "/api/voices":
-                n = CFG.check_name(d.get("name")); key = d.get("base", "ryan")
+                n = CFG.check_name(d.get("name")); key = d.get("base") or base.AUTO
+                if key != base.AUTO and key not in base.BASES: raise ValueError("unknown starting voice")
                 if voices.exists(n): raise ValueError(f"'{n}' already exists")
-                base.ensure(key, log=lambda *_: None)
+                if key != base.AUTO: base.ensure(key, log=lambda *_: None)
                 folder = (d.get("folder") or "").strip()
                 if folder and not Path(folder).expanduser().is_dir(): raise ValueError("That folder does not exist.")
                 voices.write(n, base=key, **({"source_dir": str(Path(folder).expanduser())} if folder else {}))
                 (CFG.inbox / n).mkdir(parents=True, exist_ok=True)
-                return self._json({"ok": True, "license": (base.info(key) or {}).get("license", "")})
+                return self._json({"ok": True, "license": (base.info(key) or {}).get("license", "") if key != base.AUTO else ""})
             n = CFG.check_name(d.get("voice"))
             if not voices.exists(n): raise ValueError("no such voice")
             if u.path == "/api/prep": start_job(n, "prep", ["prep", n])

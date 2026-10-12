@@ -62,7 +62,7 @@ Only use recordings of people who have agreed to it. Telling the tool how many p
 Everything the page does is also available as `.venv/bin/voicestudio`:
 
 ```
-voicestudio new myvoice --base ryan --folder ~/recordings   # create (base: ryan, amy, lessac, joe, john)
+voicestudio new myvoice --folder ~/recordings   # create (add --base ryan|amy|lessac|joe|john to choose the starting voice)
 voicestudio speakers myvoice      # optional: who speaks in the recordings; then: voicestudio keep myvoice 1
 voicestudio prep myvoice          # clips + transcripts  -> check data/myvoice/metadata.csv
 voicestudio train myvoice 1000    # extra epochs, resumable

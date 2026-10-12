@@ -38,6 +38,9 @@ details{margin-top:10px}summary{cursor:pointer;color:var(--acc);font-size:14px}
 .sent{font-size:14px;color:var(--mute);columns:1;margin:8px 0 0;padding-left:20px}
 dialog{border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);padding:20px;max-width:420px}
 dialog::backdrop{background:#0008}
+.pickbox{border:1px solid var(--line);border-radius:10px;max-height:320px;overflow:auto;margin:10px 0}
+.pickbox div{padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--line)}.pickbox div:last-child{border-bottom:0}.pickbox div:hover{background:var(--acc2)}
+#pickDlg{width:min(560px,92vw);max-width:none}
 .pager{display:flex;gap:8px;align-items:center;margin-top:10px}
 .empty{text-align:center;padding:40px 10px;color:var(--mute)}
 </style>
@@ -53,12 +56,21 @@ dialog::backdrop{background:#0008}
 <div id="main"></div>
 </div>
 
+<dialog id="pickDlg">
+  <h2>Choose a folder</h2>
+  <div class="row" id="pickPlaces" style="margin-bottom:8px"></div>
+  <div class="hint" id="pickPath" style="word-break:break-all;margin:0"></div>
+  <div class="pickbox" id="pickList"></div>
+  <div class="row" style="justify-content:space-between"><span class="hint" id="pickInfo" style="margin:0"></span>
+    <span class="row"><button class="sec" id="pickCancel">Cancel</button><button id="pickOk">Use this folder</button></span></div>
+</dialog>
+
 <dialog id="newDlg">
   <h2>New voice</h2>
-  <p class="hint">Use your own voice, or someone who has agreed to it. Pick a starting voice that is close to yours: it only changes the starting point, the result will sound like your recordings.</p>
+  <p class="hint">Use your own voice, or the voice of someone who has agreed to it. The new voice is always learned from your recordings. Training begins from a similar-sounding voice to save time; that is chosen for you automatically.</p>
   <p><input type="text" id="newName" placeholder="a short name, e.g. my-voice" style="width:100%" autocomplete="off"></p>
-  <p><select id="newBase" style="width:100%"></select></p>
-  <p><input type="text" id="newFolder" placeholder="optional: folder with your recordings" style="width:100%" autocomplete="off"></p>
+  <details style="margin-bottom:8px"><summary>Advanced: choose the starting voice myself</summary><p><select id="newBase" style="width:100%"></select></p></details>
+  <p class="row"><input type="text" id="newFolder" placeholder="optional: folder with your recordings" style="flex:1;min-width:0" autocomplete="off"><button class="sec" type="button" id="newBrowse">Browse…</button></p>
   <p class="hint">The starting voice has its own dataset licence (usually non-commercial). It is saved next to the file and shown after creation.</p>
   <div class="row" style="justify-content:flex-end"><button class="sec" id="newCancel">Cancel</button><button id="newOk">Create</button></div>
   <div class="msg err" id="newErr"></div>
@@ -76,7 +88,7 @@ function say(key,text,cls){flash[key]={text,cls};render()}
 let last='';
 async function refresh(force){
   let n;try{n=await api('/api/voices')}catch(e){return}
-  const ae=document.activeElement, typing=ae&&(ae.closest&&ae.closest('#tbl')||ae.id==='txt');
+  const ae=document.activeElement, typing=ae&&(ae.closest&&ae.closest('#tbl')||['txt','srcIn','spNum'].includes(ae.id));
   const sig=JSON.stringify(n);
   if(!force&&(sig===last||typing))return;      // never redraw under your fingers
   last=sig;S=n;
@@ -102,7 +114,7 @@ function render(){
     ${v.custom_source?`<div class="msg">Reading recordings from your folder: <b>${esc(v.custom_source)}</b> <button class="sec" id="clrSrc">Use drop-box instead</button></div>`
       :`<div class="drop" id="drop">Drag audio files here, or click to choose</div><input type="file" id="fileIn" multiple accept="audio/*,video/mp4,.m4a,.opus" hidden>
       <div class="row" style="margin-top:10px"><span class="hint" style="margin:0">or use a folder that is already on this computer:</span>
-      <input type="text" id="srcIn" placeholder="/path/to/recordings" style="flex:1;min-width:180px"><button class="sec" id="setSrc">Use this folder</button></div>`}
+      <input type="text" id="srcIn" placeholder="/path/to/recordings" style="flex:1;min-width:180px"><button class="sec" id="browseSrc">Browse…</button><button class="sec" id="setSrc">Use this folder</button></div>`}
     ${uploading?`<div class="msg">Uploading ${esc(uploading)}…</div>`:''}${f('up')}
     ${v.inbox.length?`<ul class="files">${v.inbox.map(x=>`<li><span>${esc(x.name)}</span><span>${x.mb} MB</span>${v.custom_source?'':`<button class="x" title="Remove" onclick="rmFile('${esc(x.name).replace(/'/g,"\\'")}')">✕</button>`}</li>`).join('')}</ul><div class="hint">${v.inbox.length} file(s), ${totalMB.toFixed(0)} MB</div>`:`<div class="hint">No audio files found yet in ${esc(v.source)}</div>`}
     <details><summary>Need something to read?</summary><ol class="sent" id="sent">Loading…</ol></details>
@@ -154,7 +166,7 @@ function render(){
     ${v.exported?`<p><audio controls src="/out/${esc(v.name)}-test.wav?t=${Date.now()>>14}" style="width:100%"></audio></p>`:''}
     ${v.job&&v.job.kind==='export'&&v.job.rc?`<pre>${esc(v.job.log)}</pre>`:''}${f('exp')}
   </div>
-  <details style="margin-top:6px"><summary>Voice settings</summary><p class="hint">Starting voice: ${esc(S.bases[v.base]||v.base||'?')}</p><button class="sec bad" id="delBtn" style="color:#fff">Delete this voice…</button></details>`;
+  <details style="margin-top:6px"><summary>Voice settings</summary><p class="hint">Starting voice: ${v.base==='auto'||!v.base?`automatic${v.base_used?' (picked: '+esc(S.bases[v.base_used]||v.base_used)+')':' (chosen when training starts, from your recordings)'}`:esc(S.bases[v.base]||v.base)}</p><button class="sec bad" id="delBtn" style="color:#fff">Delete this voice…</button></details>`;
   if(keep.sp&&$('#spNum'))$('#spNum').value=keep.sp;if(keep.txt!=null)$('#txt').value=keep.txt;if(keep.ep!=null&&$('#ep'))$('#ep').value=keep.ep;
   wire(v);if(rows&&rowsFor===v.name)drawRows();
 }
@@ -165,6 +177,7 @@ function wire(v){
   drop.ondragover=e=>{e.preventDefault();drop.classList.add('on')};drop.ondragleave=()=>drop.classList.remove('on');
   drop.ondrop=e=>{e.preventDefault();drop.classList.remove('on');upload(v.name,[...e.dataTransfer.files])};
   const b=(id,fn)=>{const el=$(id);if(el)el.onclick=fn};
+  b('#browseSrc',()=>pickFolder($('#srcIn').value,p=>{$('#srcIn').value=p}));
   b('#setSrc',async()=>{try{await api('/api/source',{method:'POST',body:JSON.stringify({voice:v.name,path:$('#srcIn').value})});refresh(true)}catch(e){say('up',e.message,'err')}});
   b('#clrSrc',async()=>{await api('/api/source',{method:'POST',body:JSON.stringify({voice:v.name,path:''})});refresh(true)});
   b('#delBtn',async()=>{if(!confirm(`Delete "${v.name}" and its working files (prepared clips, training progress, exported voice)?\n\nRecordings in your own folder are never deleted.`))return;
@@ -214,8 +227,25 @@ function play(f){if(au)au.pause();au=new Audio(`/audio/${cur}/${f}`);au.play()}
 async function saveRows(name){try{const j=await api('/api/transcript',{method:'PUT',body:JSON.stringify({voice:name,rows})});dirty=false;say('tr',`Saved. ${j.kept} clips kept.`,'ok')}catch(e){say('tr',e.message,'err')}}
 
 $('#voiceSel').onchange=e=>{cur=e.target.value;localStorage.setItem('voice',cur);rows=null;dirty=false;flash={};render()};
-$('#newBtn').onclick=()=>{$('#newErr').textContent='';$('#newBase').innerHTML=Object.entries(S.bases).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');$('#newDlg').showModal()};
+$('#newBtn').onclick=()=>{$('#newErr').textContent='';$('#newBase').innerHTML='<option value="auto">Automatic: matched to my recordings (recommended)</option>'+Object.entries(S.bases).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');$('#newDlg').showModal()};
 $('#newCancel').onclick=()=>$('#newDlg').close();
+$('#newBrowse').onclick=()=>pickFolder($('#newFolder').value,p=>{$('#newFolder').value=p});
+
+// folder chooser (the page cannot open the system dialog and learn the real path, so it lists folders itself)
+let pickCb=null,pickCur='';
+async function pickLoad(p){
+  const j=await api('/api/browse?path='+encodeURIComponent(p||''));pickCur=j.path;
+  $('#pickPath').textContent=j.path;
+  const name=x=>x.split('/').filter(Boolean).pop()||'/';
+  $('#pickPlaces').innerHTML=j.places.map(x=>`<button class="sec" data-p="${esc(x)}">${esc(x===j.places[0]?'Home':name(x))}</button>`).join('');
+  const base=j.path.replace(/\/$/,'');
+  $('#pickList').innerHTML=(j.parent?`<div data-p="${esc(j.parent)}">⬆ Up one level</div>`:'')+(j.dirs.map(d=>`<div data-p="${esc(base+'/'+d)}">📁 ${esc(d)}</div>`).join('')||'<div style="cursor:default;color:var(--mute)">No folders in here</div>');
+  $('#pickInfo').textContent=j.audio?`${j.audio} audio file${j.audio>1?'s':''} in this folder`:'No audio files directly in this folder';
+  document.querySelectorAll('#pickDlg [data-p]').forEach(el=>el.onclick=()=>pickLoad(el.dataset.p).catch(e=>{$('#pickInfo').textContent=e.message}));
+}
+function pickFolder(start,cb){pickCb=cb;$('#pickDlg').showModal();pickLoad(start).catch(()=>pickLoad('').catch(e=>{$('#pickInfo').textContent=e.message}))}
+$('#pickOk').onclick=()=>{$('#pickDlg').close();if(pickCb)pickCb(pickCur)};
+$('#pickCancel').onclick=()=>$('#pickDlg').close();
 $('#newOk').onclick=async()=>{const b=$('#newOk');b.disabled=true;b.textContent='Creating… (first time downloads the starting voice)';
   try{const r=await api('/api/voices',{method:'POST',body:JSON.stringify({name:$('#newName').value.trim().toLowerCase(),base:$('#newBase').value,folder:$('#newFolder').value.trim()})});cur=$('#newName').value.trim().toLowerCase();localStorage.setItem('voice',cur);$('#newDlg').close();$('#newName').value='';$('#newFolder').value='';if(r.license)alert('Licence of the starting voice (its original dataset):\n\n'+r.license.slice(0,600))}
   catch(e){$('#newErr').textContent=e.message}b.disabled=false;b.textContent='Create';refresh(true)};

@@ -25,7 +25,28 @@ KEEP = {"batch_size", "betas", "c_kl", "c_mel", "dataset", "eps", "filter_channe
         "upsample_kernel_sizes", "upsample_rates", "use_sdp", "use_spectral_norm", "warmup_epochs", "win_length"}
 
 
+AUTO = "auto"
+MALE, FEMALE = "ryan", "amy"      # what "automatic" chooses between
+SPLIT_HZ = 165                    # typical speaking pitch: men ~85-155 Hz, women ~165-255 Hz
+
+
 def path(key): return CFG.base / f"{key}-medium-clean.ckpt"
+
+
+def pick_for(name, log=print):
+    """Choose the closer starting voice by measuring the average pitch of the prepared clips."""
+    import random, numpy as np, soundfile as sf, librosa
+    wavs = sorted((CFG.data / name / "wavs").glob("*.wav"))
+    if not wavs: return MALE
+    random.Random(0).shuffle(wavs); f0s = []
+    for w in wavs[:25]:
+        y, sr = sf.read(w, dtype="float32")
+        f0, voiced, _ = librosa.pyin(y[: sr * 6], fmin=60, fmax=400, sr=sr, frame_length=2048)
+        f0s += [v for v, ok in zip(f0, voiced) if ok and not np.isnan(v)]
+    if len(f0s) < 50: return MALE
+    hz = float(np.median(f0s)); key = FEMALE if hz >= SPLIT_HZ else MALE
+    log(f"Average pitch of your recordings: {hz:.0f} Hz -> starting from the {'female' if key == FEMALE else 'male'} base voice ({key}).")
+    return key
 
 
 def info(key):
@@ -35,6 +56,7 @@ def info(key):
 
 
 def ensure(key, log=print):
+    if key == AUTO: raise ValueError("pick_for() decides 'auto' once the recordings are prepared")
     if key not in BASES: raise ValueError(f"unknown base voice '{key}' (choose from {', '.join(BASES)})")
     out = path(key)
     if out.exists() and info(key): return out

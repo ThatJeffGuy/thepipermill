@@ -17,7 +17,11 @@ def run(name, extra_epochs=1000, batch=0):
     gpu.check()
     m = voices.read(name)
     if not (CFG.data / name / "metadata.csv").exists(): raise SystemExit("Prepare the recordings first.")
-    key = m.get("base", "ryan"); b = base.ensure(key)
+    key = m.get("base", base.AUTO)
+    if key == base.AUTO:
+        key = m.get("base_used") or base.pick_for(name, log=lambda t: print(t, flush=True))
+        voices.write(name, base_used=key)           # remember it so resuming uses the same starting voice
+    b = base.ensure(key)
     b_epoch = (base.info(key) or {}).get("epoch", 0)
     batch = batch or CFG["batch_size"] or gpu.default_batch()
     run_dir = CFG.runs / name; run_dir.mkdir(parents=True, exist_ok=True); (CFG.cache / name).mkdir(parents=True, exist_ok=True)
