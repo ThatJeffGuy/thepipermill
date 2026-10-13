@@ -314,6 +314,14 @@ def hf_status(fresh=False):
     return out
 
 
+def need_hf():
+    """The jobs that use the gated speaker model refuse to start until Hugging Face access is set up (re-checked live, so accepting the terms works at once)."""
+    s = hf_status()
+    if s["state"] not in ("ready", "error"): s = hf_status(True)
+    if s["state"] in ("no_token", "not_accepted", "bad_token"):
+        raise ValueError("Speaker model access is needed first. Go to the Recordings step and use the buttons there to accept the model's terms on Hugging Face.")
+
+
 def gpu_gb():
     """Total video memory of the GPU in GB (to one decimal), or None when it cannot be read."""
     g = gpu_stats()
@@ -544,6 +552,7 @@ class H(BaseHTTPRequestHandler):
             if not voices.exists(n): raise ValueError("That voice no longer exists.")
             if u.path == "/api/prep":
                 if voices.read(n).get("imported"): raise ValueError("This voice was started from a prepared dataset, so there is nothing to prepare.")
+                need_hf()
                 start_job(n, "prep", ["prep", n])
             elif u.path == "/api/analyze":
                 if not voices.source_dir(n) or not speakers.audio_files(n): raise ValueError("Choose a folder that has audio files first.")
@@ -558,6 +567,7 @@ class H(BaseHTTPRequestHandler):
                 start_job(n, "train", ["train", n, str(ep)], meta={"epochs": ep})
             elif u.path == "/api/score":
                 if not (CFG.data / n / "metadata.csv").exists(): raise ValueError("Prepare the recordings first.")
+                need_hf()
                 start_job(n, "score", ["score", n])
             elif u.path == "/api/compare":
                 if not train_mod.all_ckpts(n): raise ValueError("Train first: there is nothing to compare yet.")
@@ -571,6 +581,7 @@ class H(BaseHTTPRequestHandler):
                 yes, no = ranges(d.get("yes")), ranges(d.get("no"))
                 if not yes: raise ValueError("Mark at least one clip as your speaker first (press its square until it shows a green tick).")
                 if not speakers.load(n): raise ValueError("Find the speakers first.")
+                need_hf()
                 strict = d.get("strict") if d.get("strict") in speakers.STRICT else "normal"
                 voices.write(n, ref_yes=yes, ref_no=no, strict=strict)
                 if d.get("max_minutes"): voices.write(n, max_minutes=max(10, min(180, int(d["max_minutes"]))))
@@ -605,6 +616,7 @@ class H(BaseHTTPRequestHandler):
                 if not trim.pending(n): raise ValueError("No clip's words have been changed, so there is nothing to reprocess. Save your edits first.")
                 start_job(n, "trim", ["trim", n])
             elif u.path == "/api/speakers":
+                need_hf()
                 if d.get("hours") is not None:
                     try: voices.write(n, scan_hours=max(0, min(1000, int(d["hours"]))))
                     except (TypeError, ValueError): raise ValueError("Choose how much to scan, or Everything.")

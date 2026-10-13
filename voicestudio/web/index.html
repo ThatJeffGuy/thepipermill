@@ -209,11 +209,11 @@ const ic=k=>IC[k]||'';
 let HF=null,hfT=0;
 async function pollHf(fresh){hfT=Date.now();try{const h=await api('/api/hf'+(fresh?'?fresh=1':''));if(JSON.stringify(h)!==JSON.stringify(HF)){HF=h;const a=document.activeElement;if(!(a&&a.closest&&a.closest('#tbl')))render()}}catch(e){}}
 function hfCard(ctx){
-  if(!HF||(HF.state==='ready'&&ctx!=='speakers'))return'';
+  if(!HF||(HF.state==='ready'&&ctx!=='recordings'))return'';
   const lnk=(u,t)=>`<a href="${esc(u)}" target="_blank" rel="noopener noreferrer"><button class="sec" type="button">${t}${SV('<path d="M6 3h7v7M13 3L6.5 9.5M11 9v4H3V5h4"/>')}</button></a>`;
   const again='<button class="linkbtn" type="button" id="hfRecheck">Check again</button>';
-  if(HF.state==='ready')return`<p class="hint" style="margin:6px 0 0">Speaker model access: <span class="pill ok">ready</span> ${tip('The speaker scan uses the model '+HF.model+', which Hugging Face asks you to agree to once. Your token has access, so nothing more is needed.')}</p>`;
-  const why={speakers:'The speaker scan cannot run without it.',refine:'Finding more of your speaker cannot run without it.',prepare:'Prepare uses it to choose the clips that sound most like your speaker. Without it, Prepare falls back to transcript quality and an even spread.'}[ctx]||'';
+  if(HF.state==='ready')return`<p class="hint" style="margin:6px 0 0">Your Hugging Face token can open the speaker model. <span class="pill ok">ready</span> ${tip('The speaker scan uses the model '+HF.model+', which Hugging Face asks you to agree to once. Your token has access, so nothing more is needed.')}</p>`;
+  const why={recordings:'It is needed to find your speaker and to choose the best clips, so the next steps stay locked until it is set up.',speakers:'The speaker scan cannot run without it.',refine:'Finding more of your speaker cannot run without it.',prepare:'Prepare uses it to choose the clips that sound most like your speaker. Without it, Prepare falls back to transcript quality and an even spread.'}[ctx]||'';
   const body={no_token:'The speaker model is kept behind a one-time agreement on Hugging Face. You need a free account, to accept the model&rsquo;s terms, and a read-only access token. Open the two pages below, then add the token to your config file as <b>hf_token</b> (or sign in with <b>hf auth login</b>).',
     not_accepted:'Your token is set, but its account has not accepted the model&rsquo;s terms yet. Open the model page while signed in to that account and accept them.',
     bad_token:'Hugging Face did not accept your access token. Create a new read-only token and update <b>hf_token</b> in your config file.',
@@ -381,7 +381,7 @@ function render(){
   const hd=(n,done,title)=>`<h2><span class="step ${done?'done':''}">${n>=3?n+1:n}</span>${title}</h2>`;
   const rowsLoaded=!!(rows&&rowsFor===v.name), wordsDone=rowsLoaded||!!v.words_seen;      // seen this session, or at any time before (remembered by the server)
   const cards=[
-  ()=>`<div class="card">${hd(1,(v.files.length>0&&anOk)||v.imported,'Your recordings folder')}
+  ()=>`<div class="card">${hd(1,(v.files.length>0&&anOk&&hfOk)||v.imported,'Your recordings folder')}
     ${v.imported||v.restoring?`<p class="hint">${v.restoring?'This voice is being restored from a backup.':'This voice was started from a prepared dataset, so there are no recordings to choose: its clips are the dataset you imported.'}${v.imported&&v.prepared?` It has <b>${v.clips}</b> clips (${v.clip_minutes} min).`:''}</p>
       ${pbar(v.job&&(v.job.kind==='import'||v.job.kind==='restore')?v.job:null)}${jobNote(v,'import',true)}${jobNote(v,'restore',true)}`:`
     <p class="hint">Choose the folder on this computer that holds your recordings (wav, mp3, m4a, flac and similar). Subfolders are included, and your files are read where they are: they are never copied or changed. Between 60 and 120 minutes of clear, natural speech recorded in a quiet room gives the best results. Please use only recordings you made yourself or have permission to use.</p>
@@ -389,6 +389,8 @@ function render(){
     ${!v.folder?'<div class="msg err">No folder has been chosen yet.</div>':!v.folder_ok?'<div class="msg err">That folder can no longer be found. Choose it again.</div>':''}${f('up')}
     ${v.files.length?`<div class="hint" style="margin-top:10px">${v.files.length} audio file${v.files.length>1?'s':''}, ${totalMB.toFixed(0)} MB</div>
       <details ${filesOpen?'open':''} ontoggle="filesOpen=this.open"><summary>Show the files</summary><ul class="files">${v.files.slice(0,300).map(x=>`<li><span>${esc(x.name)}</span><span>${x.mb} MB</span></li>`).join('')}</ul>${v.files.length>300?`<div class="hint">…and ${v.files.length-300} more</div>`:''}</details>`:(v.folder_ok?'<div class="hint" style="margin-top:10px">No audio files were found in that folder.</div>':'')}
+    <div class="sub"><b>Speaker model access</b> <span class="pill">required</span>
+      ${HF?hfCard('recordings'):'<p class="hint">Checking access…</p>'}</div>
     ${(()=>{const a=v.analysis,aj=v.job&&v.job.kind==='analyze'&&jobRun?v.job:null,ok=a&&!a.stale,sh=v.scan_hours==null?40:v.scan_hours;
       return `<div class="sub"><b>Analyze your recordings</b> <span class="pill">required</span>
       <p class="hint">Checks that every file can be read, measures how much audio there is, and gets the recordings ready for the next steps so they start faster. Your files are only read: nothing in your folder is changed.</p>
@@ -509,13 +511,14 @@ function render(){
       ${hfCard('refine')}${v.imported?'<div class="msg">This voice has no recordings to search. Press <b>Skip</b>.</div>':matchHtml(v,jobRun,true)}</div>`;
     const wcards=[cards[0],cards[1],refineCard,cards[2],cards[3],cards[4],cards[5]];
     const names=['Recordings','Speakers','Refine','Prepare','Transcripts','Train','Listen'];
+    const hfOk=!HF||HF.state==='ready'||HF.state==='error';        // access to the gated speaker model (when Hugging Face cannot be reached it does not lock you out)
     const anOk=!!(v.analysis&&!v.analysis.stale)||!!v.people||!!v.prepared;      // earlier voices that are already past this step do not need analyzing again
-    const isDone=[(v.files.length>0&&anOk)||v.imported,!!v.people,!!v.match,prepDone,wordsDone&&!dirty,finished||t.checkpoints>0,v.exported];   // what lets you press Next
-    const shownDone=[(v.files.length>0&&anOk)||v.imported,!!v.people,!!v.match,prepDone,wordsDone&&!dirty&&!v.edited,!!finished,v.exported];     // what the strip shows as finished (training: only when all rounds are done)
+    const isDone=[(v.files.length>0&&anOk&&hfOk)||v.imported,!!v.people,!!v.match,prepDone,wordsDone&&!dirty,finished||t.checkpoints>0,v.exported];   // what lets you press Next
+    const shownDone=[(v.files.length>0&&anOk&&hfOk)||v.imported,!!v.people,!!v.match,prepDone,wordsDone&&!dirty&&!v.edited,!!finished,v.exported];     // what the strip shows as finished (training: only when all rounds are done)
     const optional=[false,true,true,false,true,false,false];
     const run=k=>jobRun&&v.job.kind===k;
     const gate=[
-      run('analyze')?'Analyzing your recordings… please wait.':run('import')||run('restore')?'Working on it… please wait.':(v.restoring&&!v.imported)?'Restoring the backup… please wait.':!(v.imported||(v.files.length&&v.folder_ok))?'Choose a folder that has audio files to continue.':!(v.imported||anOk)?'Analyze your recordings to continue.':'',
+      run('analyze')?'Analyzing your recordings… please wait.':run('import')||run('restore')?'Working on it… please wait.':(v.restoring&&!v.imported)?'Restoring the backup… please wait.':!(v.imported||(v.files.length&&v.folder_ok))?'Choose a folder that has audio files to continue.':!(v.imported||hfOk)?'Give the speaker model access to continue (see the buttons above).':!(v.imported||anOk)?'Analyze your recordings to continue.':'',
       run('speakers')?'Finding the speakers… please wait.':v.imported?'This voice has no recordings to scan: press Skip.':!v.people?'Find the speakers, or press Skip if it is just you.':'',
       run('match')?'Matching your voice… please wait.':'',
       run('prep')||run('cull')?'Preparing… please wait.':!prepDone?'Prepare your recordings to continue.':'',
