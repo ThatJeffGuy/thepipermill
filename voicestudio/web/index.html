@@ -241,7 +241,7 @@ function watchJobs(n){
   if(notifyOn&&prevRun)Object.keys(run).forEach(k=>{const was=prevRun[k];if(was&&run[k]!==was){const v=n.voices.find(x=>x.name===k.split('|')[0]);if(!v)return;
     const j=v.job&&v.job.kind===was?v.job:null,how=j&&j.rc?(j.rc<0?'was stopped':'did not finish'):'finished';tell(`${v.name}: ${jobName(was)} ${how}`)}});
   prevRun=run}
-const JOBNAME={import:'importing the dataset',cull:'choosing the best clips',restore:'restoring the backup',compare:'comparing versions',score:'checking your clips',speakers:'speaker identification',match:'matching your voice',prep:'preparing your recordings',trim:'reprocessing clips',export:'making the test clip',training:'training'};
+const JOBNAME={import:'importing the dataset',cull:'choosing the best clips',analyze:'analyzing the recordings',restore:'restoring the backup',compare:'comparing versions',score:'checking your clips',speakers:'speaker identification',match:'matching your voice',prep:'preparing your recordings',trim:'reprocessing clips',export:'making the test clip',training:'training'};
 const jobName=k=>JOBNAME[k]||k;
 const logBox=t=>mode==='advanced'?`<pre>${esc(t)}</pre>`:'';          // the console is an Advanced extra
 // Beginner mode has no console: a job that failed gets one plain line instead (a job you stopped says so)
@@ -364,27 +364,37 @@ function render(){
   const hd=(n,done,title)=>`<h2><span class="step ${done?'done':''}">${n>=3?n+1:n}</span>${title}</h2>`;
   const rowsLoaded=!!(rows&&rowsFor===v.name), wordsDone=rowsLoaded||!!v.words_seen;      // seen this session, or at any time before (remembered by the server)
   const cards=[
-  ()=>`<div class="card">${hd(1,v.files.length||v.imported,'Your recordings folder')}
+  ()=>`<div class="card">${hd(1,(v.files.length>0&&anOk)||v.imported,'Your recordings folder')}
     ${v.imported||v.restoring?`<p class="hint">${v.restoring?'This voice is being restored from a backup.':'This voice was started from a prepared dataset, so there are no recordings to choose: its clips are the dataset you imported.'}${v.imported&&v.prepared?` It has <b>${v.clips}</b> clips (${v.clip_minutes} min).`:''}</p>
       ${pbar(v.job&&(v.job.kind==='import'||v.job.kind==='restore')?v.job:null)}${jobNote(v,'import',true)}${jobNote(v,'restore',true)}`:`
-    <p class="hint">Choose the folder on this computer that holds your recordings (wav, mp3, m4a, flac and similar). Subfolders are included, and your files are read where they are: they are never copied or changed. Between 60 and 120 minutes of clear, natural speech recorded in a quiet room gives the best results.</p>
+    <p class="hint">Choose the folder on this computer that holds your recordings (wav, mp3, m4a, flac and similar). Subfolders are included, and your files are read where they are: they are never copied or changed. Between 60 and 120 minutes of clear, natural speech recorded in a quiet room gives the best results. Please use only recordings you made yourself or have permission to use.</p>
     <div class="row"><input type="text" id="srcIn" value="${esc(v.folder||'')}" placeholder="/path/to/your/recordings" style="flex:1;min-width:200px"><button class="sec" id="browseSrc">Browse…</button></div>
     ${!v.folder?'<div class="msg err">No folder has been chosen yet.</div>':!v.folder_ok?'<div class="msg err">That folder can no longer be found. Choose it again.</div>':''}${f('up')}
     ${v.files.length?`<div class="hint" style="margin-top:10px">${v.files.length} audio file${v.files.length>1?'s':''}, ${totalMB.toFixed(0)} MB</div>
       <details ${filesOpen?'open':''} ontoggle="filesOpen=this.open"><summary>Show the files</summary><ul class="files">${v.files.slice(0,300).map(x=>`<li><span>${esc(x.name)}</span><span>${x.mb} MB</span></li>`).join('')}</ul>${v.files.length>300?`<div class="hint">…and ${v.files.length-300} more</div>`:''}</details>`:(v.folder_ok?'<div class="hint" style="margin-top:10px">No audio files were found in that folder.</div>':'')}
-
+    ${(()=>{const a=v.analysis,aj=v.job&&v.job.kind==='analyze'&&jobRun?v.job:null,ok=a&&!a.stale,sh=v.scan_hours==null?40:v.scan_hours;
+      return `<div class="sub"><b>Analyze your recordings</b> <span class="pill">required</span>
+      <p class="hint">Checks that every file can be read, measures how much audio there is, and gets the recordings ready for the next steps so they start faster. Your files are only read: nothing in your folder is changed.</p>
+      <div class="row inl">${aj?'<button class="bad stopjob">Stop</button>':`<button id="anBtn" ${(!v.files.length||S.busy)?'disabled':''}>${ok?'Analyze again':'Analyze recordings'}</button>`}
+        ${ok&&!aj?`<span class="pill ok">${a.readable} readable · ${a.hours} h</span>`:''}${aj?`<div style="flex:1;min-width:240px">${pbar(aj)}</div>`:''}</div>
+      ${a&&a.stale&&!aj?'<div class="msg err">Your recordings have changed since they were last analyzed. Analyze them again to continue.</div>':''}
+      ${ok&&!aj&&a.unreadable.length?`<div class="msg err">${a.total-a.readable} file${a.total-a.readable===1?'':'s'} could not be read and will be left out: ${a.unreadable.slice(0,5).map(x=>esc(x.key)).join(', ')}${a.unreadable.length>5?'…':''}</div>`:''}
+      ${ok&&!aj&&sh&&a.hours>sh?`<div class="msg">That is more recording than a voice needs, so the speaker scan will listen to an even sample of about ${sh} hours. You can change this on the next step.</div>`:''}
+      ${jobNote(v,'analyze',true)}</div>`})()}
     `}
   </div>`,
 
   ()=>`<div class="card">${hd(2,v.people,'Who is speaking? <span class="pill">optional</span>')}
     ${v.imported?'<div class="msg">This voice was started from a prepared dataset, so there are no recordings to scan. Press <b>Skip</b>.</div>':''}
-    <p class="hint">Use this step when your recordings contain more than one person, such as a conversation, a call or a film. The scan finds each voice so you can listen to samples and choose whose voice to train on. If it is only you speaking, press <b>Skip</b>.</p>
+    <p class="hint">Use this step when your recordings contain more than one person, such as a conversation, a call or an interview. The scan finds each voice so you can listen to samples and choose whose voice to train on. If it is only you speaking, press <b>Skip</b>.</p>
     <p class="hint">You can also name several people and make a separate voice for each of them from this same scan, which saves scanning again. Only name the people you actually want a voice for.</p>
     <div class="row">${ADV?'<label>How many people talk? <input type="number" id="spNum" min="1" max="20" placeholder="auto" style="width:90px"></label>':''}
+    <label>Scan up to ${tip('A large collection of recordings does not need to be scanned in full: an even sample, spread through your folder, is plenty to find your speaker and is much faster. Recordings that are not scanned are simply not used. Choose Everything only if you need speech that appears in just a few recordings.')} <select id="scanHrs">${[[10,'10 hours of recordings'],[20,'20 hours'],[40,'40 hours (recommended)'],[80,'80 hours'],[0,'Everything']].map(([n,l])=>`<option value="${n}" ${n===(v.scan_hours==null?40:v.scan_hours)?'selected':''}>${l}</option>`).join('')}</select></label>
     <label>Listening for <select id="vtSel"><option value="">Any voice</option><option value="male" ${v.voice_type==='male'?'selected':''}>A masculine voice</option><option value="female" ${v.voice_type==='female'?'selected':''}>A feminine voice</option></select></label>
     <button id="spBtn" ${(!v.files.length||S.busy)?'disabled':''}>${v.people?'Find them again':'Find the speakers'}</button>${jobRun&&v.job.kind==='speakers'?'<button class="bad stopjob">Stop</button>':''}</div>
     ${v.job&&v.job.kind==='speakers'?pbar(v.job)+`${logBox(v.job.log)}`:''}${jobNote(v,'speakers')}
     ${v.people_stale?'<div class="msg err">Your recordings have changed since this scan. Find the speakers again.</div>':''}
+    ${v.people&&v.scan?`<p class="hint" style="margin:8px 0 0">${v.scan.scanned<v.scan.total?`Scanned an even sample of <b>${v.scan.scanned}</b> of your ${v.scan.total} recordings. The others are not used.`:`Scanned all ${v.scan.total} recording${v.scan.total===1?'':'s'}.`}</p>`:''}
     
     ${v.people?(v.people.length?`<div class="row" style="margin-top:12px;gap:18px"><label class="hint" style="margin:0">Sort by <select id="spSort"><option value="minutes" ${spSort==='minutes'?'selected':''}>Most speech</option><option value="first" ${spSort==='first'?'selected':''}>First heard</option></select></label><span class="hint" style="margin:0">Press ▶ to listen, then press the square beside a clip to mark it: <b style="color:var(--ok)">✓</b> only my speaker, <b style="color:var(--bad)">✗</b> not my speaker, or <b>?</b> unsure or several people talking (left out, so it cannot mislead the search).</span></div><ul class="files" style="margin-top:6px">${spPages(v).list.map(p=>{const fit=fitsJS(v.voice_type,p.pitch);return `<li style="display:block;padding:12px 0${fit?'':';opacity:.5'}"><div style="display:flex;align-items:center;gap:12px"><label style="flex:1;min-width:0;font-size:17px"><input type="checkbox" class="pk" value="${p.id}" ${selSet(v).has(p.id)?'checked':''}> <b>${esc(pn(v,p.id))}</b><button class="x pedit" data-pid="${p.id}" title="Give this person a name (optional)">✎</button> ${(v.people_voices||{})[p.id]?`<span class="pill" title="A voice was started for this person">voice: ${esc(v.people_voices[p.id])}</span> `:''}<span style="font-size:15px;font-weight:600">${p.minutes} min</span> <span class="hint" style="margin:0;font-size:14px">${p.first!=null?' · first heard at '+mmss(p.first):''}${p.files>1?' · '+p.files+' file(s)':''}${p.pitch!=null?' · '+pitchTag(p.pitch):''}${fit?'':' · probably not a '+v.voice_type+' voice'}</span></label></div><div class="samples">${p.samples.map((sm,i)=>smp(v,sm,p.sample_times?p.sample_times[i]:null,p.sample_ranges?p.sample_ranges[i]:null,p.sample_times?mmss(p.sample_times[i]):i+1)).join('')}</div></li>`}).join('')}</ul>${spPager(v)}
       <div class="row" style="margin-top:8px"><button id="keepBtn">Save my choice</button><span class="hint" style="margin:0">${v.use_match&&v.match?`Training on your matched voice (${v.match.minutes} min)`:(v.keep||[]).length?`Training on ${v.keep.map(i=>esc(pn(v,i))).join(', ')}`:'Nobody is ticked, so all speech will be used'}</span></div>${nextHtml(v)}<p class="hint" style="margin-top:12px">Marked some clips ✓ as your speaker? Press <b>Next</b> to find more of their speech across the whole recording.</p>`:'<p class="hint">No speech was found in these recordings.</p>'):''}
@@ -480,24 +490,25 @@ function render(){
       ${v.imported?'<div class="msg">This voice has no recordings to search. Press <b>Skip</b>.</div>':matchHtml(v,jobRun,true)}</div>`;
     const wcards=[cards[0],cards[1],refineCard,cards[2],cards[3],cards[4],cards[5]];
     const names=['Recordings','Speakers','Refine','Prepare','Transcripts','Train','Listen'];
-    const isDone=[v.files.length>0||v.imported,!!v.people,!!v.match,prepDone,wordsDone&&!dirty,finished||t.checkpoints>0,v.exported];   // what lets you press Next
-    const shownDone=[v.files.length>0||v.imported,!!v.people,!!v.match,prepDone,wordsDone&&!dirty&&!v.edited,!!finished,v.exported];     // what the strip shows as finished (training: only when all rounds are done)
+    const anOk=!!(v.analysis&&!v.analysis.stale)||!!v.people||!!v.prepared;      // earlier voices that are already past this step do not need analyzing again
+    const isDone=[(v.files.length>0&&anOk)||v.imported,!!v.people,!!v.match,prepDone,wordsDone&&!dirty,finished||t.checkpoints>0,v.exported];   // what lets you press Next
+    const shownDone=[(v.files.length>0&&anOk)||v.imported,!!v.people,!!v.match,prepDone,wordsDone&&!dirty&&!v.edited,!!finished,v.exported];     // what the strip shows as finished (training: only when all rounds are done)
     const optional=[false,true,true,false,true,false,false];
     const run=k=>jobRun&&v.job.kind===k;
     const gate=[
-      run('import')||run('restore')?'Working on it… please wait.':(v.restoring&&!v.imported)?'Restoring the backup… please wait.':!(v.imported||(v.files.length&&v.folder_ok))?'Choose a folder that has audio files to continue.':'',
+      run('analyze')?'Analyzing your recordings… please wait.':run('import')||run('restore')?'Working on it… please wait.':(v.restoring&&!v.imported)?'Restoring the backup… please wait.':!(v.imported||(v.files.length&&v.folder_ok))?'Choose a folder that has audio files to continue.':!(v.imported||anOk)?'Analyze your recordings to continue.':'',
       run('speakers')?'Finding the speakers… please wait.':v.imported?'This voice has no recordings to scan: press Skip.':!v.people?'Find the speakers, or press Skip if it is just you.':'',
       run('match')?'Matching your voice… please wait.':'',
       run('prep')||run('cull')?'Preparing… please wait.':!prepDone?'Prepare your recordings to continue.':'',
       dirty?'Save your changes first, or press Skip.':run('score')?'Checking your clips… please wait.':run('trim')?'Reprocessing… please wait.':v.edited?'Press Reprocess so the audio matches your edited words.':!wordsDone?'Open your clips to check them, or press Skip.':'',
       t.running?`${v.name} is training on the GPU…`:!t.checkpoints?'Start training to continue.':'',
       ''];
-    const working=[run('import')?'Importing the dataset… please wait.':run('restore')?'Restoring the backup… please wait.':null,run('speakers')?'Finding the speakers… please wait.':null,run('match')?'Finding more like your ticked clips… please wait.':null,run('prep')||run('cull')?'Preparing… please wait.':null,run('trim')?'Reprocessing… please wait.':run('score')?'Checking your clips… please wait.':null,
+    const working=[run('analyze')?'Analyzing your recordings… please wait.':run('import')?'Importing the dataset… please wait.':run('restore')?'Restoring the backup… please wait.':null,run('speakers')?'Finding the speakers… please wait.':null,run('match')?'Finding more like your ticked clips… please wait.':null,run('prep')||run('cull')?'Preparing… please wait.':null,run('trim')?'Reprocessing… please wait.':run('score')?'Checking your clips… please wait.':null,
       t.running?`${v.name} is training on the GPU…`:null,run('export')?'Making the test clip… please wait.':run('compare')?'Making a sample of each version… please wait.':null];
     const stepNo=wizStep(v,{prepDone,finished});
     $('#main').innerHTML=`
     <div class="strip">${names.map((n,i)=>{
-      const busyNow=[run('import')||run('restore'),run('speakers'),run('match'),run('prep')||run('cull'),run('trim')||run('score'),!!t.running,run('export')||run('compare')][i];
+      const busyNow=[run('import')||run('restore')||run('analyze'),run('speakers'),run('match'),run('prep')||run('cull'),run('trim')||run('score'),!!t.running,run('export')||run('compare')][i];
       const st=busyNow?(i===stepNo?'cur run':'run'):i===stepNo?(shownDone[i]?'cur ok':'cur'):shownDone[i]?'ok':i<stepNo?(optional[i]?'skip':'warn'):(i===5&&t.checkpoints>0&&!t.running)?'part':'todo';
       const mark=busyNow?'':st.includes('ok')?'✓':st==='skip'?'–':st==='warn'?'!':st==='part'?'…':i+1;
       const locked=i===6&&!t.checkpoints;
@@ -553,7 +564,8 @@ function wire(v){
   document.querySelectorAll('[name=useSrc]').forEach(r=>r.onchange=async()=>{try{await api('/api/usematch',{method:'POST',body:JSON.stringify({voice:v.name,on:r.value==='match'})})}catch(e){say('match',e.message,'err')}refresh(true)});
   b('#dsBtn',()=>{location.href=`/dataset/${encodeURIComponent(v.name)}.zip`});
   b('#trimBtn',()=>act('/api/trim',{voice:v.name},'tr'));
-  b('#spBtn',()=>act('/api/speakers',{voice:v.name,num:($('#spNum')||{}).value||''},'sp'));
+  b('#anBtn',()=>act('/api/analyze',{voice:v.name},'an'));
+  b('#spBtn',()=>act('/api/speakers',{voice:v.name,num:($('#spNum')||{}).value||'',hours:+$('#scanHrs').value},'sp'));
   b('#keepBtn',async()=>{const ids=[...selSet(v)].sort((a,b)=>a-b);
     try{await api('/api/keep',{method:'POST',body:JSON.stringify({voice:v.name,ids})});spSel=null;say('sp',ids.length?`Saved. Prepare will use only ${ids.map(i=>pn(v,i)).join(', ')}.`:'Saved. All speech will be used.','ok');refresh(true)}catch(e){say('sp',e.message,'err')}});
   b('#cmpBtn',()=>act('/api/compare',{voice:v.name,text:$('#txt').value},'exp'));

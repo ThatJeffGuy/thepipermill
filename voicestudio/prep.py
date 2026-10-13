@@ -110,6 +110,9 @@ def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
     files = speakers.audio_files(name)
     if not files: raise SystemExit(f"No audio files found in {src or 'a folder (choose your recordings folder first)'}")
     chosen = None if voices.read(name).get("use_match") else voices.read(name).get("keep_people")      # a matched voice replaces the ticked people
+    unscanned = set(((speakers.load(name) or {}).get("scan") or {}).get("skipped", []))
+    if unscanned and (voices.read(name).get("use_match") or chosen):                                   # the speaker scan used an even sample of the recordings: so does Prepare
+        files = [f for f in files if speakers.rel(name, f) not in unscanned]
     if chosen:
         if speakers.stale(name): log("NOTE: the recordings changed since the speakers were found; press 'Find the speakers' again.")
         log(f"Using only the parts where person(s) {', '.join(map(str, chosen))} speak.")

@@ -120,9 +120,33 @@ def _samples(name, people, per_file, log, sep=None):
             p["samples"].append(fn); p["sample_times"].append(round(a, 1)); p["sample_ranges"].append([fkey, round(a, 2), round(b, 2)])
 
 
+SCAN_HOURS = 40            # how much recording audio the scan listens to by default: an even sample is plenty to find a speaker (0 = everything)
+
+
+def cache_wav(name, key): return CFG.runs / name / "diar" / (re.sub(r"[^A-Za-z0-9._-]", "_", key) + ".16k.wav")
+
+
+def scan_pick(files, hours, log=print, durs=None):
+    """An evenly spread subset of the recordings that adds up to about `hours` hours (all of them when they fit, or hours is 0)."""
+    if not hours or len(files) < 2: return list(files), []
+    durs = [(durs or {}).get(f) or audio.duration(f) / 3600 for f in files]; total = sum(durs)
+    if total <= hours: return list(files), []
+    frac, seen, kept, pick = hours / total, 0.0, 0.0, []
+    for f, d in zip(files, durs):
+        seen += d
+        if kept + d <= frac * seen + d * 0.5: kept += d; pick.append(f)
+    pick = pick or [files[0]]
+    log(f"There are {total:.3g} hours of recordings. Scanning an even sample of {len(pick)} of {len(files)} (about {sum(d for f, d in zip(files, durs) if f in set(pick)):.3g} hours): "
+        "that is plenty to find your speaker. The recordings that are not scanned are not used.")
+    return pick, [f for f in files if f not in set(pick)]
+
+
 def run(name, num_speakers=None, log=print, pipeline=None):
     files = audio_files(name)
     if not files: raise SystemExit(f"No audio files found in {voices.source_dir(name) or 'a folder (choose your recordings folder first)'}")
+    every = list(files); hrs = voices.read(name).get("scan_hours"); hrs = SCAN_HOURS if hrs is None else hrs
+    from . import analyze
+    files, left_out = scan_pick(files, hrs, log, durs=analyze.durations(name, files))
     pipe = pipeline or _load_pipeline()
     cache = CFG.runs / name / "diar"; per_file = {}; fps = []; skipped = []     # fps: (file key, label, embedding)
     prog = Progress(name, "speakers")
@@ -137,7 +161,7 @@ def run(name, num_speakers=None, log=print, pipeline=None):
         prog.update(label, i - 1, len(files), files[i - 1].name, frac=((i - 1) + min(1.0, base + w * part)) / len(files))
     for i, f in enumerate(files, 1):
         cur["i"] = i
-        key = rel(name, f); wav = cache / (re.sub(r"[^A-Za-z0-9._-]", "_", key) + ".16k.wav")
+        key = rel(name, f); wav = cache_wav(name, key)
         prog.update("Finding who speaks in each recording", i - 1, len(files), key)
         try:
             if not (wav.exists() and wav.stat().st_mtime >= f.stat().st_mtime): audio.decode(f, wav, SR, log=log)
@@ -177,7 +201,8 @@ def run(name, num_speakers=None, log=print, pipeline=None):
             for s in per_file[fkey]["segments"]:
                 if s[2] in labels: s[2] = f"P{p['id']}"                 # replace per-file labels by person ids
     out = {"people": [{"id": p["id"], "minutes": round(p["seconds"] / 60, 1), "files": len(p["members"]), "samples": p["samples"], "sample_times": p["sample_times"], "sample_ranges": p["sample_ranges"], "first": p["first"]} for p in plist],
-           "files": {k: {"segments": v["segments"]} for k, v in per_file.items()}}
+           "files": {k: {"segments": v["segments"]} for k, v in per_file.items()},
+           "scan": {"scanned": len(per_file), "total": len(every), "skipped": [rel(name, f) for f in left_out]}}
     result_path(name).write_text(json.dumps(out))
     log("Measuring each voice's pitch...")
     try: person_pitches(name)
@@ -387,7 +412,7 @@ def keep(name, ids):
 def stale(name):
     """True if the recordings changed since the speakers were last found."""
     r = load(name)
-    return bool(r) and set(r["files"]) != {rel(name, f) for f in audio_files(name)}
+    return bool(r) and set(r["files"]) | set((r.get("scan") or {}).get("skipped", [])) != {rel(name, f) for f in audio_files(name)}
 
 
 def intervals(name, key, gap=0.5):

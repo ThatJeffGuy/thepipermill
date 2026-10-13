@@ -7,7 +7,7 @@ import json, os, re, shutil, signal, subprocess, sys, tempfile, threading, time,
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote
-from . import backup, base, compare, gpu as gpu_mod, importer, progress, speakers, train as train_mod, trim, voices
+from . import analyze, backup, base, compare, gpu as gpu_mod, importer, progress, speakers, train as train_mod, trim, voices
 from .config import CFG
 
 WEB = Path(__file__).parent / "web"
@@ -79,7 +79,7 @@ def start_over(n, training=False):
     if runs.exists():
         for c in list(runs.iterdir()):
             if c.name == "diar": continue
-            if training or c.name.startswith(("speakers", "match", "prep", "trim", "export", "cull")):
+            if training or c.name.startswith(("speakers", "match", "prep", "trim", "export", "cull", "analyze")):
                 shutil.rmtree(c, ignore_errors=True) if c.is_dir() else c.unlink(missing_ok=True)
     shutil.rmtree(CFG.data / n, ignore_errors=True); shutil.rmtree(CFG.cache / n, ignore_errors=True)
     if training:
@@ -337,7 +337,7 @@ def info(n):
             "scored": speakers.score_path(n).exists(), "imported": bool(m.get("imported")), "restoring": bool(m.get("restoring")), "words_seen": bool(m.get("words_seen")), "people_names": m.get("people_names") or {}, "people_voices": m.get("people_voices") or {}, "voice_type": m.get("voice_type") or "", "ref_yes": m.get("ref_yes") or [], "ref_no": m.get("ref_no") or [], "strict": m.get("strict") or "normal", "use_match": bool(m.get("use_match")),
             "match": ({k: sp["match"].get(k) for k in ("minutes", "stretches", "strict", "samples", "settled", "history", "found", "cap")} if sp and sp.get("match") else None), "people_stale": speakers.stale(n) if sp else False, "folder": str(src) if src else None, "folder_ok": bool(src and src.is_dir()),
             "files": [{"name": speakers.rel(n, p), "mb": round(p.stat().st_size / 1e6, 1)} for p in files],
-            "clips": clips, "clip_minutes": round(sum(_size(p) for p in (CFG.data / n / "wavs").glob("*.wav")) / (2 * 22050 * 60), 1), "prepared": md.exists(), "max_minutes": m.get("max_minutes") or 0, "gpu_load": m.get("gpu_load") or 0, "batch_top": batch_top(), "gpu_gb": gpu_gb(), "edited": len(trim.pending(n)),
+            "clips": clips, "clip_minutes": round(sum(_size(p) for p in (CFG.data / n / "wavs").glob("*.wav")) / (2 * 22050 * 60), 1), "prepared": md.exists(), "max_minutes": m.get("max_minutes") or 0, "scan_hours": m.get("scan_hours"), "analysis": analyze.summary(n, files), "scan": (sp or {}).get("scan"), "gpu_load": m.get("gpu_load") or 0, "batch_top": batch_top(), "gpu_gb": gpu_gb(), "edited": len(trim.pending(n)),
             "train": {"running": bool(train_pid(n)), "total": total, "done": max(0, done) if done is not None else None,
                       "mos": met["mos"] if met["mos"] is not None else (float(mos[-1]) if mos else None), "mos_first": met["first"], "eta": (round((total - done) / met["rate"] * 60) if (train_pid(n) and met["rate"] and total and done is not None and total > done) else None), "checkpoints": len(ck), "disk_gb": round(sum(_size(p) for p in ck) / 2**30, 1), "log": tl.split("\n")[-3:] if tl else []},
             "job": job, "exported": (CFG.out / f"{n}.onnx").exists(), "exported_at": (CFG.out / f"{n}.onnx").stat().st_mtime if (CFG.out / f"{n}.onnx").exists() else None,
@@ -524,6 +524,9 @@ class H(BaseHTTPRequestHandler):
             if u.path == "/api/prep":
                 if voices.read(n).get("imported"): raise ValueError("This voice was started from a prepared dataset, so there is nothing to prepare.")
                 start_job(n, "prep", ["prep", n])
+            elif u.path == "/api/analyze":
+                if not voices.source_dir(n) or not speakers.audio_files(n): raise ValueError("Choose a folder that has audio files first.")
+                start_job(n, "analyze", ["analyze", n])
             elif u.path == "/api/cull":
                 if not (CFG.data / n / "metadata.csv").exists(): raise ValueError("Prepare the recordings first.")
                 start_job(n, "cull", ["cull", n])
@@ -581,6 +584,9 @@ class H(BaseHTTPRequestHandler):
                 if not trim.pending(n): raise ValueError("No clip's words have been changed, so there is nothing to reprocess. Save your edits first.")
                 start_job(n, "trim", ["trim", n])
             elif u.path == "/api/speakers":
+                if d.get("hours") is not None:
+                    try: voices.write(n, scan_hours=max(0, min(1000, int(d["hours"]))))
+                    except (TypeError, ValueError): raise ValueError("Choose how much to scan, or Everything.")
                 num = int(d["num"]) if str(d.get("num") or "").strip().isdigit() else None
                 start_job(n, "speakers", ["speakers", n] + (["--num", str(num)] if num else []))
             elif u.path == "/api/keep":

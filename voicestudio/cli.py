@@ -20,6 +20,7 @@ def main(argv=None):
     p = sub.add_parser("trim", help="reprocess: cut clips down to the words you kept when editing"); p.add_argument("name")
     p = sub.add_parser("import", help="start a voice from a dataset folder or zip (metadata.csv + clips)"); p.add_argument("name"); p.add_argument("path")
     p = sub.add_parser("restore", help="restore a voice from a backup zip, under this name"); p.add_argument("name"); p.add_argument("path")
+    p = sub.add_parser("analyze", help="check the recordings and get them ready for the next steps"); p.add_argument("name")
     p = sub.add_parser("cull", help="keep only the best clips of a prepared dataset (your minutes limit)"); p.add_argument("name")
     p = sub.add_parser("train", help="fine-tune (resumable)"); p.add_argument("name"); p.add_argument("epochs", nargs="?", type=int, default=1000); p.add_argument("batch", nargs="?", type=int, default=0)
     p = sub.add_parser("compare", help="make the same test sentence with each version of the voice"); p.add_argument("name"); p.add_argument("--text", default=None)
@@ -72,6 +73,8 @@ def main(argv=None):
         from . import importer; importer.run(n, a.path)
     elif a.cmd == "restore":
         from . import backup; backup.restore(n, a.path)
+    elif a.cmd == "analyze":
+        from . import analyze; analyze.run(n)
     elif a.cmd == "cull":
         from . import dataset
         from .progress import Progress
