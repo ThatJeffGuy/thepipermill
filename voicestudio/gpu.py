@@ -18,7 +18,15 @@ def check(quiet=False):
     return info
 
 
-def default_batch():
-    """A safe batch size for the card's memory."""
-    gb = check(quiet=True)["gb"]
+def batch_for_gb(gb):
+    """The largest batch size that is safe for a card with this much memory."""
     return 8 if gb < 9 else 16 if gb < 20 else 32
+
+
+def default_batch():
+    return batch_for_gb(check(quiet=True)["gb"])
+
+
+def scaled_batch(top, percent):
+    """The batch size for a "GPU usage" setting: percent (10 to 100) of the safe size, never below 2."""
+    return max(2, int(round(top * max(10, min(100, percent)) / 100))) if top > 2 else top

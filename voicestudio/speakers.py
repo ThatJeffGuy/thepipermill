@@ -236,6 +236,7 @@ def person_pitches(name, force=False):
 
 
 MATCH_MIN_S, MATCH_MAX_S = 1.0, 15.0
+CUSHION = 1.5      # "find more like these" keeps up to this many times your minutes limit, so weak clips can be dropped later
 STRICT = {"strict": 0.42, "normal": 0.50, "loose": 0.58}               # how close (cosine distance) a stretch must be to your marked clips
 
 
@@ -289,6 +290,15 @@ def match(name, log=print, pipeline=None):
         if N and min(1 - float(e @ n) for n in N) < d: continue          # closer to something you crossed than to your voice
         if d <= thr: acc.append((key, a, b, d))
     if wrong: log(f"Skipped {wrong} stretch(es) that were clearly not a {vt} voice.")
+    found_s = sum(b - a for _, a, b, _ in acc)
+    cap = int(m.get("max_minutes") or 180); keep_s = cap * CUSHION * 60            # keep the closest stretches only: later steps then work on far less audio
+    if found_s > keep_s:
+        kept, tot = [], 0.0
+        for x in sorted(acc, key=lambda x: x[3]):
+            if tot + (x[2] - x[1]) > keep_s: continue
+            kept.append(x); tot += x[2] - x[1]
+        log(f"Found {found_s / 60:.0f} min that sound like your speaker. Keeping the closest {tot / 60:.0f} min (your {cap}-minute limit plus some room to drop weak clips later).")
+        acc = kept
     if not acc:
         raise SystemExit(f"Nothing sounded close enough to your ticked clips at '{m.get('strict') or 'normal'}'. Tick more (and clearer) clips, or try Loose.")
     files = {}
@@ -319,7 +329,7 @@ def match(name, log=print, pipeline=None):
         both = covered(files, prev["files"]); union = secs(files) + secs(prev["files"]) - both
         settled = union > 0 and both / union >= 0.95                      # essentially the same audio as last round
     history.append(round(minutes, 1))
-    r["match"] = {"files": files, "minutes": round(minutes, 1), "stretches": stretches, "strict": m.get("strict") or "normal", "samples": samples, "settled": settled, "history": history}
+    r["match"] = {"files": files, "minutes": round(minutes, 1), "stretches": stretches, "strict": m.get("strict") or "normal", "found": round(found_s / 60, 1), "cap": cap, "samples": samples, "settled": settled, "history": history}
     result_path(name).write_text(json.dumps(r))
     voices.write(name, use_match=True)
     log(f"\nDone: found {minutes:.1f} min of speech ({stretches} stretches) that sounds like your ticked clips.")
@@ -332,7 +342,7 @@ def match(name, log=print, pipeline=None):
 def score_path(name): return CFG.runs / name / "clipscores.json"
 
 
-def score_clips(name, log=print, pipeline=None):
+def score_clips(name, log=print, pipeline=None, frac_range=(0.0, 1.0), prog=None):
     """How much each prepared clip sounds like the others (voice fingerprint distance from the typical clip). Clips from a different
     person, or with a lot of noise, stand out. Needs the same speaker model as "Who is speaking?"."""
     import numpy as np, soundfile as sf, torch, librosa
@@ -340,10 +350,10 @@ def score_clips(name, log=print, pipeline=None):
     if not md.exists(): raise SystemExit("Prepare the recordings first.")
     files = [l.split("|", 1)[0] for l in md.read_text(encoding="utf-8").splitlines() if "|" in l]
     if len(files) < 5: raise SystemExit("Need at least 5 clips to compare them.")
-    pipe = pipeline or _load_pipeline(); em = pipe._embedding; prog = Progress(name, "score"); vec, ok = [], []
+    pipe = pipeline or _load_pipeline(); em = pipe._embedding; prog = prog or Progress(name, "score"); vec, ok = [], []
     t0 = 0.0
     for i, f in enumerate(files):
-        if time.time() - t0 > 0.5: t0 = time.time(); prog.update("Listening to each clip", i, len(files), frac=i / len(files))
+        if time.time() - t0 > 0.5: t0 = time.time(); prog.update("Listening to each clip", i, len(files), frac=frac_range[0] + (frac_range[1] - frac_range[0]) * i / len(files))
         try:
             y, sr = sf.read(root / "wavs" / f, dtype="float32"); y = librosa.resample(y, orig_sr=sr, target_sr=SR) if sr != SR else y
             v = np.asarray(em(torch.from_numpy(y)[None, None].to(em.device)), dtype="float64")[0]
@@ -361,7 +371,7 @@ def score_clips(name, log=print, pipeline=None):
     score_path(name).write_text(json.dumps({"scores": out, "median": round(med, 3)}))
     bad = sum(1 for v in out.values() if v["lv"] == 2); maybe = sum(1 for v in out.values() if v["lv"] == 1)
     log(f"Done: {len(out)} clips checked. {bad} sound very different from the rest, {maybe} a bit different.")
-    prog.finish(f"{bad} flagged")
+    if frac_range == (0.0, 1.0): prog.finish(f"{bad} flagged")
     return out
 
 

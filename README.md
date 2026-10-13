@@ -6,7 +6,7 @@ Train your own [Piper](https://github.com/OHF-Voice/piper1-gpl) text-to-speech v
 
 1. Point it at a folder of your recordings.
 2. It cuts them into clips and writes down what you said.
-3. You read through the words and fix any mistakes.
+3. You read through the transcripts and fix any mistakes.
 4. It trains on your GPU, with a progress bar.
 5. You listen to a test clip and download `yourvoice.onnx` + `yourvoice.onnx.json`, ready for Piper, Home Assistant and other tools that use Piper voices.
 
@@ -47,12 +47,12 @@ Every long job has a **Stop** button. **Start over** (bottom of the page) clears
 
 | Step | What to do |
 |---|---|
-| 1. Recordings folder | Choose (Browse…) the folder on your computer that holds your recordings; they are read from there and never copied or changed. 30–60+ minutes works best. |
+| 1. Recordings folder | Choose (Browse…) the folder on your computer that holds your recordings; they are read from there and never copied or changed. 60 to 120 minutes of clear speech works best; training uses at most 180 minutes. |
 | 2. Who is speaking? *(optional)* | Only if your recordings have more than one person (a conversation, a call, a film). Finds each voice, shows samples with the time each comes from, and lets you tick whose voice to train on. Tick ✓ the sample clips that are your speaker. See below. |
-| 3. Refine *(optional)* | **Find more like my voice**: looks through the whole recording for more speech that sounds like the clips you ticked, shows how many minutes it found, and lets you tick or cross more and repeat. When a round finds nothing new, it tells you your voice has settled and to go on. |
-| 4. Prepare | One click. Splits at pauses and transcribes with Whisper on the GPU. Uses only the people you chose (or the voice you matched). Music and background noise are removed automatically, so only the voices are left (see below). |
-| 5. Check the words *(optional)* | **Review** shows one clip at a time (the ones that need attention first): listen with the player, fix the text, then *Keep and next* or *Remove clip*. **List** shows them all, and Advanced adds a Tools panel (find and replace, remove flagged clips, sort). **Check clips** flags clips that sound unlike the rest (another speaker, noise). **The voice learns exactly what is written here, so skipping this may reduce quality** (small slips like "a" for "an" matter little; missing or extra words, wrong names and another person's words matter most). Words from another person can be cut out with **Reprocess**, below. **Export dataset (.zip)** saves the cleaned clips and transcript (22.05 kHz mono wavs + `metadata.csv`) to use anywhere. |
-| 6. Train | Quick / Normal / Long. It keeps running if you close the tab; stop and resume any time. The **quality score** (1 to 5, hover it for details) is a predicted listener rating of how natural the test sentences sound; it does not measure how much the voice sounds like you. The progress bar can take 10–20 minutes to update for the first time (it moves when training saves a new checkpoint), so do not stop training until it has updated at least once. |
+| 3. Refine *(optional)* | **Find more like my voice**: looks through the whole recording for more speech that sounds like the clips you ticked, shows how many minutes it found, and lets you tick or cross more and repeat. When a round finds nothing new, it tells you your voice has settled and to go on.  **Keep at most** limits how much matched speech is kept (the closest matches, up to 1.5 times your minutes limit), so Prepare and the later steps have less to process. |
+| 4. Prepare | One click. Splits at pauses and transcribes with Whisper on the GPU. Uses only the people you chose (or the voice you matched). Music and background noise are removed automatically, so only the voices are left (see below).  **Keep the best** (at most 180 minutes, 60 to 120 recommended): if there is more speech than that, Prepare processes an even spread of about 1.5 times the limit, then scores every clip and keeps only the best ones (closest to your speaker, cleanest transcripts). The rest is removed from the dataset, so checking, exporting, backing up and training all stay small. A dataset that is already over the limit can be trimmed with **Keep the best N min now**. Your recordings are never touched. |
+| 5. Check the transcripts *(optional)* | **Review** shows one clip at a time (the ones that need attention first): listen with the player, fix the text, then *Keep and next* or *Remove clip*. **List** shows them all, and Advanced adds a Tools panel (find and replace, remove flagged clips, sort). **Check clips** flags clips that sound unlike the rest (another speaker, noise). **The voice learns exactly what is written here, so skipping this may reduce quality** (small slips like "a" for "an" matter little; missing or extra words, wrong names and another person's words matter most). Words from another person can be cut out with **Reprocess**, below. **Export dataset (.zip)** saves the cleaned clips and transcript (22.05 kHz mono wavs + `metadata.csv`) to use anywhere. |
+| 6. Train | Quick / Normal / Long, how much speech to use, and **GPU usage** (10 to 100% of the largest batch size that suits your card; lower leaves video memory free and makes an out-of-memory error much less likely, at the cost of speed). It keeps running if you close the tab; stop and resume any time. The **quality score** (1 to 5, hover it for details) is a predicted listener rating of how natural the test sentences sound; it does not measure how much the voice sounds like you. The progress bar can take 10–20 minutes to update for the first time (it moves when training saves a new checkpoint), so do not stop training until it has updated at least once. |
 | 7. Listen | Type a sentence, make a test clip, or press **Compare versions** to hear the same sentence with the best-sounding, most accurate and latest versions side by side and pick one with *Use this version*, then press **Download** to get the voice as one zip (`.onnx` + `.onnx.json`). It uses the best-sounding version; **Advanced** lets you choose another. |
 
 **Recording tips:** quiet room, same distance from the microphone, no music or fans, no clipping. Read or talk naturally and vary it: questions, short and long sentences, numbers. The model copies how you speak, not just your tone.
@@ -62,7 +62,7 @@ Every long job has a **Stop** button. **Start over** (bottom of the page) clears
 The Piper Mill prepares and trains the way Piper wants it:
 - **Audio:** 22.05 kHz mono, clips of 1.5 to 12 seconds cut at natural pauses, every clip levelled to the same loudness (Piper trims leading and trailing silence itself).
 - **Text:** transcripts are converted to how the words are *spoken*, because Piper reads text with espeak-ng: "15%" becomes "fifteen percent", "8.30" after "at" becomes "eight thirty", "$3.50" becomes "three dollars and fifty cents", "Dr." becomes "doctor". Repeated-phrase hallucinations and junk are dropped. Check the result in step 4.
-- **Training:** fine-tunes from a Piper base voice chosen to match your recordings, so 30 to 60 minutes is enough. Piper holds out 10% of your clips to score progress. If you edit or re-prepare, its cache is refreshed automatically so old audio is never reused.
+- **Training:** fine-tunes from a Piper base voice chosen to match your recordings, so 60 to 120 minutes of speech is plenty. Training uses at most **180 minutes**: if you have more, the cleanest clips that sound most like your speaker are chosen (set the limit under **Use at most** on the Train step; nothing is deleted). Piper holds out 10% of your clips to score progress. If you edit or re-prepare, its cache is refreshed automatically so old audio is never reused.
 - **Which version you get:** Piper keeps its best checkpoints by sound quality and by accuracy, plus the latest. The test clip and the downloaded voice default to the **best-sounding** one by quality score, which is usually better than simply the newest. You can pick *Most accurate* or *Latest* in step 6.
 - **Disk space:** every checkpoint is about 0.8 GB, so one voice can use up to about 9 GB. *Voice settings → Free up space* keeps only the best and the latest (or `voicestudio clean myvoice`).
 - **Output:** `name.onnx` + `name.onnx.json`, the standard Piper voice format.
@@ -98,7 +98,7 @@ This happens automatically; there is nothing to switch on. [Demucs](https://gith
 
 ### Two voices in one clip: Reprocess (step 4)
 
-Prepare cuts at pauses, so a clip can hold two people talking. In *Check the words*, delete the words the wrong person says from the **start or end** of the clip's text, press **Save**, then **Reprocess edited clips**. The Piper Mill listens to each edited clip again with word-by-word timing and cuts the audio down to just the words you kept. Spelling-only fixes are left alone. If words are removed from the **middle**, the clip cannot be cut and you are told to delete it instead. The untrimmed originals are kept in `wavs.untrimmed/`, and training will not start while edited clips are waiting to be reprocessed, so text and audio always match.
+Prepare cuts at pauses, so a clip can hold two people talking. In *Check the transcripts*, delete the words the wrong person says from the **start or end** of the clip's text, press **Save**, then **Reprocess edited clips**. The Piper Mill listens to each edited clip again with word-by-word timing and cuts the audio down to just the words you kept. Spelling-only fixes are left alone. If words are removed from the **middle**, the clip cannot be cut and you are told to delete it instead. The untrimmed originals are kept in `wavs.untrimmed/`, and training will not start while edited clips are waiting to be reprocessed, so text and audio always match.
 
 ### Command line
 
@@ -133,6 +133,7 @@ The page listens on `127.0.0.1` only and has **no login**. Do not expose it to a
 ## Licences and credits
 
 - The Piper Mill itself: MIT (see `LICENSE`).
+- The page font, [Open Sans](https://fonts.google.com/specimen/Open+Sans), is embedded in the page under the SIL Open Font License 1.1.
 - It installs and drives [piper1-gpl](https://github.com/OHF-Voice/piper1-gpl) (GPL-3.0) as a separate program; it is downloaded by `install.sh` and not included here.
 - Starting voices come from [rhasspy/piper-checkpoints](https://huggingface.co/datasets/rhasspy/piper-checkpoints). **Each has its own dataset licence, often non-commercial** (for example Ryan is CC BY-NC-SA 4.0). A voice you train from one inherits those limits. The licence is shown when you create a voice and saved next to the file in `base/`.
 - Transcription uses OpenAI Whisper (MIT) through Hugging Face `transformers`.
@@ -144,7 +145,7 @@ The page listens on `127.0.0.1` only and has **no login**. Do not expose it to a
 - **"CUDA is not available"**: run `nvidia-smi`; reinstall the driver, then `./install.sh` again. Very new GPUs need a PyTorch built for CUDA 12.8 or newer (the default install is).
 - **Out of memory while training**: set `batch_size = 8` (or 4) in the config.
 - **Whisper is slow or runs out of memory**: set `whisper_model = "openai/whisper-small"`.
-- **Transcripts have mistakes**: normal. Fix them in *Check the words* (step 4); it matters more than anything else for quality.
+- **Transcripts have mistakes**: normal. Fix them in *Check the transcripts* (step 5); it matters more than anything else for quality.
 - **Clips are of the wrong person**: pick the right person in step 2, use **Find more like my voice** (step 3), and use **Reprocess** for clips that mix two people. **Start over** clears it all if you want a clean run.
 - **The speaker scan seems stuck**: the bar shows real progress; a long recording can take several minutes. **Stop** cancels it.
 - **Voice sounds robotic or mumbles**: more (and cleaner) audio, and more training rounds. Listen to test clips as it trains and stop when it sounds right; more is not always better.

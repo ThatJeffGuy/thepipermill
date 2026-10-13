@@ -7,7 +7,7 @@ import json, os, re, shutil, signal, subprocess, sys, tempfile, threading, time,
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote
-from . import backup, base, compare, importer, progress, speakers, train as train_mod, trim, voices
+from . import backup, base, compare, gpu as gpu_mod, importer, progress, speakers, train as train_mod, trim, voices
 from .config import CFG
 
 WEB = Path(__file__).parent / "web"
@@ -79,7 +79,7 @@ def start_over(n, training=False):
     if runs.exists():
         for c in list(runs.iterdir()):
             if c.name == "diar": continue
-            if training or c.name.startswith(("speakers", "match", "prep", "trim", "export")):
+            if training or c.name.startswith(("speakers", "match", "prep", "trim", "export", "cull")):
                 shutil.rmtree(c, ignore_errors=True) if c.is_dir() else c.unlink(missing_ok=True)
     shutil.rmtree(CFG.data / n, ignore_errors=True); shutil.rmtree(CFG.cache / n, ignore_errors=True)
     if training:
@@ -103,7 +103,7 @@ def spin_off(n, pid):
     if not nm: raise ValueError("Give this person a name first (press the pencil), then start their voice.")
     new = CFG.check_name(re.sub(r"[^A-Za-z0-9_-]", "", re.sub(r"\s+", "-", nm.strip())))
     if voices.exists(new): raise ValueError(f"A voice called {new} already exists.")
-    if pid in (m.get("keep_people") or []): raise ValueError("This voice is already for that person. Pick someone else.")
+    if pid in (m.get("keep_people") or []): raise ValueError("This voice is already trained on that person. Choose someone else.")
     used = dict(m.get("people_voices") or {}); used[str(pid)] = new
     mine = {str(i): n for i in (m.get("keep_people") or [])} if len(m.get("keep_people") or []) == 1 else {}
     voices.write(new, base=m.get("base"), source_dir=m.get("source_dir"), voice_type=m.get("voice_type") or "", keep_people=[pid],
@@ -294,6 +294,19 @@ def tail(path, n=2500):
     return "\n".join(ls[-6:])
 
 
+def gpu_gb():
+    """Total video memory of the GPU in GB (to one decimal), or None when it cannot be read."""
+    g = gpu_stats()
+    return round(g["mem_total"] / 1024, 1) if g and g.get("mem_total") else None
+
+
+def batch_top():
+    """The largest safe training batch size for this GPU (what 100% GPU usage means), or None when the card cannot be read."""
+    if CFG["batch_size"]: return CFG["batch_size"]
+    g = gpu_stats()
+    return gpu_mod.batch_for_gb(g["mem_total"] / 1024) if g and g.get("mem_total") else None
+
+
 def info(n):
     m = voices.read(n); src = voices.source_dir(n)
     files = speakers.audio_files(n)
@@ -322,9 +335,9 @@ def info(n):
     return {"name": n, "base": m.get("base"), "base_used": m.get("base_used"),
             "people": sp["people"] if sp else None, "keep": m.get("keep_people") or [], 
             "scored": speakers.score_path(n).exists(), "imported": bool(m.get("imported")), "restoring": bool(m.get("restoring")), "words_seen": bool(m.get("words_seen")), "people_names": m.get("people_names") or {}, "people_voices": m.get("people_voices") or {}, "voice_type": m.get("voice_type") or "", "ref_yes": m.get("ref_yes") or [], "ref_no": m.get("ref_no") or [], "strict": m.get("strict") or "normal", "use_match": bool(m.get("use_match")),
-            "match": ({k: sp["match"].get(k) for k in ("minutes", "stretches", "strict", "samples", "settled", "history")} if sp and sp.get("match") else None), "people_stale": speakers.stale(n) if sp else False, "folder": str(src) if src else None, "folder_ok": bool(src and src.is_dir()),
+            "match": ({k: sp["match"].get(k) for k in ("minutes", "stretches", "strict", "samples", "settled", "history", "found", "cap")} if sp and sp.get("match") else None), "people_stale": speakers.stale(n) if sp else False, "folder": str(src) if src else None, "folder_ok": bool(src and src.is_dir()),
             "files": [{"name": speakers.rel(n, p), "mb": round(p.stat().st_size / 1e6, 1)} for p in files],
-            "clips": clips, "clip_minutes": round(sum(_size(p) for p in (CFG.data / n / "wavs").glob("*.wav")) / (2 * 22050 * 60), 1), "prepared": md.exists(), "edited": len(trim.pending(n)),
+            "clips": clips, "clip_minutes": round(sum(_size(p) for p in (CFG.data / n / "wavs").glob("*.wav")) / (2 * 22050 * 60), 1), "prepared": md.exists(), "max_minutes": m.get("max_minutes") or 0, "gpu_load": m.get("gpu_load") or 0, "batch_top": batch_top(), "gpu_gb": gpu_gb(), "edited": len(trim.pending(n)),
             "train": {"running": bool(train_pid(n)), "total": total, "done": max(0, done) if done is not None else None,
                       "mos": met["mos"] if met["mos"] is not None else (float(mos[-1]) if mos else None), "mos_first": met["first"], "eta": (round((total - done) / met["rate"] * 60) if (train_pid(n) and met["rate"] and total and done is not None and total > done) else None), "checkpoints": len(ck), "disk_gb": round(sum(_size(p) for p in ck) / 2**30, 1), "log": tl.split("\n")[-3:] if tl else []},
             "job": job, "exported": (CFG.out / f"{n}.onnx").exists(), "exported_at": (CFG.out / f"{n}.onnx").stat().st_mtime if (CFG.out / f"{n}.onnx").exists() else None,
@@ -487,8 +500,8 @@ class H(BaseHTTPRequestHandler):
             d = self._body()
             if u.path == "/api/voices":
                 n = CFG.check_name(d.get("name")); key = d.get("base") or base.AUTO; mode = d.get("source") or "recordings"
-                if key != base.AUTO and key not in base.BASES: raise ValueError("unknown starting voice")
-                if voices.exists(n): raise ValueError(f"'{n}' already exists")
+                if key != base.AUTO and key not in base.BASES: raise ValueError("That starting voice is not available.")
+                if voices.exists(n): raise ValueError(f"A voice called {n} already exists.")
                 if mode in ("dataset", "backup"):
                     path = Path((d.get("path") or "").strip()).expanduser()
                     if not (d.get("path") or "").strip() or not path.exists(): raise ValueError("Choose the " + ("backup .zip file" if mode == "backup" else "folder or .zip file with the dataset") + " (use Browse).")
@@ -507,14 +520,17 @@ class H(BaseHTTPRequestHandler):
                 voices.write(n, base=key, source_dir=str(Path(folder).expanduser().resolve()), voice_type=vt)
                 return self._json({"ok": True, "license": (base.info(key) or {}).get("license", "") if key != base.AUTO else ""})
             n = CFG.check_name(d.get("voice"))
-            if not voices.exists(n): raise ValueError("no such voice")
+            if not voices.exists(n): raise ValueError("That voice no longer exists.")
             if u.path == "/api/prep":
                 if voices.read(n).get("imported"): raise ValueError("This voice was started from a prepared dataset, so there is nothing to prepare.")
                 start_job(n, "prep", ["prep", n])
+            elif u.path == "/api/cull":
+                if not (CFG.data / n / "metadata.csv").exists(): raise ValueError("Prepare the recordings first.")
+                start_job(n, "cull", ["cull", n])
             elif u.path == "/api/train":
                 ep = max(1, min(20000, int(d.get("epochs", 1000))))
                 if not (CFG.data / n / "metadata.csv").exists(): raise ValueError("Prepare the recordings first.")
-                if trim.pending(n): raise ValueError(f"{len(trim.pending(n))} clip(s) have edited words but their audio was not cut to match. Press 'Reprocess edited clips' in Check the words first.")
+                if trim.pending(n): raise ValueError(f"{len(trim.pending(n))} clip(s) have edited words but their audio was not cut to match. Press 'Reprocess edited clips' in the Transcripts step first.")
                 start_job(n, "train", ["train", n, str(ep)], meta={"epochs": ep})
             elif u.path == "/api/score":
                 if not (CFG.data / n / "metadata.csv").exists(): raise ValueError("Prepare the recordings first.")
@@ -529,10 +545,11 @@ class H(BaseHTTPRequestHandler):
                         if len(x) == 3 and isinstance(x[0], str): out.append([x[0], float(x[1]), float(x[2])])
                     return out[:300]
                 yes, no = ranges(d.get("yes")), ranges(d.get("no"))
-                if not yes: raise ValueError("Tick at least one clip (this is my speaker) first.")
+                if not yes: raise ValueError("Mark at least one clip as your speaker first (press its square until it shows a green tick).")
                 if not speakers.load(n): raise ValueError("Find the speakers first.")
                 strict = d.get("strict") if d.get("strict") in speakers.STRICT else "normal"
                 voices.write(n, ref_yes=yes, ref_no=no, strict=strict)
+                if d.get("max_minutes"): voices.write(n, max_minutes=max(10, min(180, int(d["max_minutes"]))))
                 start_job(n, "match", ["match", n])
             elif u.path == "/api/reset":
                 if busy() or train_pid(n): raise RuntimeError("A job is running. Wait for it or stop it first.")
@@ -578,6 +595,14 @@ class H(BaseHTTPRequestHandler):
                 ok = approved(n); fs = [str(f) for f in (d.get("files") or [])][:5000]
                 ok = (ok | set(fs)) if d.get("approve", True) else (ok - set(fs))
                 approved_path(n).write_text(json.dumps(sorted(ok)))
+            elif u.path == "/api/maxminutes":
+                try: mm = int(d.get("minutes") or 0)
+                except (TypeError, ValueError): raise ValueError("Enter a whole number of minutes (60 to 120 is recommended, 180 at most).")
+                voices.write(n, max_minutes=max(0, min(180, mm)) or None)
+            elif u.path == "/api/gpuload":
+                try: pc = int(d.get("percent") or 100)
+                except (TypeError, ValueError): raise ValueError("Choose a GPU usage between 10% and 100%.")
+                voices.write(n, gpu_load=max(10, min(100, pc)))
             elif u.path == "/api/wordsseen":
                 voices.write(n, words_seen=True)
             elif u.path == "/api/job/stop":
@@ -611,7 +636,7 @@ class H(BaseHTTPRequestHandler):
         try:
             if u.path == "/api/transcript":
                 d = self._body(); n = CFG.check_name(d["voice"]); md = CFG.data / n / "metadata.csv"
-                if not md.exists(): raise ValueError("nothing prepared yet")
+                if not md.exists(): raise ValueError("Prepare the recordings first.")
                 shutil.copy(md, md.with_suffix(".csv.bak"))
                 if not (md.parent / "metadata.orig.csv").exists(): shutil.copy(md, md.parent / "metadata.orig.csv")   # first edit: remember the transcript as it was
                 wavs = CFG.data / n / "wavs"; lines = []

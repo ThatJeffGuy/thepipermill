@@ -31,6 +31,13 @@ def probe(src: Path):
              "lang": (s.get("tags") or {}).get("language", "")} for s in streams]
 
 
+def duration(src: Path):
+    """Length of a file in seconds (0 if it cannot be read)."""
+    r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(src)], capture_output=True, text=True)
+    try: return float(r.stdout.strip())
+    except ValueError: return 0.0
+
+
 def choose_track(streams):
     """Position (among audio streams) of the track to use: your preferred language if present, else the first."""
     want = (CFG["audio_language"] or "").strip().lower()

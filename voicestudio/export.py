@@ -8,7 +8,7 @@ DEFAULT_TEXT = "Good evening. This is a test of my new voice, and I hope it soun
 
 def run(name, text=DEFAULT_TEXT, which="best"):
     ck, what = pick(name, which)
-    if not ck: raise SystemExit("No training checkpoint yet. Train first.")
+    if not ck: raise SystemExit("Training has not saved a checkpoint yet. Train the voice first.")
     CFG.out.mkdir(parents=True, exist_ok=True)
     onnx = CFG.out / f"{name}.onnx"
     print(f"Exporting the {what} ({ck.name}) ...", flush=True)

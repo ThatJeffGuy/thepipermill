@@ -3,8 +3,8 @@
 Starts from the base voice you picked, or from this voice's newest checkpoint if it already has one.
 Lightning keeps counting epochs from the base checkpoint, so the stopping point is (base epoch + extra_epochs).
 """
-import hashlib, os, re, shutil, subprocess, sys
-from . import base, gpu, voices
+import hashlib, json, os, re, shutil, subprocess, sys
+from . import base, dataset, gpu, voices
 from .config import CFG
 
 
@@ -70,18 +70,32 @@ def prune(name):
     return freed / 2**30
 
 
-def _dataset_fingerprint(name):
+def select_clips(name, log=print):
+    """The metadata file to train on. Prepare already keeps the dataset within the voice's limit, so this is normally the whole dataset.
+    If you lowered the limit afterwards, a smaller subset is written to metadata.train.csv (nothing is deleted)."""
+    root = CFG.data / name; md = root / "metadata.csv"; lim = dataset.limit(name); out = root / "metadata.train.csv"
+    rows = [l for l in md.read_text(encoding="utf-8").splitlines() if "|" in l]
+    durs = [dataset._dur(root, r.partition("|")[0]) for r in rows]
+    if sum(durs) / 60 <= lim: out.unlink(missing_ok=True); return md
+    keep = dataset.choose(rows, durs, dataset.read_json(CFG.runs / name / "clipscores.json", {}).get("scores", {}),
+                          set(dataset.read_json(CFG.runs / name / "prep.approved.json", [])), lim * 60)
+    out.write_text("\n".join(rows[i] for i in sorted(keep)) + "\n", encoding="utf-8")
+    log(f"Using {len(keep)} of {len(rows)} clips ({sum(durs[i] for i in keep) / 60:.0f} of {sum(durs) / 60:.0f} min): the limit is {lim} minutes.")
+    return out
+
+
+def _dataset_fingerprint(name, md):
     h = hashlib.sha256()
-    md = CFG.data / name / "metadata.csv"; h.update(md.read_bytes())
+    h.update(md.read_bytes())
     for line in md.read_text(encoding="utf-8").splitlines():
         w = CFG.data / name / "wavs" / line.split("|", 1)[0]
         if w.exists(): h.update(f"{w.name}{w.stat().st_size}".encode())
     return h.hexdigest()
 
 
-def _check_cache(name):
+def _check_cache(name, md):
     """Piper caches processed clips by row number + text. If the dataset changed, the cache could hold the wrong audio: clear it."""
-    fp, f = _dataset_fingerprint(name), CFG.cache / name / ".dataset"
+    fp, f = _dataset_fingerprint(name, md), CFG.cache / name / ".dataset"
     if f.exists() and f.read_text() != fp:
         print("The prepared clips or transcripts changed since the last run: refreshing Piper's cache.", flush=True)
         shutil.rmtree(CFG.cache / name, ignore_errors=True)
@@ -98,14 +112,14 @@ def run(name, extra_epochs=1000, batch=0):
         voices.write(name, base_used=key)           # remember it so resuming uses the same starting voice
     b = base.ensure(key)
     b_epoch = (base.info(key) or {}).get("epoch", 0)
-    batch = batch or CFG["batch_size"] or gpu.default_batch()
-    run_dir = CFG.runs / name; run_dir.mkdir(parents=True, exist_ok=True); _check_cache(name)
+    batch = batch or gpu.scaled_batch(CFG["batch_size"] or gpu.default_batch(), m.get("gpu_load") or 100)
+    run_dir = CFG.runs / name; run_dir.mkdir(parents=True, exist_ok=True); csv = select_clips(name, log=lambda t: print(t, flush=True)); _check_cache(name, csv)
     ckpt = newest_ckpt(name)
     print(f"{'resuming from ' + str(ckpt) if ckpt else 'starting from base voice ' + key}; batch size {batch}; "
           f"training to epoch {b_epoch + extra_epochs} (base is at {b_epoch})", flush=True)
     cmd = [sys.executable, "-m", "piper.train", "fit",
            "--data.voice_name", name,
-           "--data.csv_path", str(CFG.data / name / "metadata.csv"),
+           "--data.csv_path", str(csv),
            "--data.audio_dir", str(CFG.data / name / "wavs"),
            "--model.sample_rate", "22050",
            "--data.espeak_voice", CFG["espeak_voice"],

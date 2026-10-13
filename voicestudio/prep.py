@@ -9,7 +9,7 @@ Built for real recordings: long files, many files, noisy rooms, stereo/surround,
 import shutil, tempfile
 import numpy as np
 from pathlib import Path
-from . import audio, clean, speakers, textnorm, voices
+from . import audio, clean, dataset, speakers, textnorm, voices
 from .config import CFG
 from .progress import Progress
 
@@ -84,6 +84,25 @@ def level(clip, target_rms=0.1, peak=0.95, max_gain=4.0):
     return (clip * min(target_rms / rms, peak / pk, max_gain)).astype("float32")
 
 
+def _thin(plan, frac, chunk=300.0):
+    """An even spread through everything: keep about `frac` of the speech, in pieces of up to `chunk` seconds, across all files."""
+    seen = kept = 0.0; out = {}
+    for key, spans in plan.items():
+        if spans is None: out[key] = None; continue
+        res = []
+        for a, b in spans:
+            t = a
+            while t < b - 1e-6:
+                e = min(b, t + chunk); ln = e - t; seen += ln
+                if kept + ln <= frac * seen + ln * 0.5:
+                    kept += ln
+                    if res and abs(res[-1][1] - t) < 1e-6: res[-1] = (res[-1][0], e)
+                    else: res.append((t, e))
+                t = e
+        out[key] = res
+    return out
+
+
 def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
     import soundfile as sf, torch
     from transformers import pipeline
@@ -100,9 +119,22 @@ def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
     root = CFG.data / name; wavs = root / "wavs"
     (CFG.runs / name / "prep.approved.json").unlink(missing_ok=True)      # new clips: earlier approvals no longer apply
     for old in wavs.glob("*.wav"): old.unlink()                      # re-preparing starts clean
+    for stale in ("metadata.csv", "metadata.orig.csv", "metadata.train.csv"): (root / stale).unlink(missing_ok=True)      # so a stopped run is never mistaken for a finished dataset
     wavs.mkdir(parents=True, exist_ok=True)
     shutil.rmtree(CFG.cache / name, ignore_errors=True)               # Piper's cache is keyed by row+text: never reuse it for new clips
 
+    lim = dataset.limit(name); budget = lim * speakers.CUSHION * 60
+    plan, total = {}, 0.0                                                      # what to prepare, in seconds, per file
+    for f in files:
+        key = speakers.rel(name, f); iv = speakers.intervals(name, key)
+        if iv is None:
+            d = audio.duration(f); plan[key] = [(0.0, d)] if d else None
+        else: plan[key] = [(a, b) for a, b in iv]
+        total += sum(b - a for a, b in plan[key] or [])
+    if total > budget:
+        plan = _thin(plan, budget / total)
+        log(f"There are {total / 60:.0f} min of speech to prepare, more than a voice needs. Preparing an even spread of about {budget / 60:.0f} min "
+            f"(your {lim}-minute limit plus some room to drop weak clips). This keeps the later steps fast and small.")
     log("Removing music and background noise from the parts that are kept (only the voice is left in)...")
     sep = clean.Separator(log)
     clips, n, skipped, noisy, silent = [], 0, [], [], []
@@ -115,7 +147,7 @@ def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
             try:
                 secs = audio.decode(f, tmp, SR, loudnorm=True, log=log)
                 y, _ = sf.read(tmp, dtype="float32")
-                iv = speakers.intervals(name, key)                    # None = no one chosen: use everything
+                iv = plan.get(key)                                    # None = no one chosen: use everything
                 spans = [(0, len(y))] if iv is None else [(int(a * SR), min(len(y), int(b * SR))) for a, b in iv]
                 got = 0
                 for si, (s0, e0) in enumerate(spans):
@@ -149,7 +181,7 @@ def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
     rows, dropped, batch, done = [], 0, 8, 0
     while done < len(clips):
         chunk = clips[done:done + batch]
-        prog.update("Writing down what was said", done, len(clips), f"{done}/{len(clips)} clips", frac=0.35 + 0.65 * done / len(clips))
+        prog.update("Writing down what was said", done, len(clips), f"{done}/{len(clips)} clips", frac=0.35 + 0.55 * done / len(clips))
         res, batch = _transcribe(asr, [sf.read(p, dtype="float32")[0] for p, _ in chunk], gen, batch)
         for (p, d), r in zip(chunk, res):
             raw = " ".join(r["text"].split())
@@ -165,13 +197,16 @@ def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
     (root / "metadata.orig.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")        # as written by Whisper: lets "reprocess" see which clips you edited
     shutil.rmtree(root / "wavs.untrimmed", ignore_errors=True)
     (CFG.runs / name / "clipscores.json").unlink(missing_ok=True)                  # new clips: old scores no longer apply
+    del asr; torch.cuda.empty_cache()
+    prog.update("Choosing the best clips", 0, 1, frac=0.9)
+    _, culled = dataset.cull(name, lim, log, frac_range=(0.9, 1.0), prog=prog)       # keep only the best `lim` minutes in the dataset
     mins = sum(d for p, d in clips if p.exists()) / 60
-    log(f"\nDone: {len(rows)} clips ({mins:.1f} min), {dropped} dropped.")
+    log(f"\nDone: {len(rows) - culled} clips ({mins:.1f} min), {dropped} dropped as non-speech" + (f", {culled} more removed to stay within {lim} minutes." if culled else "."))
     if skipped:
         log(f"\n{len(skipped)} file(s) were skipped:"); [log(f"  - {k}: {m}") for k, m in skipped[:25]]
         if len(skipped) > 25: log(f"  ... and {len(skipped) - 25} more")
     if silent:
         log(f"\n{len(silent)} file(s) had no usable speech: {', '.join(silent[:6])}{' ...' if len(silent) > 6 else ''}")
-    if mins < 20: log("NOTE: under 20 minutes. Fine-tuning works best with 30-60+ minutes of clean speech.")
+    if mins < 30: log("NOTE: under 30 minutes. Fine-tuning works best with 60 to 120 minutes of clean speech.")
     log("Next: check the words, then train.")
-    prog.finish(f"{len(rows)} clips ready")
+    prog.finish(f"{len(rows) - culled} clips ready")

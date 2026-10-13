@@ -23,7 +23,7 @@ def run(name, text=DEFAULT_TEXT, log=print):
     picks = []
     for w, label in VERSIONS:
         ck, what = pick(name, w)
-        if not ck: raise SystemExit("No training checkpoint yet. Train first.")
+        if not ck: raise SystemExit("Training has not saved a checkpoint yet. Train the voice first.")
         picks.append((w, label, ck, what))
     groups = {}
     for w, label, ck, what in picks: groups.setdefault(ck, []).append({"which": w, "label": label, "what": what})

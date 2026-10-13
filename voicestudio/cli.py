@@ -20,6 +20,7 @@ def main(argv=None):
     p = sub.add_parser("trim", help="reprocess: cut clips down to the words you kept when editing"); p.add_argument("name")
     p = sub.add_parser("import", help="start a voice from a dataset folder or zip (metadata.csv + clips)"); p.add_argument("name"); p.add_argument("path")
     p = sub.add_parser("restore", help="restore a voice from a backup zip, under this name"); p.add_argument("name"); p.add_argument("path")
+    p = sub.add_parser("cull", help="keep only the best clips of a prepared dataset (your minutes limit)"); p.add_argument("name")
     p = sub.add_parser("train", help="fine-tune (resumable)"); p.add_argument("name"); p.add_argument("epochs", nargs="?", type=int, default=1000); p.add_argument("batch", nargs="?", type=int, default=0)
     p = sub.add_parser("compare", help="make the same test sentence with each version of the voice"); p.add_argument("name"); p.add_argument("--text", default=None)
     p = sub.add_parser("export", help="make the .onnx/.json and a test clip"); p.add_argument("name"); p.add_argument("--text", default=None); p.add_argument("--which", choices=["best", "accurate", "latest"], default="best", help="best = best-sounding by quality score (default)")
@@ -71,6 +72,11 @@ def main(argv=None):
         from . import importer; importer.run(n, a.path)
     elif a.cmd == "restore":
         from . import backup; backup.restore(n, a.path)
+    elif a.cmd == "cull":
+        from . import dataset
+        from .progress import Progress
+        pr = Progress(n, "cull"); pr.update("Choosing the best clips", 0, 1, frac=0.02)
+        dataset.cull(n, frac_range=(0.05, 1.0), prog=pr); pr.finish("done")
     elif a.cmd == "train":
         from . import train; train.run(n, a.epochs, a.batch)
     elif a.cmd == "compare":
