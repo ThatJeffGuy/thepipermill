@@ -7,7 +7,7 @@ import json, os, re, shutil, signal, subprocess, sys, tempfile, threading, time,
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote
-from . import analyze, backup, base, compare, gpu as gpu_mod, importer, logclean, progress, speakers, train as train_mod, trim, voices
+from . import analyze, backup, base, compare, gpu as gpu_mod, importer, logclean, models, progress, speakers, train as train_mod, trim, voices
 from .config import CFG
 
 WEB = Path(__file__).parent / "web"
@@ -307,9 +307,11 @@ def hf_status(fresh=False):
         try:
             import huggingface_hub as H
             H.HfApi().auth_check(model, token=tok); out["state"] = "ready"
+            out["update"] = models.newer_available(model, tok)
         except Exception as e:
             n = type(e).__name__
             out["state"] = "not_accepted" if "Gated" in n else "bad_token" if ("NotFound" in n or "401" in str(e)) else "error"
+    out["copy"] = models.status(model)
     _HF["t"], _HF["v"] = time.time(), out
     return out
 
@@ -554,6 +556,12 @@ class H(BaseHTTPRequestHandler):
                 if voices.read(n).get("imported"): raise ValueError("This voice was started from a prepared dataset, so there is nothing to prepare.")
                 need_hf()
                 start_job(n, "prep", ["prep", n])
+            elif u.path == "/api/hfupdate":
+                tok = speakers._token()
+                if not tok: raise ValueError("Add your Hugging Face token first.")
+                try: models.ensure(CFG["diarization_model"], tok, log=lambda t: None, force=True)
+                except Exception: raise ValueError("Could not reach Hugging Face to check for an update. Try again when you are online.")
+                hf_status(True)
             elif u.path == "/api/analyze":
                 if not voices.source_dir(n) or not speakers.audio_files(n): raise ValueError("Choose a folder that has audio files first.")
                 start_job(n, "analyze", ["analyze", n])

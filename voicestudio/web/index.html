@@ -212,7 +212,8 @@ function hfCard(ctx){
   if(!HF||(HF.state==='ready'&&ctx!=='recordings'))return'';
   const lnk=(u,t)=>`<a href="${esc(u)}" target="_blank" rel="noopener noreferrer"><button class="sec" type="button">${t}${SV('<path d="M6 3h7v7M13 3L6.5 9.5M11 9v4H3V5h4"/>')}</button></a>`;
   const again='<button class="linkbtn" type="button" id="hfRecheck">Check again</button>';
-  if(HF.state==='ready')return`<p class="hint" style="margin:6px 0 0">Your Hugging Face token can open the speaker model. <span class="pill ok">ready</span> ${tip('The speaker scan uses the model '+HF.model+', which Hugging Face asks you to agree to once. Your token has access, so nothing more is needed.')}</p>`;
+  if(HF.state==='ready')return`<p class="hint" style="margin:6px 0 0">Your Hugging Face token can open the speaker model. <span class="pill ok">ready</span> ${tip('The speaker scan uses the model '+HF.model+', which Hugging Face asks you to agree to once. Your token has access, so nothing more is needed.')}</p>
+    ${HF.copy&&HF.copy.copy?`<p class="hint" style="margin:2px 0 0">A copy is stored on this computer (revision ${esc(HF.copy.revision)}), so the speaker steps work without asking Hugging Face each time. It checks for a newer version about once a day and updates itself. ${HF.update?'<b>A newer version is available.</b> ':''}<button class="linkbtn" type="button" id="hfUpdate">${HF.update?'Update now':'Check for updates'}</button></p>`:`<p class="hint" style="margin:2px 0 0">A copy is downloaded and stored on this computer the first time the speaker scan runs (about 40 MB), and it updates itself after that.</p>`}`;
   const why={recordings:'It is needed to find your speaker and to choose the best clips, so the next steps stay locked until it is set up.',speakers:'The speaker scan cannot run without it.',refine:'Finding more of your speaker cannot run without it.',prepare:'Prepare uses it to choose the clips that sound most like your speaker. Without it, Prepare falls back to transcript quality and an even spread.'}[ctx]||'';
   const body={no_token:'The speaker model is kept behind a one-time agreement on Hugging Face. You need a free account, to accept the model&rsquo;s terms, and a read-only access token. Open the two pages below, then add the token to your config file as <b>hf_token</b> (or sign in with <b>hf auth login</b>).',
     not_accepted:'Your token is set, but its account has not accepted the model&rsquo;s terms yet. Open the model page while signed in to that account and accept them.',
@@ -587,6 +588,7 @@ function wire(v){
   b('#dsBtn',()=>{location.href=`/dataset/${encodeURIComponent(v.name)}.zip`});
   b('#trimBtn',()=>act('/api/trim',{voice:v.name},'tr'));
   b('#hfRecheck',()=>pollHf(true));
+  b('#hfUpdate',async()=>{const bt=$('#hfUpdate');bt.disabled=true;bt.textContent='Checking…';try{await api('/api/hfupdate',{method:'POST',body:'{}'})}catch(e){alert(e.message)}pollHf(true)});
   b('#anBtn',()=>act('/api/analyze',{voice:v.name},'an'));
   b('#spBtn',()=>act('/api/speakers',{voice:v.name,num:($('#spNum')||{}).value||'',hours:+$('#scanHrs').value},'sp'));
   b('#keepBtn',async()=>{const ids=[...selSet(v)].sort((a,b)=>a-b);

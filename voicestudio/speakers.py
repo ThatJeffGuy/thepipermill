@@ -52,7 +52,8 @@ def _load_pipeline():
         raise SystemExit("pyannote.audio is not installed. Run ./install.sh again (or: .venv/bin/pip install pyannote.audio).")
     model = CFG["diarization_model"]
     try:
-        pipe = Pipeline.from_pretrained(model, token=_token())
+        from . import models
+        pipe = Pipeline.from_pretrained(str(models.ensure(model, _token(), log=print)))      # a stored copy that updates itself
     except Exception:
         raise SystemExit(f"Could not open the speaker model ({model}). It is gated, so once only:\n"
                          f"  1. Log in at https://huggingface.co and open https://huggingface.co/{model}, accept the conditions.\n"

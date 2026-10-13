@@ -132,13 +132,14 @@ The page listens on `127.0.0.1` only and has **no login**. Do not expose it to a
 
 ### Speaker model access (Hugging Face)
 
-The speaker scan, "find more like these", "check clips" and Prepare's best-clips ranking use one gated model, `pyannote/speaker-diarization-community-1`. Hugging Face asks you to accept its terms once: create a free account, open the model page and accept the terms, create a read-only token, and put it in `config.toml` as `hf_token` (or run `hf auth login`). The page shows whether access is working and has buttons that open the model page and the token page. Nothing else the tool downloads is gated.
+The speaker scan, "find more like these", "check clips" and Prepare's best-clips ranking use one gated model, `pyannote/speaker-diarization-community-1`. Hugging Face asks you to accept its terms once: create a free account, open the model page and accept the terms, create a read-only token, and put it in `config.toml` as `hf_token` (or run `hf auth login`). The page shows whether access is working and has buttons that open the model page and the token page. A copy of the model (about 40 MB) is stored in the data folder (`models/`) the first time it is needed, so the speaker steps start without asking Hugging Face each time and keep working offline. About once a day, and whenever you press **Check for updates**, the tool asks Hugging Face whether a newer version exists and installs it; offline, it keeps using the copy it has. The copy is made with your own access on your own computer and is never part of this repository. Nothing else the tool downloads is gated.
 
 ## Licences and credits
 
 - The Piper Mill itself: MIT (see `LICENSE`).
 - The page font, [Open Sans](https://fonts.google.com/specimen/Open+Sans), is embedded in the page under the SIL Open Font License 1.1.
 - It installs and drives [piper1-gpl](https://github.com/OHF-Voice/piper1-gpl) (GPL-3.0) as a separate program; it is downloaded by `install.sh` and not included here.
+- The speaker model, [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1), is released under CC-BY-4.0 by the pyannote.audio authors. It is downloaded by each user under their own Hugging Face account and is not redistributed here.
 - Starting voices come from [rhasspy/piper-checkpoints](https://huggingface.co/datasets/rhasspy/piper-checkpoints). **Each has its own dataset licence, often non-commercial** (for example Ryan is CC BY-NC-SA 4.0). A voice you train from one inherits those limits. The licence is shown when you create a voice and saved next to the file in `base/`.
 - Transcription uses OpenAI Whisper (MIT) through Hugging Face `transformers`.
 - Removing background noise uses Demucs (MIT) by Meta Research.

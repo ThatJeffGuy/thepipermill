@@ -11,6 +11,7 @@ _HEADER = re.compile(r"^\S+\.py:\d+: \w*Warning\b")
 _CONTINUES = re.compile(r"^(It can be re-enabled|See https?://|To (disable|silence|suppress)|If you (want|wish) to)", re.I)
 _QUIET = [re.compile(p, re.I) for p in (
     r"^warnings\.warn\(",
+    r"^Fetching \d+ files",
     r"^>>> ",
     r"unauthenticated requests to the HF Hub",
     r"^(GPU|TPU|HPU|IPU) available:",
