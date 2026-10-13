@@ -7,7 +7,7 @@ import json, os, re, shutil, signal, subprocess, sys, tempfile, threading, time,
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote
-from . import analyze, backup, base, compare, gpu as gpu_mod, importer, progress, speakers, train as train_mod, trim, voices
+from . import analyze, backup, base, compare, gpu as gpu_mod, importer, logclean, progress, speakers, train as train_mod, trim, voices
 from .config import CFG
 
 WEB = Path(__file__).parent / "web"
@@ -290,8 +290,7 @@ def tail(path, n=2500):
             f.seek(0, 2); f.seek(max(0, f.tell() - n)); t = f.read().decode(errors="ignore")
     except OSError:
         return ""
-    ls = [l.strip() for l in re.split(r"[\r\n]+", t) if l.strip() and "arn" not in l[:12]]
-    return "\n".join(ls[-6:])
+    return "\n".join(logclean.clean(t)[-6:])
 
 
 def gpu_gb():
@@ -669,6 +668,13 @@ class H(BaseHTTPRequestHandler):
             self._err(e)
 
 
+class QuietServer(ThreadingHTTPServer):
+    """A browser tab that closes mid-request is normal: do not print a traceback for it."""
+    def handle_error(self, request, client_address):
+        if isinstance(sys.exc_info()[1], (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)): return
+        super().handle_error(request, client_address)
+
+
 def serve():
     CFG.ensure_dirs()
     host, port = CFG["host"], int(CFG["port"])
@@ -676,4 +682,4 @@ def serve():
         print("WARNING: listening beyond this computer. There is no login. Only do this on a network you trust.", flush=True)
     if (CFG["notify_url"] or "").strip(): threading.Thread(target=_watch, daemon=True).start()
     print(f"The Piper Mill on http://{host}:{port}   (data: {CFG.home})", flush=True)
-    ThreadingHTTPServer((host, port), H).serve_forever()
+    QuietServer((host, port), H).serve_forever()
