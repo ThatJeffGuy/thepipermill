@@ -128,8 +128,9 @@ textarea.cell{width:100%;min-height:38px;resize:none;overflow:hidden;padding:8px
 .sp.run{border-top-color:var(--bad);color:var(--ink);font-weight:700}.sp.run i{background:var(--bad);border-color:var(--bad);color:transparent;animation:glow 1.6s ease-in-out infinite}
 .sp.run i::after{content:"";position:absolute;inset:6px;border-radius:50%;background:#fff;animation:beat 1.6s ease-in-out infinite}
 @media (prefers-reduced-motion:reduce){.sp.run i,.sp.run i::after{animation:none}}
-.nav{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-top:4px}.nav .nm{margin:0;flex:1;min-width:140px;text-align:center}
+.nav{display:grid;grid-template-columns:1fr minmax(0,auto) 1fr;gap:10px;align-items:center;margin-top:4px}.nav>:first-child{justify-self:start}.nav>:last-child{justify-self:end}.nav .nm{margin:0;text-align:center;max-width:100%}
 @media (max-width:520px){.sp span{display:none}.sp.cur span{display:inline}}
+@media (max-width:560px){.nav{grid-template-columns:1fr auto}.nav .nm{grid-column:1/-1;order:3}}
 .smp{display:flex;flex:1 1 0;min-width:0;align-items:stretch;border-radius:8px;overflow:hidden;background:var(--acc2)}
 .smp>button{border:0;border-radius:0;margin:0;padding:10px 6px;font-size:14px}.smp>button.pl{flex:1;background:transparent;color:var(--ink);white-space:nowrap}
 .smp>button.st{flex:none;width:42px;font-size:17px;font-weight:700;background:var(--line);color:var(--mute)}
@@ -503,10 +504,9 @@ function render(){
       const tip=locked?'locked until training has saved a checkpoint':{run:'working now','cur run':'working now (you are here)','cur':'you are here','cur ok':'you are here (done)',ok:'done',skip:'skipped',warn:'not finished',part:'started, not finished',todo:'not started yet'}[st];
       return `<button class="sp ${st}" data-go="${i}" title="${n}: ${tip}" aria-label="${n}: ${tip}" ${(i<stepNo||ADV)&&!(i===6&&!t.checkpoints)?'':'disabled'} ${i===stepNo?'aria-current="step"':''}><i>${mark}</i><span>${n}</span></button>`}).join('')}</div>
     ${wcards[stepNo]()}
-    <div class="nav"><button class="sec" id="prevBtn" ${stepNo>0?'':'disabled'}>‹ Prev</button>
+    <div class="nav"><span class="row" style="gap:8px;flex-wrap:nowrap"><button class="sec" id="prevBtn" ${stepNo>0?'':'disabled'}>‹ Prev</button>${v.imported?'':`<button class="sec" id="resetBtn" title="Go back to the beginning with this voice. Your recordings are never touched." ${S.busy?'disabled':''}>Start over</button>`}</span>
       <span class="hint nm" id="navMsg">${working[stepNo]?live(esc(working[stepNo])):esc(gate[stepNo])}</span>
       <span class="row">${optional[stepNo]?`<button class="sec" id="skipBtn" ${(run('speakers')||run('match')||run('trim')||run('score')||(stepNo===4&&v.edited))?'disabled':''}>Skip ›</button>`:''}${stepNo<names.length-1?`<button id="nextBtn" ${gate[stepNo]?'disabled':''}>Next ›</button>`:`<button id="zipBtn" ${v.exported?'':'disabled'} title="${v.exported?'Download the voice as one zip: the .onnx and .onnx.json files':'Make a test clip first: that exports the voice files'}">Download</button>`}</span></div>
-    ${v.imported?'':`<div style="text-align:center;margin-top:16px"><button class="sec" id="resetBtn" ${S.busy?'disabled':''}>Start over</button></div>`}
     ${ADV?`<details class="vs" ${vsOpen?'open':''} ontoggle="vsOpen=this.open"><summary>Voice settings</summary>
       <div class="vsrow"><div class="t"><b>Starting voice</b><div class="hint">${v.base==='auto'||!v.base?`Automatic${v.base_used?' (picked: '+esc(S.bases[v.base_used]||v.base_used)+')':', chosen when training starts'}`:esc(S.bases[v.base]||v.base)}</div></div></div>
       ${t.checkpoints?`<div class="vsrow"><div class="t"><b>Free up space</b><div class="hint">Training checkpoints use ${t.disk_gb} GB (${t.checkpoints} files). This keeps only the best and the latest.</div></div><button class="sec" id="cleanBtn" ${S.busy?'disabled':''}>Free up space</button></div>`:''}
