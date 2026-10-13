@@ -130,6 +130,10 @@ Copy `config.example.toml` to `~/.config/voice-studio/config.toml`. Every option
 
 The page listens on `127.0.0.1` only and has **no login**. Do not expose it to a network you do not trust. It also rejects requests that do not come from the page itself, so other websites cannot drive it.
 
+### Speaker model access (Hugging Face)
+
+The speaker scan, "find more like these", "check clips" and Prepare's best-clips ranking use one gated model, `pyannote/speaker-diarization-community-1`. Hugging Face asks you to accept its terms once: create a free account, open the model page and accept the terms, create a read-only token, and put it in `config.toml` as `hf_token` (or run `hf auth login`). The page shows whether access is working and has buttons that open the model page and the token page. Nothing else the tool downloads is gated.
+
 ## Licences and credits
 
 - The Piper Mill itself: MIT (see `LICENSE`).

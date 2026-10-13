@@ -205,6 +205,22 @@ const IC={folder:SV('<path d="M1.8 3.8h4l1.4 1.6h7v7.8H1.8z"/>'),zip:SV('<path d
   bell:SV('<path d="M8 2.2a3.8 3.8 0 00-3.8 3.8v2.8L2.8 11.4h10.4l-1.4-2.6V6A3.8 3.8 0 008 2.2zM6.5 13.6a1.5 1.5 0 003 0"/>'),bellOff:SV('<path d="M8 2.2a3.8 3.8 0 00-3.8 3.8v2.8L2.8 11.4h10.4l-1.4-2.6V6A3.8 3.8 0 008 2.2zM6.5 13.6a1.5 1.5 0 003 0M2 2l12 12"/>'),
   warn:SV('<path d="M8 2.2l6.2 11H1.8zM8 6.4v3.2M8 11.5v.1"/>')};
 const ic=k=>IC[k]||'';
+// The speaker model is gated on Hugging Face: you accept its terms once, with a free account and a read token.
+let HF=null,hfT=0;
+async function pollHf(fresh){hfT=Date.now();try{const h=await api('/api/hf'+(fresh?'?fresh=1':''));if(JSON.stringify(h)!==JSON.stringify(HF)){HF=h;const a=document.activeElement;if(!(a&&a.closest&&a.closest('#tbl')))render()}}catch(e){}}
+function hfCard(ctx){
+  if(!HF||(HF.state==='ready'&&ctx!=='speakers'))return'';
+  const lnk=(u,t)=>`<a href="${esc(u)}" target="_blank" rel="noopener noreferrer"><button class="sec" type="button">${t}${SV('<path d="M6 3h7v7M13 3L6.5 9.5M11 9v4H3V5h4"/>')}</button></a>`;
+  const again='<button class="linkbtn" type="button" id="hfRecheck">Check again</button>';
+  if(HF.state==='ready')return`<p class="hint" style="margin:6px 0 0">Speaker model access: <span class="pill ok">ready</span> ${tip('The speaker scan uses the model '+HF.model+', which Hugging Face asks you to agree to once. Your token has access, so nothing more is needed.')}</p>`;
+  const why={speakers:'The speaker scan cannot run without it.',refine:'Finding more of your speaker cannot run without it.',prepare:'Prepare uses it to choose the clips that sound most like your speaker. Without it, Prepare falls back to transcript quality and an even spread.'}[ctx]||'';
+  const body={no_token:'The speaker model is kept behind a one-time agreement on Hugging Face. You need a free account, to accept the model&rsquo;s terms, and a read-only access token. Open the two pages below, then add the token to your config file as <b>hf_token</b> (or sign in with <b>hf auth login</b>).',
+    not_accepted:'Your token is set, but its account has not accepted the model&rsquo;s terms yet. Open the model page while signed in to that account and accept them.',
+    bad_token:'Hugging Face did not accept your access token. Create a new read-only token and update <b>hf_token</b> in your config file.',
+    error:'Could not reach Hugging Face to check access. Check your internet connection.'}[HF.state];
+  return`<div class="msg" style="color:var(--warn);margin-top:10px">${ic('warn')}<b>Speaker model access needed.</b> ${why}</div>
+    <p class="hint" style="margin:4px 0 8px">${body}</p>
+    <div class="row" style="margin-bottom:12px">${HF.state==='error'?'':lnk(HF.url,'Open the model page and accept the terms')}${HF.state==='no_token'||HF.state==='bad_token'?lnk(HF.token_url,'Create an access token'):''}${again}</div>`}
 const minOpts=v=>{const cur=v.max_minutes||(v.train&&v.train.checkpoints?180:120);return [...new Set([30,45,60,90,120,150,180,cur])].sort((x,y)=>x-y).map(n=>`<option value="${n}" ${n===cur?'selected':''}>${n} minutes${n===120?' (recommended)':n===180?' (maximum)':''}</option>`).join('')};
 const saveMax=(v,val)=>api('/api/maxminutes',{method:'POST',body:JSON.stringify({voice:v.name,minutes:+val||0})}).catch(()=>{});
 const tip=t=>`<span class="tip" tabindex="0" role="note" aria-label="${esc(t)}" data-tip="${esc(t)}">i</span>`;
@@ -336,6 +352,7 @@ function setMode(m){mode=m;try{localStorage.setItem('mode',m)}catch(e){}render()
 let last='';
 async function refresh(force){
   let n;try{n=await api('/api/voices')}catch(e){return}
+  if(Date.now()-hfT>60000)pollHf(false);
   $('#sub').textContent=n.busy?(n.busy.kind==='training'?`${n.busy.voice} is training on the GPU`:`GPU is busy with ${jobName(n.busy.kind)}`):'GPU is free';
   watchJobs(n);
   const ae=document.activeElement, typing=ae&&(ae.closest&&ae.closest('#tbl')||['txt','srcIn','spNum','pnameIn','frFind','frRep'].includes(ae.id));
@@ -388,6 +405,7 @@ function render(){
     ${v.imported?'<div class="msg">This voice was started from a prepared dataset, so there are no recordings to scan. Press <b>Skip</b>.</div>':''}
     <p class="hint">Use this step when your recordings contain more than one person, such as a conversation, a call or an interview. The scan finds each voice so you can listen to samples and choose whose voice to train on. If it is only you speaking, press <b>Skip</b>.</p>
     <p class="hint">You can also name several people and make a separate voice for each of them from this same scan, which saves scanning again. Only name the people you actually want a voice for.</p>
+    ${hfCard('speakers')}
     <div class="row">${ADV?'<label>How many people talk? <input type="number" id="spNum" min="1" max="20" placeholder="auto" style="width:90px"></label>':''}
     <label>Scan up to ${tip('A large collection of recordings does not need to be scanned in full: an even sample, spread through your folder, is plenty to find your speaker and is much faster. Recordings that are not scanned are simply not used. Choose Everything only if you need speech that appears in just a few recordings.')} <select id="scanHrs">${[[10,'10 hours of recordings'],[20,'20 hours'],[40,'40 hours (recommended)'],[80,'80 hours'],[0,'Everything']].map(([n,l])=>`<option value="${n}" ${n===(v.scan_hours==null?40:v.scan_hours)?'selected':''}>${l}</option>`).join('')}</select></label>
     <label>Listening for <select id="vtSel"><option value="">Any voice</option><option value="male" ${v.voice_type==='male'?'selected':''}>A masculine voice</option><option value="female" ${v.voice_type==='female'?'selected':''}>A feminine voice</option></select></label>
@@ -416,7 +434,8 @@ function render(){
       ${tile(2,'Write it down','Whisper writes out what is said in each clip. Clips with no real speech are dropped automatically.')}
       ${tile(3,'Keep the best','Clips are ranked by how much they sound like your speaker and how clean their transcripts look. Only the best <b>'+lim+' min</b> are kept; the rest is removed from this dataset, so every later step stays small and fast.')}
     </div>
-    <div class="row" style="margin-bottom:12px"><label>Keep the best ${tip('How much speech the dataset keeps, at most 180 minutes. 60 to 120 is the sweet spot: more mostly makes everything slower, and the best clips matter more than the total. Your original recordings are never touched.')} <select id="pMax" ${pj?'disabled':''}>${minOpts(v)}</select></label><span class="hint" style="margin:0">Recommended: 60 to 120 minutes.</span></div>
+    ${hfCard('prepare')}
+    <div class="row" style="margin:12px 0"><label>Keep the best ${tip('How much speech the dataset keeps, at most 180 minutes. 60 to 120 is the sweet spot: more mostly makes everything slower, and the best clips matter more than the total. Your original recordings are never touched.')} <select id="pMax" ${pj?'disabled':''}>${minOpts(v)}</select></label><span class="hint" style="margin:0">Recommended: 60 to 120 minutes.</span></div>
     <div class="row inl">${pj?'<button class="bad stopjob">Stop</button>':`<button id="prepBtn" ${(!v.files.length||S.busy)?'disabled':''}>${prepDone?'Prepare again':'Prepare my recordings'}</button>`}
       ${prepDone&&!pj?`<span class="pill ok">${v.clips} clips · ${v.clip_minutes} min</span>`:''}
       ${pj?`<div style="flex:1;min-width:240px">${pbar(pj)}</div>`:''}</div>
@@ -487,7 +506,7 @@ function render(){
     // wizard: one step at a time, Prev / Next, and Skip on the optional steps
     const refineCard=()=>`<div class="card"><h2><span class="step ${v.match?'done':''}">3</span>Refine your voice <span class="pill">optional</span></h2>
       <p class="hint">Some stretches of a recording have several voices at once, which makes them hard to tell apart. Here you teach the program what your speaker sounds like: listen to the samples and mark each with the coloured square. <b>Green ✓</b> means it is only your speaker, <b>red ✗</b> means it is someone else, and <b>grey ?</b> means unsure or mixed, so it is left out. Then press <b>Find more like these</b> to search the whole recording for similar speech. You can repeat this as often as you like, and it tells you when nothing new turns up.</p>
-      ${v.imported?'<div class="msg">This voice has no recordings to search. Press <b>Skip</b>.</div>':matchHtml(v,jobRun,true)}</div>`;
+      ${hfCard('refine')}${v.imported?'<div class="msg">This voice has no recordings to search. Press <b>Skip</b>.</div>':matchHtml(v,jobRun,true)}</div>`;
     const wcards=[cards[0],cards[1],refineCard,cards[2],cards[3],cards[4],cards[5]];
     const names=['Recordings','Speakers','Refine','Prepare','Transcripts','Train','Listen'];
     const anOk=!!(v.analysis&&!v.analysis.stale)||!!v.people||!!v.prepared;      // earlier voices that are already past this step do not need analyzing again
@@ -564,6 +583,7 @@ function wire(v){
   document.querySelectorAll('[name=useSrc]').forEach(r=>r.onchange=async()=>{try{await api('/api/usematch',{method:'POST',body:JSON.stringify({voice:v.name,on:r.value==='match'})})}catch(e){say('match',e.message,'err')}refresh(true)});
   b('#dsBtn',()=>{location.href=`/dataset/${encodeURIComponent(v.name)}.zip`});
   b('#trimBtn',()=>act('/api/trim',{voice:v.name},'tr'));
+  b('#hfRecheck',()=>pollHf(true));
   b('#anBtn',()=>act('/api/analyze',{voice:v.name},'an'));
   b('#spBtn',()=>act('/api/speakers',{voice:v.name,num:($('#spNum')||{}).value||'',hours:+$('#scanHrs').value},'sp'));
   b('#keepBtn',async()=>{const ids=[...selSet(v)].sort((a,b)=>a-b);

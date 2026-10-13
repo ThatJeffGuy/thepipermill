@@ -293,6 +293,27 @@ def tail(path, n=2500):
     return "\n".join(logclean.clean(t)[-6:])
 
 
+_HF = {"t": 0.0, "v": None}
+
+
+def hf_status(fresh=False):
+    """Can this computer open the gated speaker model? One of: ready, no_token, not_accepted, bad_token, error. Never includes the token."""
+    if not fresh and _HF["v"] and time.time() - _HF["t"] < 60: return _HF["v"]
+    model = CFG["diarization_model"]
+    out = {"model": model, "url": f"https://huggingface.co/{model}", "token_url": "https://huggingface.co/settings/tokens", "state": "error"}
+    tok = speakers._token()
+    if not tok: out["state"] = "no_token"
+    else:
+        try:
+            import huggingface_hub as H
+            H.HfApi().auth_check(model, token=tok); out["state"] = "ready"
+        except Exception as e:
+            n = type(e).__name__
+            out["state"] = "not_accepted" if "Gated" in n else "bad_token" if ("NotFound" in n or "401" in str(e)) else "error"
+    _HF["t"], _HF["v"] = time.time(), out
+    return out
+
+
 def gpu_gb():
     """Total video memory of the GPU in GB (to one decimal), or None when it cannot be read."""
     g = gpu_stats()
@@ -452,6 +473,7 @@ class H(BaseHTTPRequestHandler):
                 try: backup.write_zip(n, q.get("ckpt", ["0"])[0] == "1", self.wfile)
                 except (BrokenPipeError, ConnectionResetError): pass
                 return
+            if u.path == "/api/hf": return self._json(hf_status(q.get("fresh", [""])[0] == "1"))
             if u.path == "/api/gpu": return self._json(gpu_stats() or {"error": "no GPU information available"})
             if u.path == "/api/voices":
                 b = busy()
