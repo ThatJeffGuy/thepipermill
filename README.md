@@ -2,7 +2,7 @@
 
 Train your own [Piper](https://github.com/OHF-Voice/piper1-gpl) text-to-speech voice from your own recordings, using a simple web page on your own computer.
 
-*An independent tool for making Piper voices. It is not affiliated with or endorsed by the Piper project or the Open Home Foundation. Formerly called Voice Studio: the command, folders and service are still named `voicestudio` / `voice-studio`.*
+*A project of [donutmoneyit.ca](https://donutmoneyit.ca). An independent tool for making Piper voices. It is not affiliated with or endorsed by the Piper project or the Open Home Foundation. Formerly called Voice Studio: the command, folders and service are still named `voicestudio` / `voice-studio`.*
 
 1. Point it at a folder of your recordings.
 2. It cuts them into clips and writes down what you said.

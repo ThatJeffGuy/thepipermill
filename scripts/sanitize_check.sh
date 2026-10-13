@@ -14,7 +14,8 @@ scan "home directories / usernames"    '/home/[a-z][a-z0-9_-]+|/Users/[A-Za-z]|C
 scan "tokens, keys, passwords"         '(eyJ[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9]{20,}|BEGIN (RSA|OPENSSH|EC|PRIVATE) |password *=|secret *=|api[_-]?key *=)'
 scan "email addresses"                 '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}'
 scan "MAC addresses"                   '\b([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b'
-scan "personal/home-lab names"         '(jeff|thebakery|thebeast|jarvis|proxmox|portainer|donutmoney|wiltron|newmarket)'
+scan "personal/home-lab names"         '(jeff|thebakery|thebeast|jarvis|proxmox|portainer|donutmoney([^i]|i[^t]|it[^.]|it\.[^c])|wiltron|newmarket)'      # the public brand donutmoneyit.ca is allowed
+scan "private subdomains of the home domain" '[A-Za-z0-9-]+\.donutmoneyit\.ca'
 # files that must never be committed
 BIN=$(echo "$FILES" | grep -E '\.(onnx|ckpt|pt|pth|safetensors|wav|mp3|m4a|flac|ogg|toml)$' | grep -v -E 'config.example.toml|pyproject.toml' || true)
 [ -n "$BIN" ] && { echo "--- models / audio / real config in the file list"; echo "$BIN"; bad=1; }
