@@ -143,8 +143,12 @@ def metrics(n):
 
 
 def _read_metrics(n, m):
+    cache = CFG.runs / n / "metrics.cache.json"              # parsed scores per log file: re-reading gigabytes of logs on every start is slow
     try:
         from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
+        if not m["files"]:
+            try: m["files"] = {k: (tuple(v[0]), [tuple(x) for x in v[1]]) for k, v in json.loads(cache.read_text()).items()}
+            except (OSError, ValueError, IndexError, TypeError): pass
         pts = []
         for f in sorted((CFG.runs / n).glob("lightning_logs/version_*/events.out.tfevents.*"), key=lambda p: p.stat().st_mtime):
             st = f.stat(); key = (st.st_size, st.st_mtime)
@@ -152,6 +156,8 @@ def _read_metrics(n, m):
                 ea = EventAccumulator(str(f), size_guidance={"scalars": 0}); ea.Reload()
                 m["files"][str(f)] = (key, [(s.wall_time, s.value) for s in ea.Scalars("val_mos")] if "val_mos" in ea.Tags()["scalars"] else [])
             pts += m["files"][str(f)][1]
+        try: cache.write_text(json.dumps({k: [list(v[0]), v[1]] for k, v in m["files"].items()}))
+        except OSError: pass
         pts.sort()
         m["mos"] = pts[-1][1] if pts else None; m["first"] = pts[0][1] if pts else None
         last = max(m["files"], key=lambda k: m["files"][k][0][1], default=None)             # the newest event file = the current run
