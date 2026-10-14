@@ -75,6 +75,7 @@ def start_job(n, kind, args, meta=None):
 def start_over(n, training=False):
     """Back to the beginning for one voice. Keeps: the recordings folder (never touched), the name, male/female, the decoded-audio cache.
     Clears: the speaker scan and your choices, ticked clips, time window, prepared clips and edits. Training only if asked."""
+    speakers.archive(n)                                                # remember the speaker scan and the choice before clearing
     runs = CFG.runs / n
     if runs.exists():
         for c in list(runs.iterdir()):
@@ -671,7 +672,7 @@ class H(BaseHTTPRequestHandler):
                 p = (d.get("path") or "").strip()
                 if not p or not Path(p).expanduser().is_dir(): raise ValueError("That folder does not exist.")
                 voices.write(n, source_dir=str(Path(p).expanduser().resolve()))
-                speakers.result_path(n).unlink(missing_ok=True); voices.write(n, keep_people=[], people_names={})   # a new folder means new speakers
+                speakers.archive(n); speakers.result_path(n).unlink(missing_ok=True); voices.write(n, keep_people=[], people_names={})   # a new folder means new speakers
             else: return self._err("not found", 404)
             return self._json({"ok": True})
         except (ValueError, KeyError, RuntimeError, subprocess.TimeoutExpired, OSError, SystemExit) as e:

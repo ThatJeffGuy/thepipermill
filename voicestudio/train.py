@@ -32,6 +32,17 @@ def _epoch(p):
     m = re.search(r"epoch=(\d+)", p.name); return int(m.group(1)) if m else None
 
 
+def ckpt_epoch(p):
+    """The epoch a checkpoint was saved at. last.ckpt has no epoch in its name, so read it from the file itself."""
+    e = _epoch(p)
+    if p.name != "last.ckpt" and e is not None: return e
+    try:
+        import torch
+        return int(torch.load(p, map_location="cpu", weights_only=False, mmap=True).get("epoch"))
+    except Exception:
+        return e
+
+
 def base_epoch(name):
     """The epoch the starting voice was already at (training counts on from there)."""
     key = voices.read(name).get("base_used")
@@ -117,6 +128,13 @@ def run(name, extra_epochs=1000, batch=0):
     ckpt = newest_ckpt(name)
     print(f"{'resuming from ' + str(ckpt) if ckpt else 'starting from base voice ' + key}; batch size {batch}; "
           f"training to epoch {b_epoch + extra_epochs} (base is at {b_epoch})", flush=True)
+    cur = ckpt_epoch(ckpt) if ckpt else None
+    if cur is not None and cur >= b_epoch + extra_epochs:      # the trainer would stop with a confusing error: say what is going on instead
+        done = cur - b_epoch
+        print(f"This voice has already trained {done} rounds, which is at or past the length you chose ({extra_epochs}). "
+              f"Choose a length above {done} rounds to carry on, or start the training over from the base voice "
+              f"(Advanced, Voice settings).", flush=True)
+        sys.exit(2)
     cmd = [sys.executable, "-m", "piper.train", "fit",
            "--data.voice_name", name,
            "--data.csv_path", str(csv),

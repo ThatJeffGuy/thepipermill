@@ -31,6 +31,26 @@ def rel(name, f): return f.relative_to(voices.source_dir(name)).as_posix()
 
 def result_path(name): return CFG.runs / name / "speakers.json"
 
+def archive(name, keep_last=12):
+    """Before a new scan (or Start over / a new folder) clears the speaker result, keep a copy plus who was chosen,
+    so an earlier choice can be found again. Lives in runs/<voice>/history (Start over does not clear it)."""
+    old = result_path(name)
+    if not old.exists(): return
+    try:
+        m = voices.read(name); h = CFG.runs / name / "history"; h.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(old.stat().st_mtime))
+        if (h / f"speakers-{stamp}.json").exists(): return
+        data = json.loads(old.read_text())
+        (h / f"speakers-{stamp}.json").write_text(json.dumps(data))
+        (h / f"choice-{stamp}.json").write_text(json.dumps({
+            "saved": stamp, "keep_people": m.get("keep_people") or [], "people_names": m.get("people_names") or {},
+            "max_minutes": m.get("max_minutes"), "source_dir": m.get("source_dir"),
+            "people": [{"id": q.get("id"), "minutes": q.get("minutes"), "files": q.get("files")} for q in data.get("people", [])]}, indent=1))
+        for old_f in sorted(h.glob("speakers-*.json"))[:-keep_last]:
+            old_f.unlink(missing_ok=True); (h / old_f.name.replace("speakers-", "choice-")).unlink(missing_ok=True)
+    except Exception:
+        pass                                                # keeping history must never stop a scan
+
 
 def load(name):
     try: return json.loads(result_path(name).read_text())
@@ -204,6 +224,7 @@ def run(name, num_speakers=None, log=print, pipeline=None):
     out = {"people": [{"id": p["id"], "minutes": round(p["seconds"] / 60, 1), "files": len(p["members"]), "samples": p["samples"], "sample_times": p["sample_times"], "sample_ranges": p["sample_ranges"], "first": p["first"]} for p in plist],
            "files": {k: {"segments": v["segments"]} for k, v in per_file.items()},
            "scan": {"scanned": len(per_file), "total": len(every), "skipped": [rel(name, f) for f in left_out]}}
+    archive(name)                                                    # keep the previous scan and who was chosen before replacing it
     result_path(name).write_text(json.dumps(out))
     log("Measuring each voice's pitch...")
     try: person_pitches(name)
