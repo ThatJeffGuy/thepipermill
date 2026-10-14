@@ -1,14 +1,14 @@
 """Keep only the best clips of a prepared dataset.
 
 Prepare can produce far more speech than a voice needs. After it has written the transcripts it scores every clip and keeps the best
-`max_minutes` of them (at most 180). The rest are removed from the dataset for good, so checking the transcripts, exporting, backing
+`max_minutes` of them (at most 270). The rest are removed from the dataset for good, so checking the transcripts, exporting, backing
 up and training all work on a small set. Your original recordings are never touched.
 """
 import json
 from . import voices
 from .config import CFG
 
-MAX_MINUTES = 180            # no voice is ever trained on more speech than this; 60 to 120 is the recommended range
+MAX_MINUTES = 270            # no voice is ever trained on more speech than this; 60 to 120 is the recommended range
 
 
 def limit(name):

@@ -593,7 +593,7 @@ class H(BaseHTTPRequestHandler):
                 need_hf()
                 strict = d.get("strict") if d.get("strict") in speakers.STRICT else "normal"
                 voices.write(n, ref_yes=yes, ref_no=no, strict=strict)
-                if d.get("max_minutes"): voices.write(n, max_minutes=max(10, min(180, int(d["max_minutes"]))))
+                if d.get("max_minutes"): voices.write(n, max_minutes=max(10, min(270, int(d["max_minutes"]))))
                 start_job(n, "match", ["match", n])
             elif u.path == "/api/reset":
                 if busy() or train_pid(n): raise RuntimeError("A job is running. Wait for it or stop it first.")
@@ -646,7 +646,7 @@ class H(BaseHTTPRequestHandler):
             elif u.path == "/api/maxminutes":
                 try: mm = int(d.get("minutes") or 0)
                 except (TypeError, ValueError): raise ValueError("Enter a whole number of minutes (60 to 120 is recommended, 180 at most).")
-                voices.write(n, max_minutes=max(0, min(180, mm)) or None)
+                voices.write(n, max_minutes=max(0, min(270, mm)) or None)
             elif u.path == "/api/gpuload":
                 try: pc = int(d.get("percent") or 100)
                 except (TypeError, ValueError): raise ValueError("Choose a GPU usage between 10% and 100%.")

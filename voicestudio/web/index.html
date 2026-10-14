@@ -222,7 +222,7 @@ function hfCard(ctx){
   return`<div class="msg" style="color:var(--warn);margin-top:10px">${ic('warn')}<b>Speaker model access needed.</b> ${why}</div>
     <p class="hint" style="margin:4px 0 8px">${body}</p>
     <div class="row" style="margin-bottom:12px">${HF.state==='error'?'':lnk(HF.url,'Open the model page and accept the terms')}${HF.state==='no_token'||HF.state==='bad_token'?lnk(HF.token_url,'Create an access token'):''}${again}</div>`}
-const minOpts=v=>{const cur=v.max_minutes||(v.train&&v.train.checkpoints?180:120);return [...new Set([30,45,60,90,120,150,180,cur])].sort((x,y)=>x-y).map(n=>`<option value="${n}" ${n===cur?'selected':''}>${n} minutes${n===120?' (recommended)':n===180?' (maximum)':''}</option>`).join('')};
+const minOpts=v=>{const cur=v.max_minutes||(v.train&&v.train.checkpoints?180:120);return [...new Set([30,45,60,90,120,150,180,210,240,270,cur])].sort((x,y)=>x-y).map(n=>`<option value="${n}" ${n===cur?'selected':''}>${n} minutes${n===120?' (recommended)':n===270?' (maximum)':''}</option>`).join('')};
 const saveMax=(v,val)=>api('/api/maxminutes',{method:'POST',body:JSON.stringify({voice:v.name,minutes:+val||0})}).catch(()=>{});
 const tip=t=>`<span class="tip" tabindex="0" role="note" aria-label="${esc(t)}" data-tip="${esc(t)}">i</span>`;
 const api=async(path,opt={})=>{const r=await fetch(path,{...opt,headers:{'X-Studio':'1','Content-Type':'application/json',...(opt.headers||{})}});
@@ -241,7 +241,7 @@ function pbar(j){if(!j||!j.running||!j.progress)return'';const p=j.progress,pct=
 const dataNote=(v,notBig)=>{const m=v.clip_minutes;if(!v.prepared||m==null)return'';
   return m<10?`<div class="msg err">You have only <b>${m} min</b> of speech. The voice will probably sound rough, and the quality score can drop while it trains. Aim for 60 to 120 minutes of clean speech.</div>`
     :m<30?`<div class="msg" style="color:var(--warn)"><b>${m} min</b> of speech is on the low side. It will work, but 60 to 120 minutes gives a noticeably better voice.</div>`
-      :m>180&&!notBig?`<div class="msg">That is more than training can use. At most 180 min is used (60 to 120 is the sweet spot), so the cleanest clips that sound most like your speaker are chosen. Nothing is deleted.</div>`:''};
+      :m>270&&!notBig?`<div class="msg">That is more than training can use. At most 270 min is used (60 to 120 is the sweet spot), so the cleanest clips that sound most like your speaker are chosen. Nothing is deleted.</div>`:''};
 // "Notify me": a chime and a desktop notification when a job stops running
 let notifyOn=false,prevRun=null;try{notifyOn=localStorage.getItem('notify')==='1'}catch(e){}
 function chime(){try{const c=new (window.AudioContext||window.webkitAudioContext)(),o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.type='sine';
@@ -626,7 +626,7 @@ function updPlan(){
   const set=(id,pct,cls,txt,sub)=>{const el=$(id);if(!el)return;el.className='pl'+(cls?' '+cls:'');const bar=el.querySelector('i');if(bar)bar.style.width=Math.max(0,Math.min(100,pct))+'%';el.querySelector('b').innerHTML=txt+(sub?`<small>${sub}</small>`:'')};
   const rounds=+ep.value,want=+mm.value,have=v.prepared?v.clip_minutes:want,use=Math.min(want,have);
   set('#plL',100*rounds/2000,'',rounds+' rounds',rounds<=300?'a quick first pass':rounds<=1000?'suits most voices':'for the finest polish');
-  set('#plM',100*use/180,use>=60&&use<=120?'good':'warn',Math.round(use)+' min',(use>=60&&use<=120?'in the sweet spot':use<60?'below the ideal range':'above the ideal range')+(v.prepared&&have<want?` (all you have)`:''));
+  set('#plM',100*use/270,use>=60&&use<=120?'good':'warn',Math.round(use)+' min',(use>=60&&use<=120?'in the sweet spot':use<60?'below the ideal range':'above the ideal range')+(v.prepared&&have<want?` (all you have)`:''));
   const gl=$('#gpuLoad');if(gl){const pc=+gl.value,top=v.batch_top,bs=top?Math.max(2,Math.round(top*pc/100)):null,lv=pc>=100?'Maximum':pc>=70?'Heavy':pc>=40?'Moderate':'Light';
     gl.style.setProperty('--p',(100*(pc-10)/90)+'%');set('#plG',0,pc>=100?'warn':'good',lv+' · '+pc+'%',bs?`batch size ${bs} of ${top}`:(pc>=100?'uses nearly all GPU memory':'leaves memory free'));}
 }
