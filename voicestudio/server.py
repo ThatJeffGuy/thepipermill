@@ -702,7 +702,7 @@ class H(BaseHTTPRequestHandler):
                     except OSError: pass
             elif u.path == "/api/train/stop":
                 pid = train_pid(n)
-                if pid: os.killpg(os.getpgid(pid), signal.SIGINT)
+                if pid: _stop_group(pid)
             elif u.path == "/api/export":
                 which = d.get("which") if d.get("which") in ("best", "accurate", "latest") else "best"
                 start_job(n, "export", ["export", n, "--text", (d.get("text") or "")[:400], "--which", which])
@@ -759,7 +759,23 @@ class QuietServer(ThreadingHTTPServer):
         super().handle_error(request, client_address)
 
 
+def _stop_group(pid):
+    """Ask a training run to stop (Ctrl+C), then insist: a program started from a background shell can have Ctrl+C switched off
+    (that is why Stop once did nothing), so after a few seconds send a terminate, and a kill if it still lingers."""
+    try: pg = os.getpgid(pid)
+    except OSError: return
+    def go():
+        for sig, wait in ((signal.SIGINT, 8), (signal.SIGTERM, 12), (signal.SIGKILL, 0)):
+            try: os.killpg(pg, sig)
+            except OSError: return
+            for _ in range(wait * 2):
+                time.sleep(0.5)
+                if not alive(pid): return
+    threading.Thread(target=go, daemon=True).start()
+
+
 def serve():
+    signal.signal(signal.SIGINT, signal.default_int_handler)    # never inherit "ignore Ctrl+C" from a background launch: the jobs started from here would ignore it too
     CFG.ensure_dirs()
     host, port = CFG["host"], int(CFG["port"])
     if host not in ("127.0.0.1", "localhost", "::1"):
