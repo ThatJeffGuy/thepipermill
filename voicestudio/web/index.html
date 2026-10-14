@@ -272,7 +272,7 @@ function jobNote(v,kind,force){
   const j=v.job;
   if(j&&kind==='trim'&&j.kind==='trim'&&!j.running&&j.rc===0){     // Reprocess finished: say what happened to each edited clip, not just "0 clips trimmed"
     const lines=(j.log||'').split('\n').map(x=>x.trim()),done=lines.find(x=>x.startsWith('Done:')),bad=lines.filter(x=>x.startsWith('- '));
-    return done?`<div class="msg ${bad.length?'':'ok'}" ${bad.length?'style="color:var(--warn)"':''}>${esc(done)}</div>${bad.map(x=>{const f=(x.slice(2).match(/^[^:]+/)||[''])[0];return `<div class="msg" style="color:var(--warn)">${ic('warn')}${esc(x.slice(2))} <button class="linkbtn" data-restore="${esc(f)}">Restore the original words</button></div>`}).join('')}`:''}
+    return done?`<div class="msg ${bad.length?'':'ok'}" ${bad.length?'style="color:var(--warn)"':''}>${esc(done)}</div>${bad.map(x=>{const f=(x.slice(2).match(/^[^:]+/)||[''])[0];return `<div class="msg" style="color:var(--warn)">${ic('warn')}${esc(x.slice(2))} <button class="linkbtn dng" data-restore="${esc(f)}">Remove clip</button></div>`}).join('')}`:''}
   if(!j||j.kind!==kind||j.running||!j.rc)return'';
   if(j.rc<0)return'<div class="msg">Stopped.</div>';
   const last=(j.log||'').split('\n').map(x=>x.trim()).filter(Boolean).pop()||'Something went wrong.';
@@ -577,7 +577,7 @@ function wire(v){
   b('#resetBtn',()=>openReset(v));b('#bkBtn',()=>{location.href=`/backup/${encodeURIComponent(v.name)}.zip?ckpt=${$('#bkCk')&&$('#bkCk').checked?1:0}`});b('#renameBtn',()=>openRename(v));
   const leaveWords=()=>{if(wiz[v.name]!==4||!v.prepared)return true;
     if(!(rows&&rowsFor===v.name))return (!v.edited||confirm('Some clips have edited words the audio does not match yet. Go on anyway?'))&&confirm('You have not checked any clips yet. Wrong words and stray voices are learned by the voice too.\n\nGo on to training anyway?');
-    if(v.edited&&!confirm(`${v.edited} clip${v.edited>1?'s have':' has'} edited words that the audio does not match yet (Reprocess could not cut ${v.edited>1?'them':'it'}). Training would learn the new words against the old audio.\n\nGo on anyway? (You can restore the original words on the clip first.)`))return false;
+    if(v.edited&&!confirm(`${v.edited} clip${v.edited>1?'s have':' has'} edited words that the audio does not match yet (Reprocess could not cut ${v.edited>1?'them':'it'}). Training would learn the new words against the old audio.\n\nGo on anyway? (Remove the clip first, or fix its words.)`))return false;
     const left=guideLeft(),tot=rows.filter(r=>r.tier).length;
     return !left||confirm(`${left} of the ${tot} suggested clips have not been checked yet (the likely errors come first, so those are the ones that matter most).\n\nGo on to training anyway?`)};
   b('#prevBtn',()=>go(v.name,wiz[v.name]-1));b('#nextBtn',()=>{if(leaveWords())go(v.name,wiz[v.name]+1)});b('#skipBtn',()=>{if(leaveWords())go(v.name,wiz[v.name]+1)});
@@ -616,7 +616,7 @@ function wire(v){
   b('#frBtn',()=>{const f=$('#frFind').value,rp=$('#frRep').value;if(!f||!rows)return;const re=new RegExp(f.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),$('#frCase').checked?'g':'gi');let n=0;
     rows.forEach(r=>{const t=r.text.replace(re,()=>rp);if(t!==r.text){r.text=t;n++}});
     if(!n)return say('tr','Nothing to replace.');dirty=true;say('tr',`Replaced in ${n} clip${n>1?'s':''}. Press Save to apply.`,'ok')});
-  document.querySelectorAll('[data-restore]').forEach(el=>el.onclick=async()=>{el.disabled=true;try{await api('/api/trim/revert',{method:'POST',body:JSON.stringify({voice:v.name,files:[el.dataset.restore]})});rows=null;rowsFor='';say('tr','Original words restored.','ok');await refresh(true);loadRows(v.name).catch(()=>{})}catch(e){say('tr',e.message,'err')}});
+  document.querySelectorAll('[data-restore]').forEach(el=>el.onclick=async()=>{el.disabled=true;try{await api('/api/trim/remove',{method:'POST',body:JSON.stringify({voice:v.name,files:[el.dataset.restore]})});rows=null;rowsFor='';say('tr','Clip removed.','ok');await refresh(true);loadRows(v.name).catch(()=>{})}catch(e){say('tr',e.message,'err')}});
   b('#loadRows',()=>loadRows(v.name));b('#saveRows',()=>saveRows(v.name));
   b('#trainBtn',async()=>{await act('/api/maxminutes',{voice:v.name,minutes:+$('#maxMin').value||0},'train');await act('/api/gpuload',{voice:v.name,percent:+$('#gpuLoad').value||100},'train');return act('/api/train',{voice:v.name,epochs:+$('#ep').value},'train')});
   ['#ep','#maxMin'].forEach(i=>{const e=$(i);if(e)e.onchange=updPlan});const mx=$('#maxMin');if(mx)mx.addEventListener('change',()=>saveMax(v,mx.value));const gl=$('#gpuLoad');if(gl)gl.oninput=updPlan;

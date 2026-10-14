@@ -76,13 +76,13 @@ def run(name, log=print):
             problems.append(f"{f}: could not find the words in the audio ({str(e)[:60]})"); bad += 1; continue
         s, e, st = span(words, cur[f], CFG["espeak_voice"])
         if st == "added": same += 1; orig[f] = cur[f]; log(f"  {f}: words added that the speech recogniser missed: text updated, audio left as it was"); continue
-        if st == "nomatch": problems.append(f"{f}: your words do not match what is said, so the audio was left alone. Delete the clip or restore the words."); bad += 1; continue
-        if st == "middle": problems.append(f"{f}: words were removed from the middle, which cannot be cut. Delete the clip, or remove words only from the start or end."); bad += 1; continue
+        if st == "nomatch": problems.append(f"{f}: your words do not match what is said, so the audio was left alone. Remove the clip or restore the words."); bad += 1; continue
+        if st == "middle": problems.append(f"{f}: words were removed from the middle, which cannot be cut. Remove the clip, or remove words only from the start or end."); bad += 1; continue
         if s <= EDGE and e >= dur - EDGE:
             same += 1; orig[f] = cur[f]; continue                                  # a spelling fix: nothing to cut
         a, b = max(0.0, s - PAD), min(dur, e + PAD)
         if b - a < MIN_S:
-            problems.append(f"{f}: only {b - a:.1f} s would be left, too short to use. Delete the clip instead."); bad += 1; continue
+            problems.append(f"{f}: only {b - a:.1f} s would be left, too short to use. Remove the clip instead."); bad += 1; continue
         if not (keep_dir / f).exists(): shutil.copy2(p, keep_dir / f)
         sf.write(p, prep.level(y[int(a * sr):int(b * sr)]), sr, subtype="PCM_16")
         orig[f] = cur[f]; trimmed += 1
