@@ -7,6 +7,7 @@ Built for real recordings: long files, many files, noisy rooms, stereo/surround,
 (those are skipped and listed, they never stop the run).
 """
 import shutil, tempfile
+from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from pathlib import Path
 from . import audio, clean, dataset, speakers, textnorm, voices
@@ -14,6 +15,7 @@ from .config import CFG
 from .progress import Progress
 
 SR = 22050
+AHEAD = 3                                  # recordings decoded in the background ahead of the one being cut
 HOP = int(0.02 * SR)                       # 20 ms frames
 # things Whisper "hears" in silence or noise
 JUNK = {"thank you.", "thanks for watching.", "thank you for watching.", "you", "bye.", "so", "okay.", "uh", "um", "mm-hmm."}
@@ -141,15 +143,25 @@ def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
     log("Removing music and background noise from the parts that are kept (only the voice is left in)...")
     sep = clean.Separator(log)
     clips, n, skipped, noisy, silent = [], 0, [], [], []
-    with tempfile.TemporaryDirectory() as td:
+    def load(i, f, td):                                                  # decode + read one recording (runs ahead on spare cores while the GPU works)
+        tmp = Path(td) / f"c{i}.wav"
+        try:
+            secs = audio.decode(f, tmp, SR, loudnorm=True, log=log)
+            y, _ = sf.read(tmp, dtype="float32")
+            return secs, y
+        finally:
+            tmp.unlink(missing_ok=True)
+
+    with tempfile.TemporaryDirectory() as td, ThreadPoolExecutor(max_workers=AHEAD) as pool:
+        futs = {}
         for i, f in enumerate(files, 1):
+            for j in range(i, min(len(files), i + AHEAD) + 1):                  # keep the next few recordings decoding in the background
+                if j not in futs: futs[j] = pool.submit(load, j, files[j - 1], td)
             key = speakers.rel(name, f)
             W1 = 0.35                                                           # share of the whole job spent reading + cutting (the rest is Whisper)
             prog.update("Reading the recording", i - 1, len(files), key, frac=W1 * (i - 1) / len(files))
-            tmp = Path(td) / "c.wav"
             try:
-                secs = audio.decode(f, tmp, SR, loudnorm=True, log=log)
-                y, _ = sf.read(tmp, dtype="float32")
+                secs, y = futs.pop(i).result()
                 iv = plan.get(key)                                    # None = no one chosen: use everything
                 spans = [(0, len(y))] if iv is None else [(int(a * SR), min(len(y), int(b * SR))) for a, b in iv]
                 got = 0
@@ -168,8 +180,6 @@ def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
                 log(f"[{i}/{len(files)}] {key}: {secs/60:.1f} min -> {got} clips" + ("  (no speech found)" if got == 0 else ""))
             except (audio.AudioError, RuntimeError, ValueError, OSError) as e:
                 skipped.append((key, str(e))); log(f"[{i}/{len(files)}] SKIPPED {key}: {e}")
-            finally:
-                tmp.unlink(missing_ok=True)
     if sep: sep.close()
     if not clips:
         raise SystemExit("No speech found in any file." + (f" {len(skipped)} file(s) could not be read." if skipped else " Try a quieter recording."))
@@ -181,7 +191,7 @@ def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
                    torch_dtype=torch.float16 if dev == "cuda" else torch.float32)
     lang = {"en-us": "english", "en-gb": "english", "en": "english"}.get(CFG["espeak_voice"].lower())
     gen = {"task": "transcribe", "num_beams": 5, **({"language": lang} if lang else {})}
-    rows, dropped, batch, done = [], 0, 8, 0
+    rows, dropped, batch, done = [], 0, 16, 0
     while done < len(clips):
         chunk = clips[done:done + batch]
         prog.update("Writing down what was said", done, len(clips), f"{done}/{len(clips)} clips", frac=0.35 + 0.55 * done / len(clips))
