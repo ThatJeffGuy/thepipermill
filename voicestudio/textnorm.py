@@ -7,6 +7,7 @@ Piper reads text with espeak-ng, so what is written must line up with what is sa
 import re, unicodedata
 
 ABBR = {"mr": "mister", "mrs": "missus", "ms": "miss", "dr": "doctor", "prof": "professor", "st": "saint", "mt": "mount", "vs": "versus"}
+DECADES = {"10": "tens", "20": "twenties", "30": "thirties", "40": "forties", "50": "fifties", "60": "sixties", "70": "seventies", "80": "eighties", "90": "nineties"}
 PUNCT_FIX = {"‘": "'", "’": "'", "“": '"', "”": '"', "–": ", ", "—": ", ", "…": "...", " ": " "}
 YEAR_CONTEXT = re.compile(r"(?:\b(?:in|since|of|by|until|till|from|around|circa|year|during|before|after)\s+|\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:\d{1,2},?\s+)?)$", re.I)
 
@@ -41,6 +42,7 @@ def normalize(text, lang="en-us"):
         t = re.sub(r"(\d[\d,]*(?:\.\d+)?)\s*%", lambda m: m.group(1) + " percent", t)
         t = re.sub(r"\b(\d{1,2}):(\d\d)\b", _clock, t)
         t = re.sub(r"\b([ap])\.?m\.?\b", lambda m: m.group(1).lower() + " m", t, flags=re.I)
+        t = re.sub(r"\b(?:19|20)?([1-9]0)'?s\b", lambda m: DECADES[m.group(1)], t)                  # "the 70s" -> "the seventies"
         t = re.sub(r"\b(\d+)(st|nd|rd|th)\b", lambda m: _words(int(m.group(1)), to="ordinal"), t, flags=re.I)
         def dotted_time(m):               # Whisper often writes "8.30" for half past eight; after "at/by/until..." that is a time
             h, mi = int(m.group(1)), int(m.group(2))
