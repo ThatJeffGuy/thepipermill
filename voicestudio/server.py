@@ -142,22 +142,51 @@ def metrics(n):
     return m
 
 
+def _scan_scores(path, start, tag="val_mos"):
+    """Read a tensorboard event file from byte `start`: [(time, value)] of `tag`, and where to continue next time.
+    The file is mostly audio samples (big records): those are skipped without being read, so even gigabytes take a moment."""
+    import struct
+    from tensorboard.compat.proto import event_pb2
+    pts, pos = [], start
+    with open(path, "rb") as f:
+        f.seek(start)
+        while True:
+            head = f.read(12)
+            if len(head) < 12: break
+            ln = struct.unpack("<Q", head[:8])[0]
+            if ln > 20000:                                            # audio / images: not a score
+                f.seek(ln + 4, 1); end = f.tell()
+                if end > os.fstat(f.fileno()).st_size: break          # still being written
+                pos = end; continue
+            data = f.read(ln + 4)
+            if len(data) < ln + 4: break                              # half-written record: pick it up next time
+            pos = f.tell()
+            if tag.encode() not in data[:ln]: continue
+            e = event_pb2.Event.FromString(data[:ln])
+            for v in e.summary.value:
+                if v.tag == tag:
+                    if v.HasField("simple_value"): pts.append((e.wall_time, v.simple_value))
+                    elif v.tensor.float_val: pts.append((e.wall_time, v.tensor.float_val[0]))
+                    elif len(v.tensor.tensor_content) >= 4: pts.append((e.wall_time, struct.unpack("<f", v.tensor.tensor_content[:4])[0]))
+    return pts, pos
+
+
 def _read_metrics(n, m):
-    cache = CFG.runs / n / "metrics.cache.json"              # parsed scores per log file: re-reading gigabytes of logs on every start is slow
+    cache = CFG.runs / n / "metrics.cache.json"              # per log file: where reading stopped + the scores found, so only new bytes are read
     try:
-        from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
         if not m["files"]:
-            try: m["files"] = {k: (tuple(v[0]), [tuple(x) for x in v[1]]) for k, v in json.loads(cache.read_text()).items()}
+            try: m["files"] = {k: (tuple(v[0]), [tuple(x) for x in v[1]], int(v[2])) for k, v in json.loads(cache.read_text()).items()}
             except (OSError, ValueError, IndexError, TypeError): pass
-        pts = []
+        pts, changed = [], False
         for f in sorted((CFG.runs / n).glob("lightning_logs/version_*/events.out.tfevents.*"), key=lambda p: p.stat().st_mtime):
-            st = f.stat(); key = (st.st_size, st.st_mtime)
-            if m["files"].get(str(f), (None, None))[0] != key:               # only re-read files that changed
-                ea = EventAccumulator(str(f), size_guidance={"scalars": 0}); ea.Reload()
-                m["files"][str(f)] = (key, [(s.wall_time, s.value) for s in ea.Scalars("val_mos")] if "val_mos" in ea.Tags()["scalars"] else [])
+            st = f.stat(); key = (st.st_size, st.st_mtime); old = m["files"].get(str(f))
+            if old is None or old[0] != key:
+                new, pos = _scan_scores(str(f), old[2] if old else 0)
+                m["files"][str(f)] = (key, (old[1] if old else []) + new, pos); changed = True
             pts += m["files"][str(f)][1]
-        try: cache.write_text(json.dumps({k: [list(v[0]), v[1]] for k, v in m["files"].items()}))
-        except OSError: pass
+        if changed:
+            try: cache.write_text(json.dumps({k: [list(v[0]), v[1], v[2]] for k, v in m["files"].items()}))
+            except OSError: pass
         pts.sort()
         m["mos"] = pts[-1][1] if pts else None; m["first"] = pts[0][1] if pts else None
         last = max(m["files"], key=lambda k: m["files"][k][0][1], default=None)             # the newest event file = the current run
