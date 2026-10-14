@@ -749,6 +749,17 @@ function stopPlayer(hide){pAudio.pause();if(pAudio.getAttribute('src'))pAudio.cu
 player.querySelector('.pstop').onclick=()=>stopPlayer(false);pAudio.onended=()=>{playingFile='';markPlaying()};
 async function saveRows(name){try{const j=await api('/api/transcript',{method:'PUT',body:JSON.stringify({voice:name,rows})});dirty=false;say('tr',`Saved. ${j.kept} clips kept.${j.edited?` ${j.edited} clip(s) have changed words: press Reprocess to cut their audio to match.`:''}`,'ok');refresh(true)}catch(e){say('tr',e.message,'err')}}
 
+// One volume for every player on every page. Players get rebuilt whenever the page redraws, and a new one starts at full volume,
+// so the level you set is saved and put on each player as soon as it loads.
+let vol={v:1,m:false};try{const s=JSON.parse(localStorage.getItem('volume')||'null');if(s&&typeof s.v==='number')vol={v:Math.min(1,Math.max(0,s.v)),m:!!s.m}}catch(e){}
+function applyVol(a){if(a.volume!==vol.v)a.volume=vol.v;if(a.muted!==vol.m)a.muted=vol.m}
+document.addEventListener('loadstart',e=>{if(e.target.tagName==='AUDIO')applyVol(e.target)},true);
+document.addEventListener('play',e=>{if(e.target.tagName==='AUDIO')applyVol(e.target)},true);
+document.addEventListener('volumechange',e=>{const a=e.target;if(a.tagName!=='AUDIO')return;
+  if(a.volume===vol.v&&a.muted===vol.m)return;
+  vol={v:a.volume,m:a.muted};try{localStorage.setItem('volume',JSON.stringify(vol))}catch(x){}
+  document.querySelectorAll('audio').forEach(o=>{if(o!==a)applyVol(o)})},true);
+applyVol(pAudio);
 $('#notifyBtn').onclick=()=>setNotify(!notifyOn);paintNotify();
 $('#advBtn').onclick=()=>setMode(mode==='advanced'?'beginner':'advanced');
 function switchVoice(name){cur=name;spSel=null;spPage=0;localStorage.setItem('voice',cur);rows=null;dirty=false;flash={};closeMenu();render()}
