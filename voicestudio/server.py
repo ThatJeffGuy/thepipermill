@@ -605,7 +605,7 @@ class H(BaseHTTPRequestHandler):
                 if not (CFG.data / n / "metadata.csv").exists(): raise ValueError("Prepare the recordings first.")
                 start_job(n, "cull", ["cull", n])
             elif u.path == "/api/train":
-                ep = max(1, min(3000, int(d.get("epochs", 1200))))      # the page offers at most 3000; nothing sent to the server can ask for more
+                ep = max(1, min(3000, int(d.get("epochs", 700))))      # the page offers at most 3000; nothing sent to the server can ask for more
                 if not (CFG.data / n / "metadata.csv").exists(): raise ValueError("Prepare the recordings first.")
                 if trim.pending(n): raise ValueError(f"{len(trim.pending(n))} clip(s) have edited words but their audio was not cut to match. Press 'Reprocess edited clips' in the Transcripts step first.")
                 start_job(n, "train", ["train", n, str(ep)], meta={"epochs": ep})
