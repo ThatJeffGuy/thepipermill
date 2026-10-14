@@ -36,14 +36,16 @@ def pending(name):
 
 def span(words, new_text, lang="en-us"):
     """(start, end, status) of the kept words inside a clip. `words` = [(text, start, end)] from Whisper.
-    status: ok | nomatch (the words cannot be found in the audio) | middle (words were removed from the middle: cannot be cut)."""
+    status: ok | added (you only ADDED words Whisper did not hear: the text is kept, the audio is not cut) | nomatch (the words cannot be found in the audio) | middle (words were removed from the middle: cannot be cut)."""
     toks = []                                    # (token, index of the Whisper word it came from); numbers spoken as words line up
     for i, (w, _, _) in enumerate(words):
         toks += [(t, i) for t in _tok(textnorm.normalize(w, lang))]
     want = _tok(new_text)
     if not toks or not want: return None, None, "nomatch"
     blocks = [b for b in difflib.SequenceMatcher(None, [t for t, _ in toks], want, autojunk=False).get_matching_blocks() if b.size]
-    if sum(b.size for b in blocks) < 0.6 * len(want): return None, None, "nomatch"
+    hit = sum(b.size for b in blocks)
+    if hit >= 0.9 * len(toks) and len(want) > len(toks): return None, None, "added"       # everything Whisper heard is in your text, and you added more: you heard words it missed
+    if hit < 0.6 * len(want): return None, None, "nomatch"
     a, z = blocks[0].a, blocks[-1].a + blocks[-1].size
     if (z - a) - sum(b.size for b in blocks) > 2: return None, None, "middle"       # the audio between first and last match has extra words
     return words[toks[a][1]][1], words[toks[z - 1][1]][2], "ok"
@@ -73,6 +75,7 @@ def run(name, log=print):
         except Exception as e:
             problems.append(f"{f}: could not find the words in the audio ({str(e)[:60]})"); bad += 1; continue
         s, e, st = span(words, cur[f], CFG["espeak_voice"])
+        if st == "added": same += 1; orig[f] = cur[f]; log(f"  {f}: words added that the speech recogniser missed: text updated, audio left as it was"); continue
         if st == "nomatch": problems.append(f"{f}: your words do not match what is said, so the audio was left alone. Delete the clip or restore the words."); bad += 1; continue
         if st == "middle": problems.append(f"{f}: words were removed from the middle, which cannot be cut. Delete the clip, or remove words only from the start or end."); bad += 1; continue
         if s <= EDGE and e >= dur - EDGE:

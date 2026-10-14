@@ -656,6 +656,11 @@ class H(BaseHTTPRequestHandler):
                 r = speakers.load(n)
                 if d.get("on") and not (r and r.get("match")): raise ValueError("Nothing has been matched yet.")
                 voices.write(n, use_match=bool(d.get("on")))
+            elif u.path == "/api/trim/revert":          # put the original words back on clips Reprocess could not cut (so they stop counting as edited)
+                root = CFG.data / n; cur, orig = trim._read(root / "metadata.csv"), trim._read(root / "metadata.orig.csv"); fs = [str(f) for f in (d.get("files") or [])][:500]
+                for f in fs:
+                    if f in cur and f in orig: cur[f] = orig[f]
+                (root / "metadata.csv").write_text("".join(f"{f}|{t}\n" for f, t in cur.items()), encoding="utf-8")
             elif u.path == "/api/trim":
                 if not trim.pending(n): raise ValueError("No clip's words have been changed, so there is nothing to reprocess. Save your edits first.")
                 start_job(n, "trim", ["trim", n])

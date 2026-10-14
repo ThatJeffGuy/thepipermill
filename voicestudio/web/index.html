@@ -269,7 +269,11 @@ const jobName=k=>JOBNAME[k]||k;
 const logBox=()=>'';          // the console lives in the permanent status bar (Show Console)
 // Beginner mode has no console: a job that failed gets one plain line instead (a job you stopped says so)
 function jobNote(v,kind,force){
-  const j=v.job;if(!j||j.kind!==kind||j.running||!j.rc)return'';
+  const j=v.job;
+  if(j&&kind==='trim'&&j.kind==='trim'&&!j.running&&j.rc===0){     // Reprocess finished: say what happened to each edited clip, not just "0 clips trimmed"
+    const lines=(j.log||'').split('\n').map(x=>x.trim()),done=lines.find(x=>x.startsWith('Done:')),bad=lines.filter(x=>x.startsWith('- '));
+    return done?`<div class="msg ${bad.length?'':'ok'}" ${bad.length?'style="color:var(--warn)"':''}>${esc(done)}</div>${bad.map(x=>{const f=(x.slice(2).match(/^[^:]+/)||[''])[0];return `<div class="msg" style="color:var(--warn)">${ic('warn')}${esc(x.slice(2))} <button class="linkbtn" data-restore="${esc(f)}">Restore the original words</button></div>`}).join('')}`:''}
+  if(!j||j.kind!==kind||j.running||!j.rc)return'';
   if(j.rc<0)return'<div class="msg">Stopped.</div>';
   const last=(j.log||'').split('\n').map(x=>x.trim()).filter(Boolean).pop()||'Something went wrong.';
   return`<div class="msg err">That did not finish: ${esc(last.replace(/^[A-Za-z.]*(Error|Exception|SystemExit):\s*/,''))}</div>`}
@@ -531,7 +535,7 @@ function render(){
       run('speakers')?'Finding the speakers… please wait.':v.imported?'This voice has no recordings to scan: press Skip.':!v.people?'Find the speakers, or press Skip if it is just you.':'',
       run('match')?'Matching your voice… please wait.':'',
       run('prep')||run('cull')?'Preparing… please wait.':!prepDone?'Prepare your recordings to continue.':'',
-      dirty?'Save your changes first, or press Skip.':run('score')?'Checking your clips… please wait.':run('trim')?'Reprocessing… please wait.':v.edited?'Press Reprocess so the audio matches your edited words.':!wordsDone?'Open your clips to check them, or press Skip.':'',
+      dirty?'Save your changes first, or press Skip.':run('score')?'Checking your clips… please wait.':run('trim')?'Reprocessing… please wait.':!wordsDone?'Open your clips to check them, or press Skip.':'',
       t.running?`${v.name} is training on the GPU…`:!t.checkpoints?'Start training to continue.':'',
       ''];
     const working=[run('analyze')?'Analyzing your recordings… please wait.':run('import')?'Importing the dataset… please wait.':run('restore')?'Restoring the backup… please wait.':null,run('speakers')?'Finding the speakers… please wait.':null,run('match')?'Finding more like your ticked clips… please wait.':null,run('prep')||run('cull')?'Preparing… please wait.':null,run('trim')?'Reprocessing… please wait.':run('score')?'Checking your clips… please wait.':null,
@@ -548,7 +552,7 @@ function render(){
     ${wcards[stepNo]()}
     <div class="nav"><span class="row" style="gap:8px;flex-wrap:nowrap"><button class="sec" id="prevBtn" ${stepNo>0?'':'disabled'}>‹ Prev</button>${v.imported?'':`<button class="sec" id="resetBtn" title="Go back to the beginning with this voice. Your recordings are never touched." ${S.busy?'disabled':''}>Start over</button>`}</span>
       <span class="hint nm" id="navMsg">${working[stepNo]?live(esc(working[stepNo])):esc(gate[stepNo])}</span>
-      <span class="row">${optional[stepNo]?`<button class="sec" id="skipBtn" ${(run('speakers')||run('match')||run('trim')||run('score')||(stepNo===4&&v.edited))?'disabled':''}>Skip ›</button>`:''}${stepNo<names.length-1?`<button id="nextBtn" ${gate[stepNo]?'disabled':''}>Next ›</button>`:`<button id="zipBtn" ${v.exported?'':'disabled'} title="${v.exported?'Download the voice as one zip: the .onnx and .onnx.json files':'Make a test clip first: that exports the voice files'}">Download</button>`}</span></div>
+      <span class="row">${optional[stepNo]?`<button class="sec" id="skipBtn" ${(run('speakers')||run('match')||run('trim')||run('score'))?'disabled':''}>Skip ›</button>`:''}${stepNo<names.length-1?`<button id="nextBtn" ${gate[stepNo]?'disabled':''}>Next ›</button>`:`<button id="zipBtn" ${v.exported?'':'disabled'} title="${v.exported?'Download the voice as one zip: the .onnx and .onnx.json files':'Make a test clip first: that exports the voice files'}">Download</button>`}</span></div>
 `;
   if(keep.sp&&$('#spNum'))$('#spNum').value=keep.sp;if(keep.ff!=null&&$('#frFind')){$('#frFind').value=keep.ff;$('#frRep').value=keep.fr;$('#frCase').checked=!!keep.fc}if(keep.wh&&$('#which'))$('#which').value=keep.wh;if(keep.txt!=null&&$('#txt'))$('#txt').value=keep.txt;if(keep.ep!=null&&$('#ep'))$('#ep').value=keep.ep;if(keep.mm!=null&&$('#maxMin'))$('#maxMin').value=keep.mm;if(keep.gl!=null&&$('#gpuLoad'))$('#gpuLoad').value=keep.gl;
   if(rows&&rowsFor===v.name){if(v.scored&&!rowsScored&&!dirty){rowsScored=true;loadRows(v.name).catch(()=>{})}else if(!v.scored&&rowsScored){rows.forEach(r=>r.score=null);rowsScored=false}}
@@ -572,7 +576,8 @@ function wire(v){
   document.querySelectorAll('[data-pg]').forEach(x=>x.onclick=()=>{spPage+=+x.dataset.pg;render()});
   b('#resetBtn',()=>openReset(v));b('#bkBtn',()=>{location.href=`/backup/${encodeURIComponent(v.name)}.zip?ckpt=${$('#bkCk')&&$('#bkCk').checked?1:0}`});b('#renameBtn',()=>openRename(v));
   const leaveWords=()=>{if(wiz[v.name]!==4||!v.prepared)return true;
-    if(!(rows&&rowsFor===v.name))return confirm('You have not checked any clips yet. Wrong words and stray voices are learned by the voice too.\n\nGo on to training anyway?');
+    if(!(rows&&rowsFor===v.name))return (!v.edited||confirm('Some clips have edited words the audio does not match yet. Go on anyway?'))&&confirm('You have not checked any clips yet. Wrong words and stray voices are learned by the voice too.\n\nGo on to training anyway?');
+    if(v.edited&&!confirm(`${v.edited} clip${v.edited>1?'s have':' has'} edited words that the audio does not match yet (Reprocess could not cut ${v.edited>1?'them':'it'}). Training would learn the new words against the old audio.\n\nGo on anyway? (You can restore the original words on the clip first.)`))return false;
     const left=guideLeft(),tot=rows.filter(r=>r.tier).length;
     return !left||confirm(`${left} of the ${tot} suggested clips have not been checked yet (the likely errors come first, so those are the ones that matter most).\n\nGo on to training anyway?`)};
   b('#prevBtn',()=>go(v.name,wiz[v.name]-1));b('#nextBtn',()=>{if(leaveWords())go(v.name,wiz[v.name]+1)});b('#skipBtn',()=>{if(leaveWords())go(v.name,wiz[v.name]+1)});
@@ -611,6 +616,7 @@ function wire(v){
   b('#frBtn',()=>{const f=$('#frFind').value,rp=$('#frRep').value;if(!f||!rows)return;const re=new RegExp(f.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),$('#frCase').checked?'g':'gi');let n=0;
     rows.forEach(r=>{const t=r.text.replace(re,()=>rp);if(t!==r.text){r.text=t;n++}});
     if(!n)return say('tr','Nothing to replace.');dirty=true;say('tr',`Replaced in ${n} clip${n>1?'s':''}. Press Save to apply.`,'ok')});
+  document.querySelectorAll('[data-restore]').forEach(el=>el.onclick=async()=>{el.disabled=true;try{await api('/api/trim/revert',{method:'POST',body:JSON.stringify({voice:v.name,files:[el.dataset.restore]})});rows=null;rowsFor='';say('tr','Original words restored.','ok');await refresh(true);loadRows(v.name).catch(()=>{})}catch(e){say('tr',e.message,'err')}});
   b('#loadRows',()=>loadRows(v.name));b('#saveRows',()=>saveRows(v.name));
   b('#trainBtn',async()=>{await act('/api/maxminutes',{voice:v.name,minutes:+$('#maxMin').value||0},'train');await act('/api/gpuload',{voice:v.name,percent:+$('#gpuLoad').value||100},'train');return act('/api/train',{voice:v.name,epochs:+$('#ep').value},'train')});
   ['#ep','#maxMin'].forEach(i=>{const e=$(i);if(e)e.onchange=updPlan});const mx=$('#maxMin');if(mx)mx.addEventListener('change',()=>saveMax(v,mx.value));const gl=$('#gpuLoad');if(gl)gl.oninput=updPlan;
