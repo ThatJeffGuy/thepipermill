@@ -479,8 +479,8 @@ function render(){
   ()=>`<div class="card">${hd(5,finished,'Train')}
     <p class="hint">Adapts a ready-made base voice to your recordings on the GPU. How long it takes depends on your graphics card, the length you choose and how much speech is used. Training keeps running if you close this page, and you can stop and resume at any time.</p>
     <div class="plan" id="planBox">
-      <div class="pl" id="plL"><span>Length ${tip('Training length is counted in rounds (epochs): one round is one pass through your clips. When you resume, each choice adds that many rounds to what is already done. More rounds give the voice longer to improve, with smaller gains each time. Normal suits most voices, and you can stop early once the test clip sounds right.')}</span>
-        <select id="ep" ${t.running?'disabled':''}>${(()=>{const dn=t.checkpoints&&t.done>0?t.done:0,L=[[300,'Quick'],[1000,'Normal'],[2000,'Long']].map(([n,l])=>[n+dn,`${l} (${dn?'+'+n+' more':n} rounds)`]),want=t.total||(v.clip_minutes<10?300:1000)+dn;
+      <div class="pl" id="plL"><span>Length ${tip('Training length is counted in rounds (epochs): one round is one pass through your clips. More rounds give the voice longer to improve, with smaller gains each time. Normal suits most voices (rounds are counted from the base voice, so a voice already at round 111 resumed with Short trains up to round 700), and you can stop early once the test clip sounds right.')}</span>
+        <select id="ep" ${t.running?'disabled':''}>${(()=>{const L=[[300,'Quick'],[700,'Short'],[1200,'Normal'],[2000,'Long'],[3000,'Extra long']].map(([n,l])=>[n,`${l} (${n} rounds)`]),want=t.total||(v.clip_minutes<10?300:1200);
         if(t.total&&!L.some(x=>x[0]===t.total))L.unshift([t.total,`Current run (${t.total} rounds)`]);   /* a run started with another length keeps showing it */
         return L.map(([n,l])=>`<option value="${n}" ${n===want?'selected':''}>${l}</option>`).join('')})()}</select><div class="mbar"><i></i></div><b></b></div>
       <div class="pl" id="plM"><span>Speech ${tip('Fine-tuning rarely benefits from more than about two hours of speech, while every extra minute slows each round. If you have more than the amount you choose, the cleanest clips that sound most like your speaker are used. Your clips are never deleted.')}</span>
@@ -640,7 +640,7 @@ function updPlan(){
   const v=S.voices.find(x=>x.name===cur),ep=$('#ep'),mm=$('#maxMin');if(!v||!ep||!mm)return;
   const set=(id,pct,cls,txt,sub)=>{const el=$(id);if(!el)return;el.className='pl'+(cls?' '+cls:'');const bar=el.querySelector('i');if(bar)bar.style.width=Math.max(0,Math.min(100,pct))+'%';el.querySelector('b').innerHTML=txt+(sub?`<small>${sub}</small>`:'')};
   const rounds=+ep.value,want=+mm.value,have=v.prepared?v.clip_minutes:want,use=Math.min(want,have);
-  set('#plL',100*rounds/2000,'',rounds+' rounds',rounds<=300?'a quick first pass':rounds<=1000?'suits most voices':'for the finest polish');
+  set('#plL',100*rounds/3000,'',rounds+' rounds',rounds<=300?'a quick first pass':rounds<=1200?'suits most voices':'for the finest polish');
   set('#plM',100*use/270,use>=60&&use<=120?'good':'warn',Math.round(use)+' min',(use>=60&&use<=120?'in the sweet spot':use<60?'below the ideal range':'above the ideal range')+(v.prepared&&have<want?` (all you have)`:''));
   const gl=$('#gpuLoad');if(gl){const pc=+gl.value,top=v.batch_top,bs=top?Math.max(2,Math.round(top*pc/100)):null,lv=pc>=100?'Maximum':pc>=70?'Heavy':pc>=40?'Moderate':'Light';
     gl.style.setProperty('--p',(100*(pc-10)/90)+'%');set('#plG',0,pc>=100?'warn':'good',lv+' · '+pc+'%',bs?`batch size ${bs} of ${top}`:(pc>=100?'uses nearly all GPU memory':'leaves memory free'));}
