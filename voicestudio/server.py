@@ -7,7 +7,7 @@ import json, os, re, shutil, signal, subprocess, sys, tempfile, threading, time,
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote
-from . import analyze, backup, base, compare, gpu as gpu_mod, importer, logclean, models, progress, speakers, train as train_mod, trim, voices
+from . import analyze, backup, base, compare, gpu as gpu_mod, importer, logclean, models, progress, speakers, train as train_mod, triage, trim, voices
 from .config import CFG
 
 WEB = Path(__file__).parent / "web"
@@ -539,7 +539,7 @@ class H(BaseHTTPRequestHandler):
                                 "Very slow for this length: words may be missing from the text" if (dur > 2.5 and wps < 1.0) else
                                 "Almost no text" if len(t.strip()) < 3 else "")
                         rows.append({"file": f, "text": t, "dur": round(dur, 1), "warn": warn, "score": (sc or {}).get(f), "approved": f in ok})
-                return self._json({"rows": rows, "scored": sc is not None})
+                return self._json({"rows": rows, "scored": sc is not None, "triage": triage.triage(rows)})
             if u.path.startswith("/download-voice/") and u.path.endswith(".zip"):
                 return self._voice_zip(CFG.check_name(os.path.basename(unquote(u.path))[:-4]))
             if u.path.startswith("/dataset/") and u.path.endswith(".zip"):
