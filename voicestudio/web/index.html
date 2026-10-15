@@ -485,8 +485,8 @@ function render(){
         return L.map(([n,l])=>`<option value="${n}" ${n===want?'selected':''}>${l}</option>`).join('')})()}</select><div class="mbar"><i></i></div><b></b></div>
       <div class="pl" id="plM"><span>Speech ${tip('Fine-tuning rarely benefits from more than about two hours of speech, while every extra minute slows each round. If you have more than the amount you choose, the cleanest clips that sound most like your speaker are used. Your clips are never deleted.')}</span>
         <select id="maxMin" ${t.running?'disabled':''}>${minOpts(v)}</select><div class="mbar band"><i></i></div><b></b></div>
-      <div class="pl" id="plG"><span>GPU usage ${tip('How hard training pushes your graphics card. Lower settings use less video memory, so the computer stays responsive and the card is far less likely to run out of memory, at the cost of slower training. Maximum is the largest size that suits your card, and it can use nearly all of its memory.')}${v.gpu_gb?`<small>${v.gpu_gb} GB VRAM</small>`:''}</span>
-        <input type="range" id="gpuLoad" min="10" max="100" step="10" value="${v.gpu_load||(t.checkpoints?100:70)}" ${t.running?'disabled':''} aria-label="GPU usage"><b></b></div>
+      <div class="pl" id="plG"><span>Batch size ${tip('How many clips are trained at once, as a share of the largest batch that suits your card. Larger batches train faster; smaller ones are gentler on the card. This sets the batch size only: it does not cap video memory. Training still reserves most of the available video memory at any setting, so close other GPU-heavy programs while it runs. Changes apply the next time training starts or resumes.')}${v.gpu_gb?`<small>${v.gpu_gb} GB VRAM</small>`:''}</span>
+        <input type="range" id="gpuLoad" min="10" max="100" step="10" value="${v.gpu_load||(t.checkpoints?100:70)}" ${t.running?'disabled':''} aria-label="Batch size"><b></b></div>
       <div class="sw">${t.running?'Training is running, so these are locked. ':''}Recommended: Short length with 60 to 120 minutes of speech. Changes apply the next time you start or resume.</div>
     </div>
     <div class="row">${t.running?'<button class="bad" id="stopBtn" title="Stop training. You can resume later from the most recent checkpoint.">Stop training</button>':`<button id="trainBtn" ${(!prepDone||S.busy)?'disabled':''}>${t.checkpoints?'Resume training':'Start training'}</button>`}
@@ -643,7 +643,7 @@ function updPlan(){
   set('#plL',100*rounds/3000,'',rounds+' rounds',rounds<=300?'a quick first pass':rounds<=1200?'suits most voices':'for the finest polish');
   set('#plM',100*use/270,use>=60&&use<=120?'good':'warn',Math.round(use)+' min',(use>=60&&use<=120?'in the sweet spot':use<60?'below the ideal range':'above the ideal range')+(v.prepared&&have<want?` (all you have)`:''));
   const gl=$('#gpuLoad');if(gl){const pc=+gl.value,top=v.batch_top,bs=top?Math.max(2,Math.round(top*pc/100)):null,lv=pc>=100?'Maximum':pc>=70?'Heavy':pc>=40?'Moderate':'Light';
-    gl.style.setProperty('--p',(100*(pc-10)/90)+'%');set('#plG',0,pc>=100?'warn':'good',lv+' · '+pc+'%',bs?`batch size ${bs} of ${top}`:(pc>=100?'uses nearly all GPU memory':'leaves memory free'));}
+    gl.style.setProperty('--p',(100*(pc-10)/90)+'%');set('#plG',0,pc>=100?'warn':'good',lv+' · '+pc+'%',bs?`batch size ${bs} of ${top}; memory use is not capped`:'memory use is not capped');}
 }
 function paintGpu(g){
   const set=(id,pct,txt,cls)=>{const el=$(id);if(!el)return;el.className='gm'+(cls?' '+cls:'');el.querySelector('i').style.width=Math.max(0,Math.min(100,pct||0))+'%';el.querySelector('b').textContent=txt};
