@@ -6,6 +6,7 @@ port = 8765
 espeak_voice = "en-us"              # language of your recordings (espeak-ng voice name; the base voices are English)
 audio_language = ""                  # videos with several audio tracks: prefer this language (e.g. "eng"); default = the first track
 whisper_model = "openai/whisper-large-v3-turbo"   # writes down what you said; try "openai/whisper-small" on small GPUs
+val_every = 10                      # check quality + save a checkpoint every N rounds: larger is faster (about 30% at 5), 1 = every round
 train_precision = ""                 # "" = Piper default (full precision). "bf16-mixed" can train faster; compare the result by ear
 whisper_beams = 5                   # Prepare: transcription search width (1 = much faster, 5 = slightly more accurate)
 batch_size = 0                      # 0 = automatic from GPU memory (8 GB -> 8, 12-16 GB -> 16)

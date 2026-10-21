@@ -56,3 +56,18 @@ def triage(rows, spot=SPOT, maybe=MAYBE):
     for r in rows:
         if r["tier"]: c[r["tier"]] += 1
     return {"problem": c[1], "questionable": c[2], "spot": c[3], "total": len(rows)}
+
+
+def triage_verified(rows, agree=0.05):
+    """Correction queue once the automatic check has run. Adds r['tier'] (1 = needs a look, 0 = confident: hidden) and r['why'].
+    A clip is confident when the checker's second listen agrees with the text (r['wer'] <= agree) and none of the rule-based warnings
+    of reasons() apply (pace, symbols, different speaker...). A clip with no check result yet is shown. There is no random sample:
+    if you want to look anyway, use Show all."""
+    n = 0
+    for r in rows:
+        sev, why = reasons(r); why = [w for w in why if w]; r["sev"] = sev
+        if r.get("heard") is None: why = ["Not checked yet"] + why
+        elif r.get("wer", 0) > agree: why = [f"The checker heard something different ({round(100 * r['wer'])}% of the words)"] + why
+        needs = r.get("heard") is None or r.get("wer", 0) > agree or sev >= 4
+        r["why"] = why if needs else []; r["tier"] = 1 if needs else 0; r["rnd"] = hashlib.md5(r["file"].encode()).hexdigest(); n += needs
+    return {"problem": n, "questionable": 0, "spot": 0, "hidden": len(rows) - n, "total": len(rows), "verified": True}

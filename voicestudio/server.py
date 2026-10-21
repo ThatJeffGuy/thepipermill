@@ -215,7 +215,7 @@ def gpu_stats():
 
 
 _NOTE = {}      # (voice, job) -> was it running when we last looked
-JOBWORDS = {"import": "importing the dataset", "restore": "restoring the backup", "compare": "comparing versions", "speakers": "speaker identification", "match": "matching your voice", "score": "checking your clips", "prep": "preparing your recordings",
+JOBWORDS = {"silence": "trimming silence", "verify": "checking the transcripts", "fastref": "preparing the reference clip", "fast": "cloning the voice", "cleanprev": "making the clean-up previews", "master": "cleaning the recordings", "import": "importing the dataset", "restore": "restoring the backup", "compare": "comparing versions", "speakers": "speaker identification", "match": "matching your voice", "score": "checking your clips", "prep": "preparing your recordings",
             "trim": "reprocessing clips", "export": "making the test clip", "training": "training"}
 
 
@@ -275,7 +275,7 @@ def _watch():
 def _compare_info(n):
     try: m = json.loads(compare.meta_path(n).read_text())
     except (OSError, ValueError): return None
-    for i, it in enumerate(m["items"]): it["file"] = compare.clip_path(n, i).name
+    for i, it in enumerate(m["items"]): it.setdefault("file", compare.clip_path(n, i).name)
     return m
 
 
@@ -389,12 +389,15 @@ def info(n):
     ep = re.findall(r"Epoch (\d+)/(\d+)", tl); mos = re.findall(r"val_mos[:=]\s*([\d.]+)", tl)
     try: total = json.loads((runs / "train.meta").read_text())["epochs"]
     except (OSError, ValueError, KeyError): total = None
+    try: meta_base = json.loads((runs / "train.meta").read_text()).get("base")      # a run that starts at epoch 0 (warm-started multi-speaker voice) says so here
+    except (OSError, ValueError): meta_base = None
     done = (int(ep[-1][0]) - (int(ep[-1][1]) - total)) if (ep and total) else None
     if done is None and ck and total:             # the trainer prints no "Epoch n/m" lines into a log file: read progress from the checkpoint names (epoch=NNNN-...) instead
         try:
             m0 = re.search(r"base is at (\d+)", open(runs / "train.log", "rb").read(8000).decode(errors="ignore"))
             eps = [int(e) for p in ck for e in re.findall(r"epoch=(\d+)", p.name)]
-            if m0 and eps: done = min(total, max(0, max(eps) - int(m0.group(1))))
+            b0 = int(m0.group(1)) if m0 else meta_base
+            if b0 is not None and eps: done = min(total, max(0, max(eps) - int(b0)))
         except OSError: pass
     j = JOBS.get(n); job = None
     if j: job = {"kind": j["kind"], "running": j["proc"].poll() is None, "rc": j["proc"].poll(), "log": tail(j["log"]), "progress": progress.read(n, j["kind"])}
@@ -404,9 +407,17 @@ def info(n):
         try: sp = speakers.person_pitches(n) or sp          # older scan: add pitch + clip ranges once (a couple of seconds, no GPU)
         except Exception: pass
     cov = progress_cov(n)
-    return {"one_person": bool(m.get("one_person")), "coverage": cov, "name": n, "base": m.get("base"), "base_used": m.get("base_used"),
+    from . import master as _master
+    from . import fast as _fast
+    fm = m.get("path") == "fast"; fok, fwhy = _fast.available() if fm else (False, "")
+    fa = {"ok": fok, "why": fwhy, "ref": (CFG.runs / n / "fast" / "ref.wav").exists(), "ref_text": m.get("fast_ref_text", ""), "ref_source": m.get("fast_ref_source", ""),
+          "minutes": m.get("fast_minutes") or 40, "report": m.get("fast_report")}
+    from . import verify as _verify
+    _cf = _verify.read(n)
+    cl = {"opts": _master.options(n), "preview": _master.state(n), "approved": _master.approved(n), "master": _master.available(n)}
+    return {"verified": _cf is not None, "fast_mode": fm, "fast": fa, "clean": cl, "one_person": bool(m.get("one_person")), "coverage": cov, "name": n, "base": m.get("base"), "base_used": m.get("base_used"),
             "people": sp["people"] if sp else None, "keep": m.get("keep_people") or [], 
-            "scored": speakers.score_path(n).exists(), "imported": bool(m.get("imported")), "restoring": bool(m.get("restoring")), "words_seen": bool(m.get("words_seen")), "people_names": m.get("people_names") or {}, "people_voices": m.get("people_voices") or {}, "voice_type": m.get("voice_type") or "", "ref_yes": m.get("ref_yes") or [], "ref_no": m.get("ref_no") or [], "strict": m.get("strict") or "normal", "use_match": bool(m.get("use_match")),
+            "scored": speakers.score_path(n).exists(), "imported": bool(m.get("imported")) or fm, "restoring": bool(m.get("restoring")), "words_seen": bool(m.get("words_seen")), "people_names": m.get("people_names") or {}, "people_voices": m.get("people_voices") or {}, "voice_type": m.get("voice_type") or "", "ref_yes": m.get("ref_yes") or [], "ref_no": m.get("ref_no") or [], "strict": m.get("strict") or "normal", "use_match": bool(m.get("use_match")),
             "match": ({k: sp["match"].get(k) for k in ("minutes", "stretches", "strict", "samples", "settled", "history", "found", "cap")} if sp and sp.get("match") else None), "people_stale": speakers.stale(n) if sp else False, "folder": str(src) if src else None, "folder_ok": bool(src and src.is_dir()),
             "files": [{"name": speakers.rel(n, p), "mb": round(p.stat().st_size / 1e6, 1)} for p in files],
             "clips": clips, "clip_minutes": round(sum(_size(p) for p in (CFG.data / n / "wavs").glob("*.wav")) / (2 * 22050 * 60), 1), "prepared": md.exists(), "max_minutes": m.get("max_minutes") or 0, "scan_hours": m.get("scan_hours"), "analysis": analyze.summary(n, files), "scan": (sp or {}).get("scan"), "gpu_load": m.get("gpu_load") or 0, "batch_top": batch_top(), "gpu_gb": gpu_gb(), "edited": len(trim.pending(n)),
@@ -417,7 +428,7 @@ def info(n):
             "compare": _compare_info(n)}
 
 
-def browse(path, zips=False):
+def browse(path, zips=False, files=False):
     """List the sub-folders of a folder for the page's folder chooser (folders, and .zip files when asked: never any other file contents)."""
     home = Path.home()
     p = Path(path).expanduser() if path else home
@@ -428,13 +439,14 @@ def browse(path, zips=False):
         dirs = [c.name for c in entries if not c.name.startswith(".") and c.is_dir()]
         audio = sum(1 for c in entries if c.is_file() and c.suffix.lower() in AUDIO_EXT)
         zlist = [c.name for c in entries if zips and not c.name.startswith(".") and c.is_file() and c.suffix.lower() == ".zip"]
+        flist = [c.name for c in entries if files and not c.name.startswith(".") and c.is_file() and c.suffix.lower() in AUDIO_EXT]
     except PermissionError:
         raise ValueError("You do not have permission to open that folder.")
     except OSError as e:
         raise ValueError(str(e))
     places = [str(x) for x in (home, home / "Music", home / "Downloads", home / "Documents", home / "Desktop", Path("/media"), Path("/mnt"),
                                Path("/run/media") / home.name) if x.is_dir()]
-    return {"path": str(p), "parent": str(p.parent) if p != p.parent else None, "dirs": dirs[:1500], "zips": zlist[:1500], "audio": audio, "places": places}
+    return {"path": str(p), "parent": str(p.parent) if p != p.parent else None, "dirs": dirs[:1500], "zips": zlist[:1500], "files": flist[:1500], "audio": audio, "places": places}
 
 
 class H(BaseHTTPRequestHandler):
@@ -515,7 +527,7 @@ class H(BaseHTTPRequestHandler):
         u = urlparse(self.path); q = parse_qs(u.query)
         try:
             if u.path == "/": return self._file(WEB / "index.html", "text/html; charset=utf-8")
-            if u.path == "/api/browse": return self._json(browse(q.get("path", [""])[0], q.get("zips", [""])[0] == "1"))
+            if u.path == "/api/browse": return self._json(browse(q.get("path", [""])[0], q.get("zips", [""])[0] == "1", q.get("audiofiles", [""])[0] == "1"))
             if u.path.startswith("/backup/") and u.path.endswith(".zip"):
                 n = CFG.check_name(os.path.basename(unquote(u.path))[:-4])
                 if not voices.exists(n): return self._err("no such voice", 404)
@@ -545,6 +557,15 @@ class H(BaseHTTPRequestHandler):
                                 "Very slow for this length: words may be missing from the text" if (dur > 2.5 and wps < 1.0) else
                                 "Almost no text" if len(t.strip()) < 3 else "")
                         rows.append({"file": f, "text": t, "dur": round(dur, 1), "warn": warn, "score": (sc or {}).get(f), "approved": f in ok})
+                from . import verify
+                cf = verify.read(n)
+                if cf:                                                     # the automatic check has run: show only the clips it is not sure about
+                    for r in rows:
+                        c = cf.get(r["file"])
+                        if c: r["heard"] = c["heard"]; r["wer"] = round(verify.wer(r["text"], c["heard"]), 3)
+                    for r in rows:
+                        if r["approved"]: r["heard"] = r.get("heard", ""); r["wer"] = 0.0           # you approved it: it stays hidden
+                    return self._json({"rows": rows, "scored": sc is not None, "triage": triage.triage_verified(rows)})
                 return self._json({"rows": rows, "scored": sc is not None, "triage": triage.triage(rows)})
             if u.path.startswith("/download-voice/") and u.path.endswith(".zip"):
                 return self._voice_zip(CFG.check_name(os.path.basename(unquote(u.path))[:-4]))
@@ -553,6 +574,12 @@ class H(BaseHTTPRequestHandler):
             if u.path.startswith("/audio/"):
                 _, _, n, f = u.path.split("/", 3)
                 return self._file(CFG.data / CFG.check_name(n) / "wavs" / os.path.basename(unquote(f)), "audio/wav")
+            if u.path.startswith("/fast-ref/") and u.path.endswith(".wav"):
+                return self._file(CFG.runs / CFG.check_name(os.path.basename(unquote(u.path))[:-4]) / "fast" / "ref.wav", "audio/wav")
+            if u.path.startswith("/clean-preview/"):
+                _, _, vn, fn = u.path.split("/", 3)
+                if not re.fullmatch(r"p[0-9]_(original|cleaned)\.wav", fn): return self._err("not found", 404)
+                return self._file(CFG.runs / CFG.check_name(vn) / "clean-preview" / fn, "audio/wav")
             if u.path.startswith("/speaker-sample/"):
                 _, _, n, f = u.path.split("/", 3)
                 return self._file(CFG.runs / CFG.check_name(n) / "speakers" / os.path.basename(unquote(f)), "audio/wav")
@@ -614,7 +641,7 @@ class H(BaseHTTPRequestHandler):
                 ep = max(1, min(3000, int(d.get("epochs", 700))))      # the page offers at most 3000; nothing sent to the server can ask for more
                 if not (CFG.data / n / "metadata.csv").exists(): raise ValueError("Prepare the recordings first.")
                 if trim.pending(n): raise ValueError(f"{len(trim.pending(n))} clip(s) have edited words but their audio was not cut to match. Press 'Reprocess edited clips' in the Transcripts step first.")
-                start_job(n, "train", ["train", n, str(ep)], meta={"epochs": ep})
+                start_job(n, "train", ["train", n, str(ep)], meta={"epochs": ep, **({"base": 0} if voices.read(n).get("speakers") else {})})
             elif u.path == "/api/score":
                 if not (CFG.data / n / "metadata.csv").exists(): raise ValueError("Prepare the recordings first.")
                 need_hf()
@@ -658,6 +685,36 @@ class H(BaseHTTPRequestHandler):
                 if vt and speakers.load(n):
                     try: speakers.person_pitches(n)          # a few seconds, no GPU: so the list can show who fits
                     except Exception: pass
+            elif u.path == "/api/silence":
+                start_job(n, "silence", ["silence", n] + (["--pauses"] if d.get("pauses") else []))
+            elif u.path == "/api/verify":
+                start_job(n, "verify", ["verify", n])
+            elif u.path == "/api/path":
+                pth = d.get("path")
+                if pth not in ("classic", "fast"): raise ValueError("Unknown path.")
+                voices.write(n, path=pth, **({"imported": False} if pth == "classic" and not (CFG.data / n / "metadata.csv").exists() else {}))
+            elif u.path == "/api/fast/ref":
+                fl = str(d.get("file") or "").strip()
+                if not fl or not Path(fl).expanduser().is_file(): raise ValueError("Choose an audio file first.")
+                start_job(n, "fastref", ["fast-ref", n, fl] + (["--text", str(d["text"]).strip()] if str(d.get("text") or "").strip() else []))
+            elif u.path == "/api/fast/minutes":
+                voices.write(n, fast_minutes=max(5, min(120, int(d.get("minutes") or 40))))
+            elif u.path == "/api/fast/run":
+                if not (CFG.runs / n / "fast" / "ref.wav").exists(): raise ValueError("Choose the reference clip first.")
+                start_job(n, "fast", ["fast", n, "--minutes", str(voices.read(n).get("fast_minutes") or 40)])
+            elif u.path == "/api/clean/options":
+                from . import master
+                allowed = ("vocals", "highpass", "denoise", "boost", "loudness")
+                voices.write(n, clean_opts={**master.options(n), **{k: bool(v) for k, v in (d.get("opts") or {}).items() if k in allowed}})
+            elif u.path == "/api/clean/preview":
+                start_job(n, "cleanprev", ["clean-preview", n, "--n", "4"])
+            elif u.path == "/api/clean/decide":
+                from . import master
+                master.decide(n, d.get("id"), bool(d.get("ok")))
+            elif u.path == "/api/clean/master":
+                from . import master
+                if not master.approved(n): raise ValueError("Approve every preview clip first.")
+                start_job(n, "master", ["clean-master", n])
             elif u.path == "/api/oneperson":
                 on = bool(d.get("on"))
                 voices.write(n, one_person=on, **({"use_match": False, "keep_people": []} if on else {}))

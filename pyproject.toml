@@ -17,4 +17,4 @@ voicestudio = "voicestudio.cli:main"
 packages = ["voicestudio"]
 
 [tool.setuptools.package-data]
-voicestudio = ["web/*"]
+voicestudio = ["web/*", "data/*"]

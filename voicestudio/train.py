@@ -128,6 +128,9 @@ def run(name, extra_epochs=1000, batch=0):
     ckpt = newest_ckpt(name)
     print(f"{'resuming from ' + str(ckpt) if ckpt else 'starting from base voice ' + key}; batch size {batch}; "
           f"training to epoch {b_epoch + extra_epochs} (base is at {b_epoch})", flush=True)
+    spk = m.get("speakers") or []                    # multi-speaker voice (e.g. low / bright tones): metadata lines are file|speaker|text
+    warm = m.get("warmstart_from") if (spk and not ckpt) else None      # first run: copy every matching weight from an existing single-speaker checkpoint, counting from round 0
+    if spk: b_epoch = 0                              # a multi-speaker voice counts rounds from 0, not from the base voice's epoch
     cur = ckpt_epoch(ckpt) if ckpt else None
     if cur is not None and cur >= b_epoch + extra_epochs:      # the trainer would stop with a confusing error: say what is going on instead
         done = cur - b_epoch
@@ -149,7 +152,8 @@ def run(name, extra_epochs=1000, batch=0):
            "--trainer.max_epochs", str(b_epoch + extra_epochs),
            "--trainer.default_root_dir", str(run_dir),
            "--trainer.log_every_n_steps", "10",
-           "--ckpt_path", str(ckpt or b)]
+           ] + (["--ckpt_path", str(ckpt or b)] if not warm else ["--model.warmstart_ckpt", str(warm)]) + (["--model.num_speakers", str(len(spk))] if spk else [])
+    if int(CFG["val_every"]) > 1: cmd += ["--trainer.check_val_every_n_epoch", str(int(CFG["val_every"]))]; print(f"quality check every {int(CFG['val_every'])} rounds", flush=True)
     if CFG["train_precision"]:
         cmd += ["--trainer.precision", str(CFG["train_precision"])]; print(f"training precision: {CFG['train_precision']}", flush=True)
     sys.exit(subprocess.call(cmd))

@@ -16,11 +16,13 @@ DEFAULTS = {
     "audio_language": "",                    # for videos with several audio tracks: prefer this language, e.g. "eng"
     "whisper_model": "openai/whisper-large-v3-turbo",   # used to write down what you said
     "train_precision": "",                   # "" = Piper default (full precision). Try "bf16-mixed" for a faster run; compare the result by ear
+    "val_every": 10,                         # check quality (and save checkpoints) every N rounds. Larger = faster training, fewer versions to choose from (1 = every round)
     "whisper_beams": 5,                      # Prepare's transcription search width: 1 is much faster, 5 is a little more accurate
     "batch_size": 0,                         # 0 = choose from your GPU memory
     "hf_token": "",                          # Hugging Face read token (only for the speaker-finding model, which is gated)
     "diarization_model": "pyannote/speaker-diarization-community-1",
     "speaker_match_distance": 0.55,          # lower = stricter about calling two voices the same person
+    "clone_gpu_fraction": 0.8,               # share of video memory the fast path (cloning) may use, so the screen and browser keep some
     "protected_names": [],                   # voice names that can never be created
     "notify_url": "",                        # optional: POST here when a job finishes (a Home Assistant webhook, ntfy topic, ...)
     "notify_format": "json",                 # json = {"title","message","voice","job","status"} | text = just the message (ntfy)

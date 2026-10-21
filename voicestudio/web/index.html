@@ -236,7 +236,7 @@ const tip=t=>`<span class="tip" tabindex="0" role="note" aria-label="${esc(t)}" 
 const api=async(path,opt={})=>{const r=await fetch(path,{...opt,headers:{'X-Studio':'1','Content-Type':'application/json',...(opt.headers||{})}});
   const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||r.statusText);return j};
 let spSort=(()=>{try{return localStorage.getItem('spSort')==='first'?'first':'minutes'}catch(e){return'minutes'}})(),spSel=null,spPage=0;const PER_PAGE=5,selSet=v=>spSel||new Set(v.keep||[]);
-let marks={},vsOpen=false,filesOpen=false,wSort='order',rowsScored=false,wView=null,wFilter=null,rvList=[],rvIdx=0,rvKey='',toolsOpen=false,autoPlay=(()=>{try{return localStorage.getItem('autoplay')!=='0'}catch(e){return true}})();      // open/closed state of the collapsible sections, so a redraw does not close them
+let rowsVerified=false,rowsHidden=0,marks={},vsOpen=false,filesOpen=false,wSort='order',rowsScored=false,wView=null,wFilter=null,rvList=[],rvIdx=0,rvKey='',toolsOpen=false,autoPlay=(()=>{try{return localStorage.getItem('autoplay')!=='0'}catch(e){return true}})();      // open/closed state of the collapsible sections, so a redraw does not close them
 let mode=(()=>{try{return localStorage.getItem('mode')==='advanced'?'advanced':'beginner'}catch(e){return'beginner'}})(),wiz={};
 let S={voices:[],bases:{},busy:null},cur=localStorage.getItem('voice')||'',page=0,rows=null,rowsFor='',dirty=false,flash={};
 
@@ -264,10 +264,41 @@ function watchJobs(n){
   if(notifyOn&&prevRun)Object.keys(run).forEach(k=>{const was=prevRun[k];if(was&&run[k]!==was){const v=n.voices.find(x=>x.name===k.split('|')[0]);if(!v)return;
     const j=v.job&&v.job.kind===was?v.job:null,how=j&&j.rc?(j.rc<0?'was stopped':'did not finish'):'finished';tell(`${v.name}: ${jobName(was)} ${how}`)}});
   prevRun=run}
-const JOBNAME={import:'importing the dataset',cull:'choosing the best clips',analyze:'analyzing the recordings',restore:'restoring the backup',compare:'comparing versions',score:'checking your clips',speakers:'speaker identification',match:'matching your voice',prep:'preparing your recordings',trim:'reprocessing clips',export:'making the test clip',training:'training'};
+const JOBNAME={import:'importing the dataset',cull:'choosing the best clips',analyze:'analyzing the recordings',silence:'trimming silence',verify:'checking the transcripts',fastref:'preparing the reference clip',fast:'cloning the voice',cleanprev:'making the clean-up previews',master:'cleaning the recordings',restore:'restoring the backup',compare:'comparing versions',score:'checking your clips',speakers:'speaker identification',match:'matching your voice',prep:'preparing your recordings',trim:'reprocessing clips',export:'making the test clip',training:'training'};
 const jobName=k=>JOBNAME[k]||k;
 const logBox=()=>'';          // the console lives in the permanent status bar (Show Console)
 // Beginner mode has no console: a job that failed gets one plain line instead (a job you stopped says so)
+function fastHtml(v){
+  const F=v.fast||{},run=k=>v.job&&v.job.running&&v.job.kind===k,working=run('fast')||run('fastref'),rep=F.report;
+  const pc=(a)=>`<li>${a}</li>`;
+  return `<p class="hint"><b>Fast path.</b> Give the Mill one clean clip (about 5 to 12 seconds) of one person. It clones that voice, speaks a few hundred varied sentences in it, keeps only the clips with the right words and the right voice, and makes a clean dataset. You then check a few clips and train for a short run. Only use voices of people who have agreed to it.</p>
+  <details class="vs" style="margin:0 0 10px"><summary><b>Fast path or classic: what is the difference?</b></summary>
+    <div class="row" style="align-items:flex-start;gap:24px;margin:8px 0">
+      <div style="flex:1;min-width:260px"><b>Fast (clone)</b><ul class="hint" style="margin:4px 0 0 16px;padding:0">${pc('Needs only seconds of audio, not hours')}${pc('Clean, consistent training clips; no speaker scan or transcript editing')}${pc('Much shorter overall')}${pc('Result is a normal, fast Piper voice')}${pc('Delivery is only as expressive as the cloner; plain sentences read flat, so the sentence set matters')}${pc('Extra install (about 6 GB) and the cloner\'s weights are non-commercial')}</ul></div>
+      <div style="flex:1;min-width:260px"><b>Classic (your recordings)</b><ul class="hint" style="margin:4px 0 0 16px;padding:0">${pc('Uses only real recordings, nothing synthetic')}${pc('Keeps real delivery and character')}${pc('Needs a lot of clean speech (60 to 120 minutes recommended)')}${pc('Training takes hours')}${pc('Noisy or mixed-speaker audio gives a poor voice')}</ul></div></div></details>
+  ${!F.ok?`<div class="msg err">${esc(F.why||'Checking the fast path…')}</div>`:''}
+  <div class="sub"><b>1. The reference clip</b> ${F.ref?'<span class="pill ok">chosen ✓</span>':''}
+    <p class="hint">A clean clip of one person speaking normally: no music, no one else talking. You can use a clip from a cleaned recording. Type what is said if you like; otherwise Whisper writes it down.</p>
+    <div class="row"><input type="text" id="fastFile" value="${esc(F.ref_source||'')}" placeholder="/path/to/a/clean/clip.wav" style="flex:1;min-width:200px"><button class="sec" id="fastBrowse">Browse…</button></div>
+    <textarea id="fastText" placeholder="What is said in the clip (optional)" style="margin-top:8px;min-height:48px">${esc(F.ref_text||'')}</textarea>
+    <div class="row inl" style="margin-top:8px"><button id="fastRef" ${(!F.ok||working||S.busy)?'disabled':''}>${F.ref?'Use a different clip':'Use this clip'}</button>
+      ${F.ref?`<audio controls preload="none" src="/fast-ref/${esc(v.name)}.wav" style="height:36px"></audio>`:''}</div>
+    ${jobNote(v,'fastref',true)}</div>
+  <div class="sub"><b>2. Create the voice dataset</b> ${v.prepared?`<span class="pill ok">${v.clips} clips · ${v.clip_minutes} min</span>`:''}
+    <p class="hint">The cloner speaks the sentences, then Whisper and a voice-match check drop any clip with wrong words or a drifting voice. More minutes gives a steadier voice; 30 to 40 is plenty for a short run. Uses your GPU.</p>
+    <div class="row inl"><label>Minutes of speech <select id="fastMin" ${working?'disabled':''}>${[20,30,40,60].map(m=>`<option value="${m}" ${(F.minutes||40)==m?'selected':''}>${m}</option>`).join('')}</select></label>
+      ${working?'<button class="bad stopjob">Stop</button>':`<button id="fastGo" ${(!F.ok||!F.ref||S.busy)?'disabled':''}>${v.prepared?'Create it again':'Create the voice dataset'}</button>`}</div>
+    ${rep?`<p class="hint" style="margin:8px 0 0">Last run: kept <b>${rep.kept}</b> of ${rep.generated} clips (${rep.minutes} min). Dropped for wrong words: ${rep.dropped_words}; for drifting from the reference voice: ${rep.dropped_voice}. Similarity to the reference ${rep.mean_similarity}.</p>`:''}
+    ${jobNote(v,'fast',true)}${v.prepared?'<p class="hint" style="margin:8px 0 0">Next: press <b>Next</b> to listen to a few clips and fix any words, then train.</p>':''}</div>
+  ${(flash.fa&&`<div class="msg ${flash.fa.cls||''}">${esc(flash.fa.text)}</div>`)||''}`;
+}
+function pathChooser(v){
+  if(v.restoring||(v.imported&&!v.fast_mode)||v.prepared)return'';
+  const fm=!!v.fast_mode;
+  return `<div class="seg2" style="margin:2px 0 12px" role="radiogroup" aria-label="How should this voice be made?">
+    <button class="${!fm?'on':''}" data-vpath="classic" role="radio" aria-checked="${!fm}">Classic: train on my recordings</button>
+    <button class="${fm?'on':''}" data-vpath="fast" role="radio" aria-checked="${fm}">Fast: clone from a short clip <span class="pill ok">new</span></button></div>`;
+}
 function jobNote(v,kind,force){
   const j=v.job;
   if(j&&kind==='trim'&&j.kind==='trim'&&!j.running&&j.rc===0){     // Reprocess finished: say what happened to each edited clip, not just "0 clips trimmed"
@@ -391,8 +422,9 @@ function render(){
   const hd=(n,done,title)=>`<h2><span class="step ${done?'done':''}">${n>=3?n+1:n}</span>${title}</h2>`;
   const rowsLoaded=!!(rows&&rowsFor===v.name), wordsDone=rowsLoaded||!!v.words_seen;      // seen this session, or at any time before (remembered by the server)
   const cards=[
-  ()=>`<div class="card">${hd(1,(v.files.length>0&&anOk&&hfOk)||v.imported,'Your recordings folder')}
-    ${v.imported||v.restoring?`<p class="hint">${v.restoring?'This voice is being restored from a backup.':'This voice was started from a prepared dataset, so there are no recordings to choose: its clips are the dataset you imported.'}${v.imported&&v.prepared?` It has <b>${v.clips}</b> clips (${v.clip_minutes} min).`:''}</p>
+  ()=>`<div class="card">${hd(1,(v.files.length>0&&anOk&&hfOk)||(v.imported&&(!v.fast_mode||prepDone)),v.fast_mode?'Make the voice (fast path)':'Your recordings folder')}
+    ${pathChooser(v)}
+    ${v.fast_mode?fastHtml(v):v.imported||v.restoring?`<p class="hint">${v.restoring?'This voice is being restored from a backup.':'This voice was started from a prepared dataset, so there are no recordings to choose: its clips are the dataset you imported.'}${v.imported&&v.prepared?` It has <b>${v.clips}</b> clips (${v.clip_minutes} min).`:''}</p>
       ${jobRun&&(v.job.kind==='import'||v.job.kind==='restore')?'<div class="row"><button class="bad stopjob">Stop</button></div>':''}${pbar(v.job&&(v.job.kind==='import'||v.job.kind==='restore')?v.job:null)}${jobNote(v,'import',true)}${jobNote(v,'restore',true)}`:`
     <p class="hint">Choose the folder on this computer that holds your recordings (wav, mp3, m4a, flac and similar). Subfolders are included, and your files are read where they are: they are never copied or changed. Between 60 and 120 minutes of clear, natural speech recorded in a quiet room gives the best results. Please use only recordings you made yourself or have permission to use.</p>
     <div class="row"><input type="text" id="srcIn" value="${esc(v.folder||'')}" placeholder="/path/to/your/recordings" style="flex:1;min-width:200px"><button class="sec" id="browseSrc">Browse…</button></div>
@@ -410,6 +442,29 @@ function render(){
       ${ok&&!aj&&a.unreadable.length?`<div class="msg err">${a.total-a.readable} file${a.total-a.readable===1?'':'s'} could not be read and will be left out: ${a.unreadable.slice(0,5).map(x=>esc(x.key)).join(', ')}${a.unreadable.length>5?'…':''}</div>`:''}
       ${ok&&!aj&&sh&&a.hours>sh?`<div class="msg">That is more recording than a voice needs, so the speaker scan will listen to an even sample of about ${sh} hours. You can change this on the next step.</div>`:''}
       ${jobNote(v,'analyze',true)}</div>`})()}
+    ${(()=>{const c=v.clean||{opts:{},preview:null},o=c.opts||{},cj=v.job&&(v.job.kind==='cleanprev'||v.job.kind==='master')&&jobRun?v.job:null,pv=c.preview,items=pv?pv.items:[],allOk=items.length&&items.every(i=>i.approved===true)&&c.approved;
+      const opt=(k,t,tp)=>`<label class="row" style="gap:6px;margin:0"><input type="checkbox" name="clOpt" value="${k}" ${o[k]?'checked':''} ${cj?'disabled':''}>${t} ${tp?tip(tp):''}</label>`;
+      return `<div class="sub"><b>Clean the audio</b> <span class="pill ok">new</span> <span class="pill">recommended</span> ${c.master?'<span class="pill ok">cleaned ✓</span>':''}
+      <p class="hint">Do this first. Every recording is cleaned <i>once, whole</i> into a master that the later steps use: the voice is separated from music and background, tidied, and brought to one even volume (mono). Cleaning the whole recording first avoids the odd noises and silent gaps you can get when only short pieces are cleaned later. Tick what you want, press <b>Preview</b>, listen to the original and cleaned versions, and approve each one. Nothing is processed in bulk until you do. Your files are never changed.</p>
+      <div class="row" style="gap:6px 22px;margin:6px 0">
+        ${opt('vocals','Remove music and background','Keeps only the voices (Demucs). Turn it off only if your recordings are already clean voice.')}
+        ${opt('highpass','Remove rumble','Cuts low rumble below 70 Hz.')}
+        ${opt('denoise','Reduce steady hiss','Gentle noise reduction. Heavy noise reduction can smooth out a gravelly or breathy voice, so it is off by default: approve it only if the preview still sounds like the speaker.')}
+        ${opt('boost','Boost voice clarity','A little extra presence and light compression so quiet words are not lost.')}
+        ${opt('loudness','Even out the volume','One consistent loudness (about -20 LUFS) with a peak limit.')}
+      </div>
+      <div class="row inl"><button id="clPrev" ${(!v.files.length||S.busy||cj)?'disabled':''}>${pv?'Preview again':'Preview'}</button>
+        ${cj?`<button class="bad stopjob">Stop</button><div style="flex:1;min-width:240px">${pbar(cj)}</div>`:''}</div>
+      ${items.length?`<div style="margin-top:10px">${items.map(i=>`<div class="rv" style="margin:8px 0;padding:10px 14px"><div class="row" style="gap:14px"><b>Clip ${i.id}</b><span class="hint" style="margin:0">${esc(i.source)} · ${i.start}s</span>
+          <span class="pill ${i.approved===true?'ok':i.approved===false?'warn':''}">${i.approved===true?'approved':i.approved===false?'denied':'not decided'}</span></div>
+          <div class="row" style="gap:18px;margin-top:6px"><label class="hint" style="margin:0">Original <audio controls preload="none" src="/clean-preview/${esc(v.name)}/p${i.id}_original.wav"></audio></label>
+          <label class="hint" style="margin:0">Cleaned <audio controls preload="none" src="/clean-preview/${esc(v.name)}/p${i.id}_cleaned.wav"></audio></label>
+          <button class="sec" data-cl="${i.id}" data-ok="1" ${cj?'disabled':''}>Approve</button><button class="dng" data-cl="${i.id}" data-ok="0" ${cj?'disabled':''}>Deny</button></div></div>`).join('')}
+        ${pv&&JSON.stringify(pv.options)!==JSON.stringify(o)?'<div class="msg err">The options changed since this preview. Press <b>Preview again</b>.</div>':''}
+        ${items.some(i=>i.approved===false)?'<div class="msg">Denied one? Change the options above and press <b>Preview again</b>.</div>':''}</div>`:''}
+      <div class="row inl" style="margin-top:10px"><button id="clGo" ${(!allOk||S.busy||cj)?'disabled':''}>${c.master?'Clean my recordings again':'Clean my recordings'}</button>
+        ${!allOk&&items.length?'<span class="hint" style="margin:0">Approve every clip to continue.</span>':''}${c.master?'<span class="hint" style="margin:0">Prepare will use the cleaned recordings.</span>':''}</div>
+      ${jobNote(v,'cleanprev',true)}${jobNote(v,'master',true)}${f('cl')}</div>`})()}
     `}
   </div>`,
 
@@ -461,18 +516,20 @@ function render(){
     ${jobNote(v,'prep',true)}${jobNote(v,'cull',true)}${dataNote(v)}${f('prep')}
   </div>`},
 
-  ()=>{const wv=wView||'review';return `<div class="card">${hd(4,wordsDone&&!dirty,'Check the transcripts <span class="pill">recommended</span>')}
-    <p class="hint">The voice learns exactly what is written here, so this is the best place to improve quality. You don't need to check every clip: this page puts the <b>likely errors first</b>, then the <b>questionable</b> ones, then about 100 <b>random clips</b> as a sanity check. <b>Listen</b> to each one, fix wrong words, and remove clips with noise, music or another person. Press <b>Check clips</b> first if you can: it listens to every clip and finds other speakers, which the text alone can't show.</p>
+  ()=>{const wv=wView||'review';return `<div class="card">${hd(4,wordsDone&&!dirty,'Correct the transcripts <span class="pill">recommended</span>')}
+    <p class="hint">The voice learns exactly what is written here. Press <b>Check automatically</b>: the Mill listens to every clip again and compares it with the text. Clips where both agree are hidden. You only see the ones it is unsure about, with what it heard so you can fix the words in one click. If someone else speaks in a clip, delete their words from the text (anywhere in it, as many stretches as you like), save, and press <b>Reprocess</b>: the clip is cut so only the words you kept remain, and split into separate clips if there is more than one stretch.</p>
+    ${rowsLoaded&&rowsVerified?`<div class="msg ok" style="margin:0 0 8px">${rowsHidden} of ${rows.length} clips look right and are hidden. ${guideLeft()?`<b>${guideLeft()}</b> need${guideLeft()===1?'s':''} a look.`:'Nothing needs a look.'}</div>`:''}
     <div class="row wbar">
       ${rowsLoaded?'':`<button class="sec" id="loadRows" ${prepDone?'':'disabled'}>Show my clips</button>`}
-      <button class="sec" id="scoreBtn" title="Listens to every clip and flags any that sound unlike the rest, such as another speaker or lots of noise." ${prepDone&&!S.busy?'':'disabled'}>${v.scored?'Check clips again':'Check clips'}</button>${jobRun&&v.job.kind==='score'?'<button class="bad stopjob">Stop</button>':''}
+      <button id="vfyBtn" title="Listens to every clip again and compares it with the text. Clips that agree are hidden" ${prepDone&&!S.busy?'':'disabled'}>${v.verified?'Check new clips':'Check automatically'}</button>${jobRun&&v.job.kind==='verify'?'<button class="bad stopjob">Stop</button>':''}
+      <button class="sec" id="scoreBtn" title="Optional. Listens to every clip and flags any that sound unlike the rest, such as another speaker or lots of noise." ${prepDone&&!S.busy?'':'disabled'}>${v.scored?'Check speakers again':'Check speakers'}</button>${jobRun&&v.job.kind==='score'?'<button class="bad stopjob">Stop</button>':''}
       <span class="seg2" role="group" aria-label="How to look at the clips"><button id="vReview" class="${wv==='review'?'on':''}" title="One clip at a time">Review</button><button id="vList" class="${wv==='list'?'on':''}" title="All the clips in a list">List</button></span>
     </div>
-    ${pbar(v.job&&v.job.kind==='score'?v.job:null)}${jobNote(v,'score')}
+    ${pbar(v.job&&v.job.kind==='score'?v.job:null)}${jobNote(v,'score')}${jobNote(v,'verify',true)}
     ${XTRA?toolsHtml(v,rowsLoaded):''}
     <div id="wbody">${rowsLoaded?'':'<p class="hint">Press <b>Show my clips</b> to load them.</p>'}</div>
     <div class="row wsave"><button id="saveRows" ${dirty?'':'disabled'}>Save changes</button>
-      <button id="trimBtn" title="Cut each edited clip's audio down to the words you kept" ${(!v.edited||dirty||S.busy)?'disabled':''}>Reprocess edited clips${v.edited?' ('+v.edited+')':''}</button>${jobRun&&v.job.kind==='trim'?'<button class="bad stopjob">Stop</button>':''}<span class="hint" id="unsaved" style="margin:0" ${dirty?'':'hidden'}>You have unsaved changes</span></div>
+      <button id="trimBtn" title="Cut each edited clip's audio down to the words you kept. Words deleted anywhere in a clip are cut out; separate stretches that remain become separate clips" ${(!v.edited||dirty||S.busy)?'disabled':''}>Reprocess${v.edited?' ('+v.edited+')':''}</button>${jobRun&&v.job.kind==='trim'?'<button class="bad stopjob">Stop</button>':''}<span class="hint" id="unsaved" style="margin:0" ${dirty?'':'hidden'}>You have unsaved changes</span></div>
     ${pbar(v.job&&v.job.kind==='trim'?v.job:null)}${jobNote(v,'trim')}
     <div class="row" style="margin-top:6px"><button class="linkbtn" id="dsBtn" title="Your cleaned clips and transcript as one zip, ready to use anywhere" ${(!prepDone||v.edited)?'disabled':''}>Export dataset</button><span class="hint" style="margin:0">${v.edited?'Reprocess your edited clips first.':''}</span></div>
     ${f('tr')}
@@ -527,27 +584,27 @@ function render(){
       <p class="hint">Some stretches of a recording have several voices at once, which makes them hard to tell apart. Here you teach the program what your speaker sounds like: listen to the samples and mark each with the coloured square. <b>Green ✓</b> means it is only your speaker, <b>red ✗</b> means it is someone else, and <b>grey ?</b> means unsure or mixed, so it is left out. Then press <b>Find more like these</b> to search the whole recording for similar speech. You can repeat this as often as you like, and it tells you when nothing new turns up.</p>
       ${hfCard('refine')}${v.imported?'<div class="msg">This voice has no recordings to search. Press <b>Skip</b>.</div>':matchHtml(v,jobRun,true)}</div>`;
     const wcards=[cards[0],cards[1],refineCard,cards[2],cards[3],cards[4],cards[5]];
-    const names=['Recordings','Diarization','Refine','Prepare','Transcripts','Train','Listen'];
+    const names=['Recordings','Diarization','Refine','Prepare','Correct','Train','Listen'];
     const hfOk=!HF||HF.state==='ready'||HF.state==='error';        // access to the gated speaker model (when Hugging Face cannot be reached it does not lock you out)
     const anOk=!!(v.analysis&&!v.analysis.stale)||!!v.people||!!v.prepared;      // earlier voices that are already past this step do not need analyzing again
-    const isDone=[(v.files.length>0&&anOk&&hfOk)||v.imported,!!v.people,!!v.match,prepDone,wordsDone&&!dirty,finished||t.checkpoints>0,v.exported];   // what lets you press Next
-    const shownDone=[(v.files.length>0&&anOk&&hfOk)||v.imported,!!v.people,!!v.match,prepDone,wordsDone&&!dirty&&!v.edited,!!finished,v.exported];     // what the strip shows as finished (training: only when all rounds are done)
+    const isDone=[(v.files.length>0&&anOk&&hfOk)||(v.imported&&(!v.fast_mode||prepDone)),!!v.people,!!v.match,prepDone,wordsDone&&!dirty,finished||t.checkpoints>0,v.exported];   // what lets you press Next
+    const shownDone=[(v.files.length>0&&anOk&&hfOk)||(v.imported&&(!v.fast_mode||prepDone)),!!v.people,!!v.match,prepDone,wordsDone&&!dirty&&!v.edited,!!finished,v.exported];     // what the strip shows as finished (training: only when all rounds are done)
     const optional=[false,true,true,false,true,false,false];
     const run=k=>jobRun&&v.job.kind===k;
     const gate=[
-      run('analyze')?'Analyzing your recordings… please wait.':run('import')||run('restore')?'Working on it… please wait.':(v.restoring&&!v.imported)?'Restoring the backup… please wait.':!(v.imported||(v.files.length&&v.folder_ok))?'Choose a folder that has audio files to continue.':!(v.imported||hfOk)?'Give the speaker model access to continue (see the buttons above).':!(v.imported||anOk)?'Analyze your recordings to continue.':'',
+      run('fast')||run('fastref')?'Cloning… please wait.':(v.fast_mode&&!prepDone)?'Choose the reference clip and create the voice dataset to continue.':run('analyze')?'Analyzing your recordings… please wait.':run('import')||run('restore')?'Working on it… please wait.':(v.restoring&&!v.imported)?'Restoring the backup… please wait.':!(v.imported||(v.files.length&&v.folder_ok))?'Choose a folder that has audio files to continue.':!(v.imported||hfOk)?'Give the speaker model access to continue (see the buttons above).':!(v.imported||anOk)?'Analyze your recordings to continue.':'',
       run('speakers')?'Finding the speakers… please wait.':v.imported?'This voice has no recordings to scan: press Skip.':!v.people?'Find the speakers, or press Skip if it is just you.':'',
       run('match')?'Matching your voice… please wait.':'',
       run('prep')||run('cull')?'Preparing… please wait.':!prepDone?'Prepare your recordings to continue.':'',
-      dirty?'Save your changes first, or press Skip.':run('score')?'Checking your clips… please wait.':run('trim')?'Reprocessing… please wait.':!wordsDone?'Open your clips to check them, or press Skip.':'',
+      dirty?'Save your changes first, or press Skip.':run('score')||run('verify')?'Checking your clips… please wait.':run('trim')?'Reprocessing… please wait.':!wordsDone?'Open your clips to check them, or press Skip.':'',
       t.running?`${v.name} is training on the GPU…`:!t.checkpoints?'Start training to continue.':'',
       ''];
-    const working=[run('analyze')?'Analyzing your recordings… please wait.':run('import')?'Importing the dataset… please wait.':run('restore')?'Restoring the backup… please wait.':null,run('speakers')?'Finding the speakers… please wait.':null,run('match')?'Finding more like your ticked clips… please wait.':null,run('prep')||run('cull')?'Preparing… please wait.':null,run('trim')?'Reprocessing… please wait.':run('score')?'Checking your clips… please wait.':null,
+    const working=[run('analyze')?'Analyzing your recordings… please wait.':run('import')?'Importing the dataset… please wait.':run('restore')?'Restoring the backup… please wait.':null,run('speakers')?'Finding the speakers… please wait.':null,run('match')?'Finding more like your ticked clips… please wait.':null,run('prep')||run('cull')?'Preparing… please wait.':null,run('trim')?'Reprocessing… please wait.':run('score')||run('verify')?'Checking your clips… please wait.':null,
       t.running?`${v.name} is training on the GPU…`:null,run('export')?'Making the test clip… please wait.':run('compare')?'Making a sample of each version… please wait.':null];
     const stepNo=wizStep(v,{prepDone,finished});
     $('#main').innerHTML=`
     <div class="strip">${names.map((n,i)=>{
-      const busyNow=[run('import')||run('restore')||run('analyze'),run('speakers'),run('match'),run('prep')||run('cull'),run('trim')||run('score'),!!t.running,run('export')||run('compare')][i];
+      const busyNow=[run('import')||run('restore')||run('analyze')||run('cleanprev')||run('master')||run('fast')||run('fastref'),run('speakers'),run('match'),run('prep')||run('cull'),run('trim')||run('score')||run('verify')||run('silence'),!!t.running,run('export')||run('compare')][i];
       const st=busyNow?(i===stepNo?'cur run':'run'):i===stepNo?(shownDone[i]?'cur ok':'cur'):shownDone[i]?'ok':i<stepNo?(optional[i]?'skip':'warn'):(i===5&&t.checkpoints>0&&!t.running)?'part':'todo';
       const mark=busyNow?'':st.includes('ok')?'✓':st==='skip'?'–':st==='warn'?'!':st==='part'?'…':i+1;
       const locked=i===6&&!t.checkpoints;
@@ -556,9 +613,10 @@ function render(){
     ${wcards[stepNo]()}
     <div class="nav"><span class="row" style="gap:8px;flex-wrap:nowrap"><button class="sec" id="prevBtn" ${stepNo>0?'':'disabled'}>‹ Prev</button>${v.imported?'':`<button class="sec" id="resetBtn" title="Go back to the beginning with this voice. Your recordings are never touched." ${S.busy?'disabled':''}>Start over</button>`}</span>
       <span class="hint nm" id="navMsg">${working[stepNo]?live(esc(working[stepNo])):esc(gate[stepNo])}</span>
-      <span class="row">${optional[stepNo]?`<button class="sec" id="skipBtn" ${(run('speakers')||run('match')||run('trim')||run('score'))?'disabled':''}>Skip ›</button>`:''}${stepNo<names.length-1?`<button id="nextBtn" ${gate[stepNo]?'disabled':''}>Next ›</button>`:`<button id="zipBtn" ${v.exported?'':'disabled'} title="${v.exported?'Download the voice as one zip: the .onnx and .onnx.json files':'Make a test clip first: that exports the voice files'}">Download</button>`}</span></div>
+      <span class="row">${optional[stepNo]?`<button class="sec" id="skipBtn" ${(run('speakers')||run('match')||run('trim')||run('score')||run('verify'))?'disabled':''}>Skip ›</button>`:''}${stepNo<names.length-1?`<button id="nextBtn" ${gate[stepNo]?'disabled':''}>Next ›</button>`:`<button id="zipBtn" ${v.exported?'':'disabled'} title="${v.exported?'Download the voice as one zip: the .onnx and .onnx.json files':'Make a test clip first: that exports the voice files'}">Download</button>`}</span></div>
 `;
   if(keep.sp&&$('#spNum'))$('#spNum').value=keep.sp;if(keep.ff!=null&&$('#frFind')){$('#frFind').value=keep.ff;$('#frRep').value=keep.fr;$('#frCase').checked=!!keep.fc}if(keep.wh&&$('#which'))$('#which').value=keep.wh;if(keep.txt!=null&&$('#txt'))$('#txt').value=keep.txt;if(keep.ep!=null&&$('#ep'))$('#ep').value=keep.ep;if(keep.mm!=null&&$('#maxMin'))$('#maxMin').value=keep.mm;if(keep.gl!=null&&$('#gpuLoad'))$('#gpuLoad').value=keep.gl;
+  if(rows&&rowsFor===v.name&&v.verified&&!rowsVerified&&!dirty&&!(v.job&&v.job.running)){loadRows(v.name).catch(()=>{})}
   if(rows&&rowsFor===v.name){if(v.scored&&!rowsScored&&!dirty){rowsScored=true;loadRows(v.name).catch(()=>{})}else if(!v.scored&&rowsScored){rows.forEach(r=>r.score=null);rowsScored=false}}
   paintStatus(v,t,jobRun,stepNo);if(!menuOpen)paintMenu(v);
   wire(v);updPlan();syncGpu(stepNo===5);if(rows&&rowsFor===v.name&&$('#wbody'))drawWords();placePlayer();
@@ -600,6 +658,14 @@ function wire(v){
   const mm2=$('#mMax');if(mm2)mm2.onchange=()=>saveMax(v,mm2.value);const ms=$('#mStrict');if(ms){ms.value=window._mStrict||v.strict||'normal';ms.onchange=()=>{window._mStrict=ms.value}}
   b('#matchBtn',()=>act('/api/match',{voice:v.name,yes:markRanges(v,'y'),no:markRanges(v,'n'),strict:$('#mStrict').value,max_minutes:+$('#mMax').value},'match'));
   b('#oneBtn',async()=>{if(!confirm('This uses everything in your recordings and replaces the current clips, including any transcript edits you made. Continue?'))return;try{await api('/api/oneperson',{method:'POST',body:JSON.stringify({voice:v.name,on:true})})}catch(e){say('prep',e.message,'err');return}act('/api/prep',{voice:v.name},'prep')});
+  b('#clPrev',()=>act('/api/clean/preview',{voice:v.name},'cl'));b('#clGo',()=>act('/api/clean/master',{voice:v.name},'cl'));
+  document.querySelectorAll('[name=clOpt]').forEach(c=>c.onchange=async()=>{const o={};document.querySelectorAll('[name=clOpt]').forEach(x=>o[x.value]=x.checked);try{await api('/api/clean/options',{method:'POST',body:JSON.stringify({voice:v.name,opts:o})})}catch(e){say('cl',e.message,'err')}refresh(true)});
+  document.querySelectorAll('[data-cl]').forEach(el=>el.onclick=async()=>{el.disabled=true;try{await api('/api/clean/decide',{method:'POST',body:JSON.stringify({voice:v.name,id:+el.dataset.cl,ok:el.dataset.ok==='1'})})}catch(e){say('cl',e.message,'err')}refresh(true)});
+  document.querySelectorAll('[data-vpath]').forEach(el=>el.onclick=async()=>{try{await api('/api/path',{method:'POST',body:JSON.stringify({voice:v.name,path:el.dataset.vpath})})}catch(e){say('up',e.message,'err')}refresh(true)});
+  b('#fastBrowse',()=>pickFolder(($('#fastFile').value||'').replace(/[^/]*$/,''),p=>{$('#fastFile').value=p},'audio'));
+  b('#fastRef',()=>act('/api/fast/ref',{voice:v.name,file:$('#fastFile').value.trim(),text:$('#fastText').value},'fa'));
+  b('#fastGo',()=>act('/api/fast/run',{voice:v.name},'fa'));
+  const fm=$('#fastMin');if(fm)fm.onchange=()=>api('/api/fast/minutes',{method:'POST',body:JSON.stringify({voice:v.name,minutes:+fm.value})}).catch(()=>{});
   const vt=$('#vtSel');if(vt)vt.onchange=async()=>{try{await api('/api/voicetype',{method:'POST',body:JSON.stringify({voice:v.name,type:vt.value})})}catch(e){say('sp',e.message,'err')}refresh(true)};
   document.querySelectorAll('[name=useSrc]').forEach(r=>r.onchange=async()=>{try{await api('/api/usematch',{method:'POST',body:JSON.stringify({voice:v.name,on:r.value==='match'})})}catch(e){say('match',e.message,'err')}refresh(true)});
   b('#dsBtn',()=>{location.href=`/dataset/${encodeURIComponent(v.name)}.zip`});
@@ -613,7 +679,8 @@ function wire(v){
   b('#cmpBtn',()=>act('/api/compare',{voice:v.name,text:$('#txt').value},'exp'));
   document.querySelectorAll('[data-cmp-play]').forEach(el=>el.onclick=()=>playIn('/out/'+el.dataset.cmpPlay+'?t='+Date.now(),el.dataset.cmpLabel,''));
   document.querySelectorAll('[data-cmp-use]').forEach(el=>el.onclick=()=>act('/api/export',{voice:v.name,text:$('#txt').value,which:el.dataset.cmpUse},'exp'));
-  b('#scoreBtn',()=>act('/api/score',{voice:v.name},'tr'));
+  b('#silBtn',()=>act('/api/silence',{voice:v.name,pauses:!!($('#silPaus')&&$('#silPaus').checked)},'tr'));
+  b('#scoreBtn',()=>act('/api/score',{voice:v.name},'tr'));b('#vfyBtn',()=>act('/api/verify',{voice:v.name},'tr'));
   b('#vReview',()=>{wView='review';rvKey='';render()});b('#vList',()=>{wView='list';render()});
   const ws=$('#wSort');if(ws){ws.value=wSort;ws.onchange=()=>{wSort=ws.value;page=0;if(rows)drawRows()}}
   b('#okFlag',()=>{if(!rows)return;const f=rows.filter(flagged).map(x=>x.file);if(!f.length)return say('tr','Nothing needs attention.');approve(f);say('tr',`Approved ${f.length} clip${f.length>1?'s':''}.`,'ok');drawWords()});
@@ -632,7 +699,7 @@ function wire(v){
 
 async function act(path,body,key){delete flash[key];try{await api(path,{method:'POST',body:JSON.stringify(body)});if(key==='prep'){rows=null}}catch(e){say(key,e.message,'err')}refresh(true)}
 async function loadRows(name){
-  const j=await api(`/api/transcript?voice=${name}`);rows=j.rows;rows.forEach(r=>r.orig=r.text);rowsFor=name;rowsScored=!!j.scored;page=0;dirty=false;rvKey='';
+  const j=await api(`/api/transcript?voice=${name}`);rows=j.rows;rows.forEach(r=>r.orig=r.text);rowsFor=name;rowsScored=!!j.scored;rowsVerified=!!(j.triage&&j.triage.verified);rowsHidden=(j.triage&&j.triage.hidden)||0;page=0;dirty=false;rvKey='';
   const v=S.voices.find(x=>x.name===name);if(v&&!v.words_seen){v.words_seen=true;api('/api/wordsseen',{method:'POST',body:JSON.stringify({voice:name})}).catch(()=>{})}   // remember that you looked
   render();
 }
@@ -669,15 +736,16 @@ const TIERS=[['Likely errors',1],['Questionable',2],['Random spot-check',3]];
 const passes=(r,f)=>f==='all'||(f==='guide'&&!!r.tier&&!r.approved)||(f==='needs'&&flagged(r))||(f==='edited'&&isEdited(r))||(f==='approved'&&!!r.approved);
 const toolsHtml=(v,loaded)=>`<details class="vs tools" ${toolsOpen?'open':''} ontoggle="toolsOpen=this.open"><summary>Tools</summary>
   <div class="vsrow"><div class="t"><b>Find and replace</b><div class="hint">Change a word or phrase in the text of every clip.</div><div class="row" style="margin-top:6px"><input type="text" id="frFind" placeholder="Find" style="width:140px" ${loaded?'':'disabled'}><input type="text" id="frRep" placeholder="Replace with" style="width:140px" ${loaded?'':'disabled'}><label class="hint" style="margin:0"><input type="checkbox" id="frCase"> match case</label></div></div><button class="sec" id="frBtn" ${loaded?'':'disabled'}>Replace all</button></div>
+  <div class="vsrow"><div class="t"><b>Trim silence</b><div class="hint">Keeps 0.15 s before the first word and 0.25 s after the last, and removes the rest. The words are never touched, and the untouched originals are kept. Run it before training, not while a voice is training.</div><label class="hint" style="margin:6px 0 0;display:block"><input type="checkbox" id="silPaus"> also shorten long pauses inside clips to 0.6 s</label></div><button class="sec" id="silBtn" ${loaded&&!S.busy&&!v.train.running?'':'disabled'}>Trim silence</button></div>
   <div class="vsrow"><div class="t"><b>Approve flagged clips</b><div class="hint">Marks every clip that needs attention as fine, so they stop being flagged.</div></div><button class="sec" id="okFlag" ${loaded?'':'disabled'}>Approve flagged</button></div>
   <div class="vsrow"><div class="t"><b>Remove flagged clips</b><div class="hint">Takes the red-flagged clips out of the list. Press Save to apply.</div></div><button class="sec" id="delFlag" ${loaded&&v.scored?'':'disabled'}>Remove flagged</button></div>
   <div class="vsrow"><div class="t"><b>List order</b><div class="hint">How the List view is sorted.</div></div><select id="wSort" ${v.scored?'':'disabled'} style="width:150px"><option value="order">As recorded</option><option value="match">Least like my voice first</option></select></div>
   ${loaded?`<div class="vsrow"><div class="t"><b>Reload the clips</b><div class="hint">Throws away unsaved edits and loads the clips from disk again.</div></div><button class="sec" id="loadRows">Reload</button></div>`:''}
 </details>`;
 const cmpHtml=v=>`<div class="sub"><b>Compare versions</b><div class="hint">The same sentence made with each version of your voice. Listen, then press <b>Use this version</b> for the one you like: that becomes the voice you download.${v.compare.items.length<3?' (Some versions are the same checkpoint, so they share a sample.)':''}</div><div class="pslot"></div>
-  ${v.compare.items.map(it=>`<div class="vsrow"><div class="t"><b>${it.versions.map(x=>esc(x.label)).join(' · ')}</b><div class="hint">${esc(it.versions[0].what)}</div></div><button class="sec" data-cmp-play="${esc(it.file)}" data-cmp-label="${esc(it.versions.map(x=>x.label).join(' / '))}">▶ Listen</button><button class="sec" data-cmp-use="${it.versions[0].which}">Use this version</button></div>`).join('')}</div>`;
+  ${v.compare.items.map(it=>`<div class="vsrow"><div class="t"><b>${it.versions.map(x=>esc(x.label)).join(' · ')}${it.speaker?' — tone: '+esc(it.speaker):''}</b><div class="hint">${esc(it.versions[0].what)}</div></div><button class="sec" data-cmp-play="${esc(it.file)}" data-cmp-label="${esc(it.versions.map(x=>x.label).join(' / '))}${it.speaker?' ('+esc(it.speaker)+')':''}">▶ Listen</button><button class="sec" data-cmp-use="${it.versions[0].which}">Use this version</button></div>`).join('')}</div>`;
 function chipsHtml(){const f=curFilter(),need=rows.filter(flagged).length,ed=rows.filter(isEdited).length;
-  return `<div class="chips"><span class="hint" style="margin:0">Show</span>${rows.some(x=>x.tier)?`<button class="chip ${f==='guide'?'on':''}" data-f="guide" title="The clips most worth your time, worst first">Guided check ${guideLeft()} left</button>`:''}<button class="chip ${f==='all'?'on':''}" data-f="all">All ${rows.length}</button><button class="chip ${f==='needs'?'on':''}" data-f="needs" title="${rowsScored?'Clips that sound unlike the rest, or whose text looks wrong for their length':'Clips whose text looks wrong for their length. Press Check clips to also find other speakers'}">Needs attention ${need}</button><button class="chip ${f==='edited'?'on':''}" data-f="edited">Edited ${ed}</button>${rows.some(x=>x.approved)?`<button class="chip ${f==='approved'?'on':''}" data-f="approved" title="Clips you approved. Open one to undo the approval">Approved ${rows.filter(x=>x.approved).length}</button>`:''}</div>`}
+  return `<div class="chips"><span class="hint" style="margin:0">Show</span>${rows.some(x=>x.tier)?`<button class="chip ${f==='guide'?'on':''}" data-f="guide" title="${rowsVerified?'Only the clips the automatic check is unsure about':'The clips most worth your time, worst first'}">${rowsVerified?'Needs correction':'Guided check'} ${guideLeft()} left</button>`:''}<button class="chip ${f==='all'?'on':''}" data-f="all">${rowsVerified?'Show all':'All'} ${rows.length}</button><button class="chip ${f==='needs'?'on':''}" data-f="needs" title="${rowsScored?'Clips that sound unlike the rest, or whose text looks wrong for their length':'Clips whose text looks wrong for their length. Press Check clips to also find other speakers'}">Needs attention ${need}</button><button class="chip ${f==='edited'?'on':''}" data-f="edited">Edited ${ed}</button>${rows.some(x=>x.approved)?`<button class="chip ${f==='approved'?'on':''}" data-f="approved" title="Clips you approved. Open one to undo the approval">Approved ${rows.filter(x=>x.approved).length}</button>`:''}</div>`}
 function drawWords(){
   const box=$('#wbody');if(!box||!rows)return;
   if((wView||'review')==='review')drawReview(box);else drawList(box);
@@ -688,6 +756,7 @@ function dirtyUI(){dirty=true;const sv=$('#saveRows');if(sv)sv.disabled=false;co
 function bindChips(box){box.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{wFilter=c.dataset.f;rvKey='';page=0;drawWords()})}
 // ----- Review: one clip at a time
 function guideHtml(r){
+  if(rowsVerified)return `<div class="msg" style="margin:0 0 8px;color:var(--warn)">${ic('warn')}<b>Why this clip:</b> ${esc((r.why||[]).join(' · ')||'Needs a look')}.</div>`;
   const tot=[1,2,3].map(t=>rows.filter(x=>x.tier===t).length),left=[1,2,3].map(t=>rows.filter(x=>x.tier===t&&!x.approved).length),all=left[0]+left[1]+left[2];
   const steps=TIERS.map(([nm,t],i)=>`<span class="chip ${r.tier===t?'on':''}" style="cursor:default">${i+1}. ${nm} · ${tot[i]-left[i]}/${tot[i]}</span>`).join('');
   const what=['This clip very likely has something wrong with it. Listen, then fix the words, or remove the clip if it has noise, music or another person.','This clip looks a little unusual. Listen; most will be fine, so only fix what is really wrong.','This clip looked fine and was picked at random, as a test of the clips you will not listen to. If almost all of these are right, you can trust the rest.'][r.tier-1];
@@ -711,11 +780,13 @@ function drawReview(box,autoplay){
       ${r.approved?`<div class="msg ok">✓ You approved this clip. <button class="x" id="rvUndo" style="font-size:13px">Undo</button></div>`:''}${r.warn&&!r.approved?`<div class="msg" style="color:var(--warn)">${ic('warn')}${esc(r.warn)}</div>`:''}
       <div class="pslot"></div>
       <textarea id="rvText" rows="2" aria-label="What is said in this clip">${esc(r.text)}</textarea>
-      <p class="hint" style="margin:4px 0 12px">Correct any words the text got wrong. If someone else speaks at the start or end of this clip, delete their words from the text, press <b>Save changes</b>, then press <b>Reprocess edited clips</b>. The audio is then trimmed to match the words you kept.</p>
+      ${r.heard&&r.wer>0.05&&!r.approved?`<div class="row" style="margin:6px 0 0;gap:10px;align-items:flex-start"><div class="hint" style="margin:0;flex:1"><b>The checker heard:</b> ${esc(r.heard)}</div><button class="sec" id="rvUse">Use this text</button></div>`:''}
+      <p class="hint" style="margin:6px 0 12px">Correct any words the text got wrong. If someone else speaks in this clip (start, middle or end, as many stretches as you like), delete their words from the text, press <b>Save changes</b>, then <b>Reprocess</b>. The clip is cut to the words you kept; if several stretches remain, each becomes its own clip.</p>
       <div class="row rvbtns"><button class="sec dng" id="rvRemove">Remove clip</button><span style="flex:1"></span><label class="hint" style="margin:0"><input type="checkbox" id="rvAuto" ${autoPlay?'checked':''}> play automatically</label><button class="sec" id="rvPrev" ${rvIdx?'':'disabled'}>‹ Back</button><button id="rvNext" class="${flagged(r)||f==='guide'?'ok':''}">${f==='guide'?(isEdited(r)?'✓ I fixed it':'✓ It is right'):flagged(r)?'✓ Approve':'Keep'} ${rvIdx<n-1?'and next ›':'and finish'}</button></div></div>`;
   bindChips(box);
   setClip(`/audio/${cur}/${r.file}`,`Clip ${rvIdx+1}`,r.file);
   const ta=$('#rvText');ta.oninput=()=>{r.text=ta.value;dirtyUI()};
+  const us=$('#rvUse');if(us)us.onclick=()=>{r.text=r.heard;ta.value=r.heard;dirtyUI()};
   const un=$('#rvUndo');if(un)un.onclick=()=>{approve([r.file],false);drawReview(box,false);placePlayer()};
   $('#rvAuto').onchange=e=>{autoPlay=e.target.checked;try{localStorage.setItem('autoplay',autoPlay?'1':'0')}catch(x){}};
   $('#rvPrev').onclick=()=>{rvIdx--;drawReview(box,true);placePlayer();if(autoPlay)pAudio.play().catch(()=>{})};
@@ -791,9 +862,9 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&menuOpen)closeMenu(
 let sbLogKey='';
 function paintStatus(v,t,jobRun,stepNo){
   const box=$('#statusbar');if(!box)return;
-  const where={import:0,restore:0,analyze:0,speakers:1,match:2,prep:3,cull:3,score:4,trim:4,export:6,compare:6},
-    nm={import:'Importing the dataset',restore:'Restoring the backup',analyze:'Analyzing your recordings',speakers:'Diarization (who is speaking)',match:'Finding more of your speaker',prep:'Preparing the dataset',cull:'Keeping the best clips',score:'Checking the clips',trim:'Reprocessing edited clips',export:'Making the test clip',compare:'Comparing versions'},
-    steps=['Recordings','Diarization','Refine','Prepare','Transcripts','Train','Listen'];
+  const where={silence:4,verify:4,import:0,restore:0,analyze:0,fastref:0,fast:0,cleanprev:0,master:0,speakers:1,match:2,prep:3,cull:3,score:4,trim:4,export:6,compare:6},
+    nm={import:'Importing the dataset',restore:'Restoring the backup',analyze:'Analyzing your recordings',silence:'Trimming silence',verify:'Checking the transcripts',fastref:'Preparing the reference clip',fast:'Cloning the voice',cleanprev:'Making the clean-up previews',master:'Cleaning your recordings',speakers:'Diarization (who is speaking)',match:'Finding more of your speaker',prep:'Preparing the dataset',cull:'Keeping the best clips',score:'Checking the clips',trim:'Reprocessing edited clips',export:'Making the test clip',compare:'Comparing versions'},
+    steps=['Recordings','Diarization','Refine','Prepare','Correct','Train','Listen'];
   let label='Idle',sub='Nothing is running.',pct=0,ind=false,step=null,stop='',log='',cls='idle',detail='';
   if(v&&t&&t.running){cls='';label='Training';step=5;stop='stopTrain';ind=t.done==null;pct=t.total&&t.done!=null?Math.min(100,Math.round(100*t.done/t.total)):0;
     detail=t.done!=null?`${t.done} of ${t.total} rounds (${pct}%)${t.eta!=null?' · about '+fmt(t.eta)+' left':''}`:'Starting up: preparing your clips for training…';log=(t.log||[]).join('\n')}
@@ -821,14 +892,14 @@ $('#newBrowse').onclick=()=>pickFolder($('#newFolder').value,p=>{$('#newFolder')
 // folder chooser (the page cannot open the system dialog and learn the real path, so it lists folders itself)
 let pickCb=null,pickCur='',pickMode='folder';
 async function pickLoad(p){
-  const j=await api('/api/browse?path='+encodeURIComponent(p||'')+(pickMode!=='folder'?'&zips=1':''));pickCur=j.path;
+  const j=await api('/api/browse?path='+encodeURIComponent(p||'')+(pickMode==='audio'?'&audiofiles=1':pickMode!=='folder'?'&zips=1':''));pickCur=j.path;
   $('#pickPath').textContent=j.path;
   const name=x=>x.split('/').filter(Boolean).pop()||'/';
   $('#pickPlaces').innerHTML=j.places.map(x=>`<button class="sec" data-p="${esc(x)}">${esc(x===j.places[0]?'Home':name(x))}</button>`).join('');
   const base=j.path.replace(/\/$/,'');
-  $('#pickList').innerHTML=(j.parent?`<div data-p="${esc(j.parent)}">${ic('up')}Up one level</div>`:'')+(j.zips||[]).map(z=>`<div data-zip="${esc(base+'/'+z)}">${ic('zip')}${esc(z)}</div>`).join('')+(j.dirs.map(d=>`<div data-p="${esc(base+'/'+d)}">${ic('folder')}${esc(d)}</div>`).join('')||'<div style="cursor:default;color:var(--mute)">No folders in here</div>');
-  $('#pickInfo').textContent=pickMode==='zip'?`Click a .zip file to choose it${(j.zips||[]).length?'':' (none in this folder)'}`:j.audio?`${j.audio} audio file${j.audio>1?'s':''} in this folder`:pickMode==='folderzip'?'Choose this folder, or click a .zip file':'No audio files directly in this folder';
-  $('#pickOk').hidden=pickMode==='zip';
+  $('#pickList').innerHTML=(j.parent?`<div data-p="${esc(j.parent)}">${ic('up')}Up one level</div>`:'')+(j.zips||[]).map(z=>`<div data-zip="${esc(base+'/'+z)}">${ic('zip')}${esc(z)}</div>`).join('')+(pickMode==='audio'?(j.files||[]).map(z=>`<div data-zip="${esc(base+'/'+z)}">${ic('zip')}${esc(z)}</div>`).join(''):'')+(j.dirs.map(d=>`<div data-p="${esc(base+'/'+d)}">${ic('folder')}${esc(d)}</div>`).join('')||'<div style="cursor:default;color:var(--mute)">No folders in here</div>');
+  $('#pickInfo').textContent=pickMode==='audio'?`Click an audio file to choose it${(j.files||[]).length?'':' (none in this folder)'}`:pickMode==='zip'?`Click a .zip file to choose it${(j.zips||[]).length?'':' (none in this folder)'}`:j.audio?`${j.audio} audio file${j.audio>1?'s':''} in this folder`:pickMode==='folderzip'?'Choose this folder, or click a .zip file':'No audio files directly in this folder';
+  $('#pickOk').hidden=pickMode==='zip'||pickMode==='audio';
   document.querySelectorAll('#pickDlg [data-zip]').forEach(el=>el.onclick=()=>{$('#pickDlg').close();if(pickCb)pickCb(el.dataset.zip)});
   document.querySelectorAll('#pickDlg [data-p]').forEach(el=>el.onclick=()=>pickLoad(el.dataset.p).catch(e=>{$('#pickInfo').textContent=e.message}));
 }

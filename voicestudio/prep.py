@@ -152,13 +152,17 @@ def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
         plan = _thin(plan, budget / total)
         log(f"There are {total / 60:.0f} min of speech to prepare, more than a voice needs. Preparing an even spread of about {budget / 60:.0f} min "
             f"(your {lim}-minute limit plus some room to drop weak clips). This keeps the later steps fast and small.")
-    log("Removing music and background noise from the parts that are kept (only the voice is left in)...")
-    sep = clean.Separator(log)
+    from . import master
+    use_master = master.available(name)
+    if use_master: log("Using your cleaned recordings (the 'Clean the audio' step), so nothing is cleaned again here."); sep = None
+    else:
+        log("Removing music and background noise from the parts that are kept (only the voice is left in)...")
+        sep = clean.Separator(log)
     clips, n, skipped, noisy, silent, heard_s = [], 0, [], [], [], 0.0
     def load(i, f, td):                                                  # decode + read one recording (runs ahead on spare cores while the GPU works)
         tmp = Path(td) / f"c{i}.wav"
         try:
-            secs = audio.decode(f, tmp, SR, loudnorm=True, log=log)
+            secs = audio.decode(master.master_path(name, f) if use_master else f, tmp, SR, loudnorm=not use_master, log=log)
             y, _ = sf.read(tmp, dtype="float32")
             return secs, y
         finally:
@@ -234,7 +238,7 @@ def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
     (CFG.runs / name / "prep.coverage.json").write_text(json.dumps(cov))
     if heard_s > 0:
         log(f"\nThere was about {cov['heard_min']} min of sound in your recordings; {cov['used_min']} min of it became clips ({round(100 * mins * 60 / heard_s)}%).")
-        if cov["warn"]: log("Much of it was left out because you chose specific people or 'find more like these'. If your recordings are mostly one person, tick 'These recordings are one person' (step 2) and prepare again to use everything.")
+        if cov["warn"]: log("Much of it was left out because you chose specific people or 'find more like these'. If your recordings are mostly one person, use the 'use everything and prepare again' button under Prepare.")
     log(f"\nDone: {len(rows) - culled} clips ({mins:.1f} min), {dropped} dropped as non-speech" + (f", {culled} more removed to stay within {lim} minutes." if culled else "."))
     if skipped:
         log(f"\n{len(skipped)} file(s) were skipped:"); [log(f"  - {k}: {m}") for k, m in skipped[:25]]
