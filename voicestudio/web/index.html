@@ -466,7 +466,7 @@ function render(){
   const cards=[
   ()=>`<div class="card">${hd(1,(v.files.length>0&&anOk&&hfOk)||(v.imported&&(!v.fast_mode||prepDone)),v.fast_mode?'Make the voice (fast path)':v.imported||v.restoring?'Your dataset':'Your recordings folder')}
     ${pathChooser(v)}
-    ${v.fast_mode?fastHtml(v):v.imported||v.restoring?`<p class="hint">${v.restoring&&!v.imported?'This voice is being restored from a backup.':'This voice was started from a prepared dataset, so there are no recordings to choose. The steps that work on recordings are skipped.'}</p>
+    ${v.fast_mode?fastHtml(v):v.imported||v.restoring?`<div class="msg">${v.restoring&&!v.imported?'This voice is being restored from a backup.':'This voice was started from a prepared dataset, so there are no recordings to choose. The steps that work on recordings are skipped.'}</div>
       <div class="sub" style="margin-top:12px"><b>${v.restoring&&!v.imported?'Restoring a backup':'Imported dataset'}</b> <span class="pill ${v.imported&&v.prepared?'ok':''}">${v.imported&&v.prepared?'ready':'in progress'}</span>
         ${v.imported&&v.prepared?`<div class="row inl" style="margin-top:8px"><span class="pill ok">${v.clips} clips</span><span class="pill ok">${v.clip_minutes} min</span></div>
         <p class="hint">Its clips and transcripts are the dataset you imported. Next: check the transcripts (optional), then train.</p>`:''}
