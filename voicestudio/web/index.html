@@ -570,9 +570,8 @@ function render(){
     ${pbar(v.job&&v.job.kind==='score'?v.job:null)}${jobNote(v,'score')}${jobNote(v,'verify',true)}
     ${XTRA?toolsHtml(v,rowsLoaded):''}
     <div id="wbody">${rowsLoaded?'':'<p class="hint">Press <b>Show my clips</b> to load them.</p>'}</div>
-    <div class="row wsave"><button id="saveRows" title="Saves your word changes. If you deleted words from a clip, its audio is also cut down to the words you kept (separate stretches that remain become separate clips)" ${(dirty||v.edited)&&!S.busy?'':'disabled'}>Save changes${v.edited&&!dirty?' ('+v.edited+' to cut)':''}</button>${jobRun&&v.job.kind==='trim'?'<button class="bad stopjob">Stop</button>':''}<span class="hint" id="unsaved" style="margin:0" ${dirty?'':'hidden'}>You have unsaved changes</span></div>
+    <div class="row wsave"><button id="saveRows" title="Saves your word changes. Where you deleted words from a clip, its audio is cut down to the words you kept in the same step (separate stretches that remain become separate clips)." ${saveInfo(v).can&&!S.busy?'':'disabled'}>${saveInfo(v).label}</button>${jobRun&&v.job.kind==='trim'?'<button class="bad stopjob">Stop</button>':''}<span class="hint" id="unsaved" style="margin:0">${saveInfo(v).msg}</span></div>
     ${pbar(v.job&&v.job.kind==='trim'?v.job:null)}${jobNote(v,'trim')}
-    <div class="row" style="margin-top:6px"><button class="linkbtn" id="dsBtn" title="Your cleaned clips and transcript as one zip, ready to use anywhere" ${(!prepDone||v.edited)?'disabled':''}>Export dataset</button><span class="hint" style="margin:0">${v.edited?'Reprocess your edited clips first.':''}</span></div>
     ${f('tr')}
   </div>`},
 
@@ -765,6 +764,13 @@ async function approve(files,on=true){files.forEach(f=>{const r=rows&&rows.find(
 function approveRow(k){approve([rows[k].file]);drawWords()}
 const sev=r=>(r.score?r.score.lv*10+r.score.d:0)+(r.warn?5:0);
 const isEdited=r=>r.text!==r.orig;
+// What pressing Save will do, in plain words: how many clips you changed, and how many of them also get their audio cut (words deleted).
+const needsCut=r=>isEdited(r)&&r.text.trim().split(/\s+/).filter(Boolean).length<(r.orig||'').trim().split(/\s+/).filter(Boolean).length;
+function saveInfo(v){const pl=(n,w)=>n+' '+w+(n===1?'':'s');
+  if(dirty&&rows){const n=rows.filter(isEdited).length,m=rows.filter(needsCut).length;
+    return {can:true,label:m?'Save and cut '+pl(m,'clip'):'Save changes',msg:(n?pl(n,'clip')+' edited. ':'Unsaved changes. ')+(m?'Saving also cuts the audio of '+pl(m,'clip')+' down to the words you kept.':'Saving keeps the audio as it is.')}}
+  if(v.edited)return {can:true,label:'Cut '+pl(v.edited,'saved edit'),msg:pl(v.edited,'clip')+' saved with removed words still need their audio cut to match.'};
+  return {can:false,label:'Save changes',msg:'All changes are saved.'}}
 const curFilter=()=>wFilter||(rows.some(r=>r.tier)?'guide':(rowsScored&&rows.some(flagged))?'needs':'all');
 const guideLeft=()=>rows?rows.filter(r=>r.tier&&!r.approved).length:0;
 const guideOrder=(a,b)=>(a.tier-b.tier)||(a.tier===1?b.sev-a.sev:0)||(a.rnd<b.rnd?-1:1);    // errors worst-first; the questionable and spot-check tiers in a stable random order
@@ -803,7 +809,7 @@ function drawWords(){
   placePlayer();
 }
 function drawRows(){drawWords()}
-function dirtyUI(){dirty=true;const sv=$('#saveRows');if(sv)sv.disabled=false;const un=$('#unsaved');if(un)un.hidden=false;const nb=$('#nextBtn');if(nb){nb.disabled=true;$('#navMsg').textContent='Save your changes first, or press Skip.'}}
+function dirtyUI(){dirty=true;const sv=$('#saveRows');if(sv)sv.disabled=false;const un=$('#unsaved');const vv=S.voices.find(x=>x.name===cur);if(vv){const si=saveInfo(vv);if(sv)sv.textContent=si.label;if(un)un.textContent=si.msg}const nb=$('#nextBtn');if(nb){nb.disabled=true;$('#navMsg').textContent='Save your changes first, or press Skip.'}}
 function bindChips(box){box.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{wFilter=c.dataset.f;rvKey='';page=0;drawWords()})}
 // ----- Review: one clip at a time
 let whyOpen=false;      // the explainer stays shut unless you open it, and stays as you left it while you go through the clips
@@ -926,6 +932,7 @@ function paintMenu(v){
       <div class="vsrow"><div class="t"><b>Starting voice</b><div class="hint">${v.base==='auto'||!v.base?`Automatic${v.base_used?' (picked: '+esc(S.bases[v.base_used]||v.base_used)+')':', chosen when training starts'}`:esc(S.bases[v.base]||v.base)}</div></div></div>
       ${t.checkpoints?`<div class="vsrow"><div class="t"><b>Free up space</b><div class="hint">Training checkpoints use ${t.disk_gb} GB (${t.checkpoints} files). This keeps only the best and the latest.</div></div><button class="sec" id="cleanBtn" ${S.busy?'disabled':''}>Free up space</button></div>`:''}
       <div class="vsrow"><div class="t"><b>Back up</b><div class="hint">Saves this voice (its clips, settings and exported files) to one zip. Training checkpoints make it much bigger${t.checkpoints?` (${t.disk_gb} GB)`:''}.</div><label class="hint" style="margin:6px 0 0"><input type="checkbox" id="bkCk" ${t.checkpoints?'':'disabled'}> include the training checkpoints</label></div><button class="sec" id="bkBtn" ${S.busy?'disabled':''}>Download backup</button></div>
+      <div class="vsrow"><div class="t"><b>Export dataset</b><div class="hint">Your cleaned clips and transcript as one zip, ready to use anywhere.${v.edited?' Save your edited clips first.':''}</div></div><button class="sec" id="dsBtn" ${v.prepared&&!v.edited?'':'disabled'}>Export…</button></div>
       <div class="vsrow"><div class="t"><b>Rename</b><div class="hint">Capital letters count: Joe and joe are different.</div></div><button class="sec" id="renameBtn" ${S.busy?'disabled':''}>Rename…</button></div>
       <div class="vsrow"><div class="t"><b>Delete</b><div class="hint">Removes this voice and its working files. Your recordings are never touched.</div></div><button class="sec dng" id="delBtn">Delete…</button></div>`:''}<h3>Stored models</h3><div class="hint" style="margin:0 10px 6px">Downloaded automatically when the Mill starts and kept up to date. Deleting the cache frees the space, and everything downloads again on the next start.</div><div id="voModels"><div class="hint" style="margin:4px 10px">Loading…</div></div>
   <details class="vsub" id="voStart" style="margin:12px 10px 4px"><summary class="hint" style="cursor:pointer;margin:0">Start-up</summary><div id="voStartBody" class="hint" style="margin:8px 0 0">Loading…</div></details>`;
