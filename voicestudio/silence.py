@@ -51,14 +51,15 @@ def trim_clip(y, sr, lead=0.15, tail=0.25, max_pause=None):
     return out, (len(y) - len(out)) / sr
 
 
-def run(name, lead=0.15, tail=0.25, pauses=False, max_pause=0.6, log=print):
+def run(name, lead=0.15, tail=0.25, pauses=False, max_pause=0.6, log=print, prog=None, span=(0.0, 1.0)):
+    """prog/span: when this runs as the last part of Build dataset, it reports into that job's progress bar between span[0] and span[1]."""
     import soundfile as sf
     root = CFG.data / name; wavs = root / "wavs"; back = root / "wavs.presilence"
     files = sorted(wavs.glob("*.wav"))
     if not files: raise SystemExit("There are no clips to trim.")
-    back.mkdir(exist_ok=True); prog = Progress(name, "silence"); changed = 0; removed = 0.0
+    back.mkdir(exist_ok=True); own = prog is None; prog = prog or Progress(name, "silence"); changed = 0; removed = 0.0
     for i, p in enumerate(files, 1):
-        prog.update("Trimming silence", i - 1, len(files), p.name, frac=(i - 1) / len(files))
+        prog.update("Trimming silence", i - 1, len(files), p.name, frac=span[0] + (span[1] - span[0]) * (i - 1) / len(files))
         y, sr = sf.read(p, dtype="float32"); y = y if y.ndim == 1 else y.mean(1)
         out, sec = trim_clip(y, sr, lead, tail, max_pause if pauses else None)
         if sec < 0.02: continue
@@ -69,4 +70,4 @@ def run(name, lead=0.15, tail=0.25, pauses=False, max_pause=0.6, log=print):
     log(f"\nDone: {changed} of {len(files)} clips trimmed, {removed:.0f} s of silence removed ({removed / max(1, sum(sf.info(f).duration for f in files)) * 100:.1f}% of the audio)."
         + (f" Pauses inside clips are now at most {max_pause:g} s." if pauses else ""))
     log("The untouched originals are in wavs.presilence.")
-    prog.finish(f"{changed} clips trimmed")
+    if own: prog.finish(f"{changed} clips trimmed")

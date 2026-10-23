@@ -230,7 +230,9 @@ def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
     (CFG.runs / name / "clipscores.json").unlink(missing_ok=True)                  # new clips: old scores no longer apply
     del asr; torch.cuda.empty_cache()
     prog.update("Choosing the best clips", 0, 1, frac=0.9)
-    _, culled = dataset.cull(name, lim, log, frac_range=(0.9, 1.0), prog=prog)       # keep only the best `lim` minutes in the dataset
+    _, culled = dataset.cull(name, lim, log, frac_range=(0.9, 0.95), prog=prog)      # keep only the best `lim` minutes in the dataset
+    from . import silence                                                        # then every clip loses its extra silence: short natural edges, pauses inside capped at 0.6 s
+    silence.run(name, 0.15, 0.25, True, 0.6, log=log, prog=prog, span=(0.95, 1.0))
     mins = sum(d for p, d in clips if p.exists()) / 60
     limited = bool(chosen) or bool(mm.get("use_match") and not one)
     cov = {"heard_min": round(heard_s / 60, 1), "used_min": round(mins, 1), "limited": limited, "files": len(files)}

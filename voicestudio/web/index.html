@@ -441,7 +441,7 @@ async function refresh(force){
   let n;try{n=await api('/api/voices')}catch(e){return}
   if(Date.now()-hfT>60000)pollHf(false);
   watchJobs(n);
-  const ae=document.activeElement, typing=ae&&(ae.closest&&ae.closest('#tbl')||['txt','srcIn','spNum','pnameIn','frFind','frRep'].includes(ae.id));
+  const ae=document.activeElement, typing=ae&&(ae.closest&&ae.closest('#tbl')||['txt','srcIn','spNum','pnameIn'].includes(ae.id));
   const sig=JSON.stringify(n);
   if(!force&&(sig===last||typing))return;      // never redraw under your fingers
   last=sig;S=n;
@@ -460,7 +460,7 @@ const MIN_W=1280,MIN_H=600;
 function checkSize(){const small=window.innerWidth<MIN_W||window.innerHeight<MIN_H;document.documentElement.classList.toggle('small',small);const t=$('#tooSmall');if(t)t.hidden=!small;const n=$('#tooSmallNow');if(n)n.textContent=`Your window is ${window.innerWidth} × ${window.innerHeight}.`;if(!small)try{fitCard()}catch(e){}}
 window.addEventListener('resize',checkSize);
 function render(){
-  const keep={txt:$('#txt')&&$('#txt').value,ep:$('#ep')&&$('#ep').value,sp:$('#spNum')&&$('#spNum').value,ff:$('#frFind')&&$('#frFind').value,fr:$('#frRep')&&$('#frRep').value,fc:$('#frCase')&&$('#frCase').checked,mm:$('#maxMin')&&$('#maxMin').value,gl:$('#gpuLoad')&&$('#gpuLoad').value,wh:$('#which')&&$('#which').value};
+  const keep={txt:$('#txt')&&$('#txt').value,ep:$('#ep')&&$('#ep').value,sp:$('#spNum')&&$('#spNum').value,mm:$('#maxMin')&&$('#maxMin').value,gl:$('#gpuLoad')&&$('#gpuLoad').value,wh:$('#which')&&$('#which').value};
   if(player.parentNode)player.remove();      // put back right after the redraw, in the same moment, so playback is not interrupted
   $('#busyBar').innerHTML=S.busy&&S.busy.voice!==cur?`<div class="card" style="padding:10px 16px">${live('Busy')} <b>${esc(S.busy.voice)}</b>: the GPU is busy with ${jobName(S.busy.kind)}. Other jobs wait until it finishes.</div>`:'';
   const v=S.voices.find(x=>x.name===cur);
@@ -659,7 +659,7 @@ function render(){
       <div class="navmid"><div id="statusbar"></div><span class="hint nm" id="navMsg">${working[stepNo]?'':esc(gate[stepNo])}</span></div>
       <span class="row">${optional[stepNo]?`<button class="sec" id="skipBtn" ${(run('speakers')||run('match')||run('trim')||run('score')||run('verify'))?'disabled':''}>Skip ›</button>`:''}${stepNo<names.length-1?`<button id="nextBtn" ${gate[stepNo]?'disabled':''}>Next ›</button>`:`<button id="newVoiceBtn" title="Start another voice. This voice stays saved exactly as it is: you can switch back to it any time from the voice menu at the top.">New voice ›</button>`}</span></div>
 `;
-  if(keep.sp&&$('#spNum'))$('#spNum').value=keep.sp;if(keep.ff!=null&&$('#frFind')){$('#frFind').value=keep.ff;$('#frRep').value=keep.fr;$('#frCase').checked=!!keep.fc}if(keep.wh&&$('#which'))$('#which').value=keep.wh;if(keep.txt!=null&&$('#txt'))$('#txt').value=keep.txt;if(keep.ep!=null&&$('#ep'))$('#ep').value=keep.ep;if(keep.mm!=null&&$('#maxMin'))$('#maxMin').value=keep.mm;if(keep.gl!=null&&$('#gpuLoad'))$('#gpuLoad').value=keep.gl;
+  if(keep.sp&&$('#spNum'))$('#spNum').value=keep.sp;if(keep.wh&&$('#which'))$('#which').value=keep.wh;if(keep.txt!=null&&$('#txt'))$('#txt').value=keep.txt;if(keep.ep!=null&&$('#ep'))$('#ep').value=keep.ep;if(keep.mm!=null&&$('#maxMin'))$('#maxMin').value=keep.mm;if(keep.gl!=null&&$('#gpuLoad'))$('#gpuLoad').value=keep.gl;
   if(rows&&rowsFor===v.name&&v.verified&&!rowsVerified&&!dirty&&!(v.job&&v.job.running)){loadRows(v.name).catch(()=>{})}
   if(rows&&rowsFor===v.name){if(v.scored&&!rowsScored&&!dirty){rowsScored=true;loadRows(v.name).catch(()=>{})}else if(!v.scored&&rowsScored){rows.forEach(r=>r.score=null);rowsScored=false}}
   applyLocks(v,stepNo,downstream[stepNo]&&!jobRun);
@@ -717,15 +717,11 @@ function wire(v){
   b('#spBtn',()=>act('/api/speakers',{voice:v.name,num:($('#spNum')||{}).value||'',hours:0},'sp'));
   b('#keepBtn',async()=>{const ids=[...selSet(v)].sort((a,b)=>a-b);
     try{await api('/api/keep',{method:'POST',body:JSON.stringify({voice:v.name,ids})});spSel=null;say('sp',ids.length?`Saved. Building the dataset will use only ${ids.map(i=>pn(v,i)).join(', ')}.`:'Saved. All speech will be used.','ok');refresh(true)}catch(e){say('sp',e.message,'err')}});
-  b('#silBtn',()=>act('/api/silence',{voice:v.name,pauses:!!($('#silPaus')&&$('#silPaus').checked)},'tr'));
   b('#scoreBtn',()=>act('/api/score',{voice:v.name},'tr'));b('#vfyBtn',()=>act('/api/verify',{voice:v.name},'tr'));
   b('#vReview',()=>{wView='review';rvKey='';render()});b('#vList',()=>{wView='list';render()});
   const ws=$('#wSort');if(ws){ws.value=wSort;ws.onchange=()=>{wSort=ws.value;page=0;if(rows)drawRows()}}
   b('#okFlag',()=>{if(!rows)return;const f=rows.filter(flagged).map(x=>x.file);if(!f.length)return say('tr','Nothing needs attention.');approve(f);say('tr',`Approved ${f.length} clip${f.length>1?'s':''}.`,'ok');drawWords()});
   b('#delFlag',()=>{if(!rows)return;const bad=rows.filter(r=>r.score&&r.score.lv===2).length;if(!bad)return say('tr','No clips are flagged red.');rows=rows.filter(r=>!(r.score&&r.score.lv===2));dirty=true;say('tr',`Took ${bad} flagged clip${bad>1?'s':''} out of the list. Press Save to apply (Reload list undoes it).`,'ok')});
-  b('#frBtn',()=>{const f=$('#frFind').value,rp=$('#frRep').value;if(!f||!rows)return;const re=new RegExp(f.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),$('#frCase').checked?'g':'gi');let n=0;
-    rows.forEach(r=>{const t=r.text.replace(re,()=>rp);if(t!==r.text){r.text=t;n++}});
-    if(!n)return say('tr','Nothing to replace.');dirty=true;say('tr',`Replaced in ${n} clip${n>1?'s':''}. Press Save to apply.`,'ok')});
   document.querySelectorAll('[data-restore]').forEach(el=>el.onclick=async()=>{el.disabled=true;try{await api('/api/trim/remove',{method:'POST',body:JSON.stringify({voice:v.name,files:[el.dataset.restore]})});rows=null;rowsFor='';say('tr','Clip removed.','ok');await refresh(true);loadRows(v.name).catch(()=>{})}catch(e){say('tr',e.message,'err')}});
   b('#loadRows',()=>loadRows(v.name));b('#saveRows',()=>saveRows(v.name));
   b('#trainBtn',async()=>{await act('/api/maxminutes',{voice:v.name,minutes:+$('#maxMin').value||0},'train');await act('/api/gpuload',{voice:v.name,percent:+$('#gpuLoad').value||100},'train');return act('/api/train',{voice:v.name,epochs:+$('#ep').value},'train')});
@@ -777,8 +773,6 @@ const guideOrder=(a,b)=>(a.tier-b.tier)||(a.tier===1?b.sev-a.sev:0)||(a.rnd<b.rn
 const TIERS=[['Likely errors',1],['Questionable',2],['Random spot-check',3]];
 const passes=(r,f)=>f==='all'||(f==='guide'&&!!r.tier&&!r.approved)||(f==='needs'&&flagged(r))||(f==='edited'&&isEdited(r))||(f==='approved'&&!!r.approved);
 const toolsHtml=(v,loaded)=>`<details class="vs tools" ${toolsOpen?'open':''} ontoggle="toolsOpen=this.open"><summary>Tools</summary>
-  <div class="vsrow"><div class="t"><b>Find and replace</b><div class="hint">Change a word or phrase in the text of every clip.</div><div class="row" style="margin-top:6px"><input type="text" id="frFind" placeholder="Find" style="width:140px" ${loaded?'':'disabled'}><input type="text" id="frRep" placeholder="Replace with" style="width:140px" ${loaded?'':'disabled'}><label class="hint" style="margin:0"><input type="checkbox" id="frCase"> match case</label></div></div><button class="sec" id="frBtn" ${loaded?'':'disabled'}>Replace all</button></div>
-  <div class="vsrow"><div class="t"><b>Trim silence</b><div class="hint">Keeps 0.15 s before the first word and 0.25 s after the last, and removes the rest. The words are never touched, and the untouched originals are kept. Run it before training, not while a voice is training.</div><label class="hint" style="margin:6px 0 0;display:block"><input type="checkbox" id="silPaus"> also shorten long pauses inside clips to 0.6 s</label></div><button class="sec" id="silBtn" ${loaded&&!S.busy&&!v.train.running?'':'disabled'}>Trim silence</button></div>
   <div class="vsrow"><div class="t"><b>Approve flagged clips</b><div class="hint">Marks every clip that needs attention as fine, so they stop being flagged.</div></div><button class="sec" id="okFlag" ${loaded?'':'disabled'}>Approve flagged</button></div>
   <div class="vsrow"><div class="t"><b>Remove flagged clips</b><div class="hint">Takes the red-flagged clips out of the list. Press Save to apply.</div></div><button class="sec" id="delFlag" ${loaded&&v.scored?'':'disabled'}>Remove flagged</button></div>
   <div class="vsrow"><div class="t"><b>List order</b><div class="hint">How the List view is sorted.</div></div><select id="wSort" ${v.scored?'':'disabled'} style="width:150px"><option value="order">As recorded</option><option value="match">Least like my voice first</option></select></div>
