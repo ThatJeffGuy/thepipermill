@@ -441,7 +441,7 @@ async function refresh(force){
   let n;try{n=await api('/api/voices')}catch(e){return}
   if(Date.now()-hfT>60000)pollHf(false);
   watchJobs(n);
-  const ae=document.activeElement, typing=ae&&(ae.closest&&ae.closest('#tbl')||['txt','srcIn','spNum','pnameIn'].includes(ae.id));
+  const ae=document.activeElement, typing=ae&&(ae.closest&&ae.closest('#tbl')||['txt','srcIn','spNum','pnameIn'].includes(ae.id)||(ae.closest&&ae.closest('#main')&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)&&ae.type!=='checkbox'&&ae.type!=='button'));      // no redraw while a field on the page has the cursor
   const sig=JSON.stringify(n);
   if(!force&&(sig===last||typing))return;      // never redraw under your fingers
   last=sig;S=n;
@@ -462,6 +462,10 @@ function checkSize(){const small=window.innerWidth<MIN_W||window.innerHeight<MIN
 window.addEventListener('resize',checkSize);
 function render(){
   const keep={txt:$('#txt')&&$('#txt').value,ep:$('#ep')&&$('#ep').value,sp:$('#spNum')&&$('#spNum').value,mm:$('#maxMin')&&$('#maxMin').value,gl:$('#gpuLoad')&&$('#gpuLoad').value,wh:$('#which')&&$('#which').value};
+  // what the page looked like a moment ago, so a redraw (for example a progress update) puts it back exactly: which boxes were open, and how far the card was scrolled
+  const _ol=$('#sbLog');window._sbKeep=_ol?{top:_ol.scrollTop,bot:_ol.scrollHeight-_ol.scrollTop-_ol.clientHeight<24}:null;
+  const _c0=$('#main .card'),_pre={sk:_c0?_c0.dataset.sk:null,st:_c0?_c0.scrollTop:0,det:{}};
+  document.querySelectorAll('#main details').forEach(d=>{const sm=d.querySelector(':scope>summary');if(sm)_pre.det[sm.textContent.trim()]=d.open});
   if(player.parentNode)player.remove();      // put back right after the redraw, in the same moment, so playback is not interrupted
   const v=S.voices.find(x=>x.name===cur);
   if(!v){paintStatus(null);paintMenu(null);$('#main').innerHTML=`<div class="card empty"><h2>Welcome to The Piper Mill</h2><p>Train your own text-to-speech voice for Piper from a folder of recordings, entirely on this computer. Nothing you record is uploaded anywhere.</p><p>Please train only on your own voice, or on the voice of someone who has agreed to it.</p><button onclick="openNew()">+ New voice</button></div>`;syncGpu(false);return}
@@ -663,7 +667,10 @@ function render(){
   if(rows&&rowsFor===v.name){if(v.scored&&!rowsScored&&!dirty){rowsScored=true;loadRows(v.name).catch(()=>{})}else if(!v.scored&&rowsScored){rows.forEach(r=>r.score=null);rowsScored=false}}
   applyLocks(v,stepNo,downstream[stepNo]&&!jobRun);
   paintStatus(v,t,jobRun,stepNo);if(!menuOpen)paintMenu(v);
-  fitCard();wire(v);updPlan();syncGpu(stepNo===6);if(rows&&rowsFor===v.name&&$('#wbody'))drawWords();placePlayer();
+  fitCard();
+  const _c1=$('#main .card');if(_c1){const sk=v.name+':'+stepNo;_c1.dataset.sk=sk;
+    if(_pre.sk===sk){document.querySelectorAll('#main details').forEach(d=>{const sm=d.querySelector(':scope>summary'),k=sm&&sm.textContent.trim();if(k!=null&&k in _pre.det&&d.open!==_pre.det[k])d.open=_pre.det[k]});_c1.scrollTop=_pre.st}}
+  wire(v);updPlan();syncGpu(stepNo===6);if(rows&&rowsFor===v.name&&$('#wbody'))drawWords();placePlayer();
   // opening the Words step shows your clips straight away (no need to press "Show my clips" after a refresh)
   if(stepNo===5&&v.prepared&&!(rows&&rowsFor===v.name)&&!autoRows[v.name+':'+v.clips]){autoRows[v.name+':'+v.clips]=1;loadRows(v.name).catch(()=>{})}
 }
@@ -960,12 +967,14 @@ function paintStatus(v,t,jobRun,stepNo){
     else{ind=true;detail='Working… this step cannot estimate how long it will take'}}
   else if(v&&v.job&&v.job.kind){const j=v.job;log=j.log||'';label='Idle';sub=j.rc===0||j.rc==null?`Last job: ${nm[j.kind]||j.kind}, finished.`:`Last job: ${nm[j.kind]||j.kind} did not finish (stopped or failed). Turn on Show Console to see why.`;pct=j.rc===0?100:0}
   else if(v&&t&&t.log&&t.log.length&&!t.running){log=t.log.join('\n')}
+  const oldLog=$('#sbLog'),prevLog=oldLog?{top:oldLog.scrollTop,bot:oldLog.scrollHeight-oldLog.scrollTop-oldLog.clientHeight<24}:window._sbKeep;      // keep your place in the console if you scrolled up
+  window._sbKeep=null;
   const here=step!=null&&step===stepNo;
   const txt=cls?sub:(here?detail:`on the ${steps[step]} step${detail?' · '+detail:''}`);
   box.innerHTML=`<div class="sbar ${cls}"><div class="sline"><b>${esc(label)}</b><span class="hint sbtxt" title="${esc(txt)}">${esc(txt)}</span><div class="bar ${ind?'ind':''}"><div style="width:${ind?0:pct}%"></div></div>${step!=null&&!here?`<button class="sec" data-go="${step}">Go there</button>`:''}${stop?`<button class="bad ${stop}">Stop</button>`:''}</div>
     ${mode==='advanced'?`<pre id="sbLog">${esc(log||'(no output yet)')}</pre>`:''}</div>`;
   const bb=$('#busyBar');if(bb)bb.innerHTML=S.busy&&S.busy.voice!==cur?`<div class="msg" style="margin:0"><b>${esc(S.busy.voice)}</b> is busy with ${esc(jobName(S.busy.kind))}. Other jobs wait until it finishes.</div>`:'';
-  const pre=$('#sbLog');if(pre){const key=(v?v.name:'')+':'+log.length;pre.scrollTop=pre.scrollHeight;sbLogKey=key}
+  const pre=$('#sbLog');if(pre){const key=(v?v.name:'')+':'+log.length;pre.scrollTop=(!prevLog||prevLog.bot)?pre.scrollHeight:prevLog.top;sbLogKey=key}
 }
 const SRCINFO={recordings:{ph:'Folder with your recordings',hint:'',pick:'folder'},
   dataset:{ph:'Folder or .zip with metadata.csv and clips',hint:'Use clips you have already cleaned: a folder or .zip holding a metadata.csv (lines like clip.wav|what is said) and the audio clips next to it, usually in a wavs folder. The speaker and prepare steps are skipped.',pick:'folderzip'},
