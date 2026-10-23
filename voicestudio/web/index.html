@@ -462,7 +462,7 @@ function render(){
   const hd=(n,done,title)=>`<h2><span class="step ${done?'done':''}">${n}</span>${title}</h2>`;
   const rowsLoaded=!!(rows&&rowsFor===v.name), wordsDone=rowsLoaded||!!v.words_seen;      // seen this session, or at any time before (remembered by the server)
   const cards=[
-  ()=>`<div class="card">${hd(1,(v.files.length>0&&anOk&&hfOk)||(v.imported&&(!v.fast_mode||prepDone)),v.fast_mode?'Make the voice (fast path)':v.imported||v.restoring?'Your dataset':'Your recordings folder')}
+  ()=>`<div class="card">${hd(1,(v.files.length>0&&anOk&&hfOk)||(v.imported&&(!v.fast_mode||prepDone)),v.fast_mode?'Make the voice (fast path)':'Sources')}
     ${pathChooser(v)}
     ${v.fast_mode?fastHtml(v):v.imported||v.restoring?`<div class="msg">${v.restoring&&!v.imported?'This voice is being restored from a backup.':'This voice was started from a prepared dataset, so there are no recordings to choose. The steps that work on recordings are skipped.'}</div>
       <div class="sub" style="margin-top:12px"><b>${v.restoring&&!v.imported?'Restoring a backup':'Imported dataset'}</b> <span class="pill ${v.imported&&v.prepared?'ok':''}">${v.imported&&v.prepared?'ready':'in progress'}</span>
