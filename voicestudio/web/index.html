@@ -567,7 +567,7 @@ function render(){
       ${rowsLoaded?'':`<button class="sec" id="loadRows" ${prepDone?'':'disabled'}>Show my clips</button>`}
       <button id="vfyBtn" title="Listens to every clip again and compares it with the text. Clips that agree are hidden" ${prepDone&&!S.busy?'':'disabled'}>${v.verified?'Check new clips':'Check automatically'}</button>${jobRun&&v.job.kind==='verify'?'<button class="bad stopjob">Stop</button>':''}
       <button class="sec" id="scoreBtn" title="Optional. Listens to every clip and flags any that sound unlike the rest, such as another speaker or lots of noise." ${prepDone&&!S.busy?'':'disabled'}>${v.scored?'Check speakers again':'Check speakers'}</button>${jobRun&&v.job.kind==='score'?'<button class="bad stopjob">Stop</button>':''}
-      <span class="seg2" role="group" aria-label="How to look at the clips"><button id="vReview" class="${wv==='review'?'on':''}" title="One clip at a time">Review</button><button id="vList" class="${wv==='list'?'on':''}" title="All the clips in a list">List</button></span>
+      <span class="seg2" role="group" aria-label="How to look at the clips" style="margin-left:auto"><button id="vReview" class="${wv==='review'?'on':''}" title="One clip at a time">Review</button><button id="vList" class="${wv==='list'?'on':''}" title="All the clips in a list">List</button></span>
     </div>
     ${pbar(v.job&&v.job.kind==='score'?v.job:null)}${jobNote(v,'score')}${jobNote(v,'verify',true)}
     ${XTRA?toolsHtml(v,rowsLoaded):''}
