@@ -1,6 +1,6 @@
 """Runs INSIDE the separate "clone" environment (.venv-clone), never in the main one.
 
-Reads a job file, then: (1) speaks every sentence in the reference voice with F5-TTS, (2) writes down what was actually said with Whisper,
+Reads a job file, then: (1) speaks every sentence in the reference voice with the cloner (OmniVoice by default, F5-TTS as the alternative), (2) writes down what was actually said with Whisper,
 (3) measures how much each clip sounds like the reference (ECAPA speaker voiceprint), (4) keeps the clips whose words are right and whose
 voice matches, up to the requested minutes. Output: <out_dir>/kept/NNNN.wav + kept.csv (`file.wav|text`) + report.json.
 It is a plain script on purpose (standard library + the clone environment only) so the main program never has to import the cloner.
@@ -39,8 +39,21 @@ def main(job_path):
     if dev == "cuda" and torch.cuda.is_available() and job.get("gpu_fraction"): torch.cuda.set_per_process_memory_fraction(float(job["gpu_fraction"]))
     S, target_s = job["sentences"], job["target_minutes"] * 60
     # ---- 1. speak the sentences (resumable: clips already on disk are kept)
-    from f5_tts.api import F5TTS
-    f5 = F5TTS(device=dev); have = {p.name for p in raw.glob("*.wav")}; total_s = 0.0; meta = {}
+    engine = job.get("engine", "omnivoice")
+    if engine == "f5":
+        from f5_tts.api import F5TTS
+        cloner = F5TTS(device=dev)
+        def speak(t, i):
+            wav, sr, _ = cloner.infer(ref_file=job["ref_wav"], ref_text=job["ref_text"], gen_text=t, seed=i, nfe_step=job.get("nfe_step", 32),
+                                      show_info=lambda *a: None, progress=None)
+            return wav, sr
+    else:
+        from omnivoice import OmniVoice
+        cloner = OmniVoice.from_pretrained("k2-fsa/OmniVoice", device_map="cuda:0" if dev == "cuda" else "cpu", dtype=torch.float16 if dev == "cuda" else torch.float32)
+        def speak(t, i):
+            torch.manual_seed(i)
+            return cloner.generate(text=t, ref_audio=job["ref_wav"], ref_text=job["ref_text"], speed=float(job.get("speed", 1.0)))[0], 24000
+    have = {p.name for p in raw.glob("*.wav")}; total_s = 0.0; meta = {}
     mp = out / "raw.json"
     if mp.exists(): meta = json.loads(mp.read_text())
     for i, t in enumerate(S):
@@ -49,16 +62,14 @@ def main(job_path):
             total_s += meta.get(fn, {}).get("sec", 0)
         else:
             if total_s >= target_s * job.get("overshoot", 1.5): break
-            try:
-                wav, sr, _ = f5.infer(ref_file=job["ref_wav"], ref_text=job["ref_text"], gen_text=t, seed=i, nfe_step=job.get("nfe_step", 32),
-                                      show_info=lambda *a: None, progress=None)
+            try: wav, sr = speak(t, i)
             except Exception as e:
                 print("skip", i, repr(e)[:120], flush=True); continue
             sf.write(raw / fn, wav, sr); meta[fn] = {"text": t, "sec": len(wav) / sr}; total_s += len(wav) / sr
             if i % 10 == 0: mp.write_text(json.dumps(meta))
         _progress(out, "Speaking the sentences in the reference voice", int(total_s), int(target_s * job.get("overshoot", 1.5)), f"{i + 1} sentences")
     mp.write_text(json.dumps(meta)); files = sorted(meta)
-    del f5
+    del cloner
     if dev == "cuda": torch.cuda.empty_cache()
     # ---- 2. what was really said
     from transformers import pipeline

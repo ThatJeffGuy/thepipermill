@@ -22,6 +22,8 @@ DEFAULTS = {
     "hf_token": "",                          # Hugging Face read token (only for the speaker-finding model, which is gated)
     "diarization_model": "pyannote/speaker-diarization-community-1",
     "speaker_match_distance": 0.55,          # lower = stricter about calling two voices the same person
+    "clone_engine": "omnivoice",             # who speaks the dataset sentences: "omnivoice" (default, chosen by the owner 2026-10-23) or "f5"
+    "clone_speed": 1.0,                      # OmniVoice speaking speed (1.0 = its natural pace; a voice can override it with fast_speed in its voice file)
     "clone_gpu_fraction": 0.8,               # share of video memory the fast path (cloning) may use, so the screen and browser keep some
     "protected_names": [],                   # voice names that can never be created
     "notify_url": "",                        # optional: POST here when a job finishes (a Home Assistant webhook, ntfy topic, ...)

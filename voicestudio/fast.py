@@ -1,7 +1,7 @@
 """The fast path (2.0): a short reference clip is cloned into a clean dataset, which the normal Train step then fine-tunes.
 
 1. `reference`  - choose one clean clip (about 5 to 12 seconds) and, if you like, type what is said; otherwise Whisper writes it down.
-2. `run`        - the cloner (F5-TTS, in its own environment) speaks a few hundred varied sentences in that voice, Whisper checks the
+2. `run`        - the cloner (OmniVoice, or F5-TTS if `clone_engine` says so; in its own environment) speaks a few hundred varied sentences in that voice, Whisper checks the
                   words, a voiceprint check drops clips that drifted from the reference, and the best minutes are kept.
 3. The kept clips are written exactly like an imported dataset (22.05 kHz mono wavs + metadata.csv), so Check, Train and Listen follow unchanged.
 
@@ -31,7 +31,7 @@ def available():
     if _AV[1] is not None and time.time() - _AV[0] < 60: return _AV[1]
     if not CLONE_PY.exists(): res = (False, "The fast path is not installed. Run  scripts/install-clone.sh  once (it downloads about 6 GB), then reload this page.")
     else:
-        r = subprocess.run([str(CLONE_PY), "-c", "import sys, types; m = types.ModuleType('datasets'); m.Dataset = object; m.load_from_disk = None; sys.modules['datasets'] = m; import f5_tts, speechbrain"], capture_output=True, text=True)
+        r = subprocess.run([str(CLONE_PY), "-c", "import sys, types; m = types.ModuleType('datasets'); m.Dataset = object; m.load_from_disk = None; sys.modules['datasets'] = m; import omnivoice, f5_tts, speechbrain"], capture_output=True, text=True)
         res = (r.returncode == 0, "" if r.returncode == 0 else "The clone environment is damaged. Run  scripts/install-clone.sh  again.")
     _AV = (time.time(), res); return res
 
@@ -107,6 +107,7 @@ def run(name, minutes=None, log=print, device=None):
     import torch
     job = {"ref_wav": str(ref), "ref_text": m["fast_ref_text"], "sentences": sentences(name), "out_dir": str(d), "target_minutes": minutes,
            "device": device or ("cuda" if torch.cuda.is_available() else "cpu"), "gpu_fraction": float(m.get("fast_gpu_fraction") or CFG["clone_gpu_fraction"]),
+           "engine": CFG["clone_engine"], "speed": float(m.get("fast_speed") or CFG["clone_speed"]),
            "whisper_model": CFG["whisper_model"], "language": (CFG["espeak_voice"] or "en").split("-")[0], "cache_dir": str(CFG.home / "models")}
     (d / "job.json").write_text(json.dumps(job))
     prog = Progress(name, "fast"); prog.update("Starting the cloner", 0, 1, frac=0.01)
