@@ -158,7 +158,7 @@ textarea.cell{width:100%;min-height:38px;resize:none;overflow:hidden;padding:8px
 .vs.soft{border:0;background:none;padding:0;margin:8px 0 4px}.vs.soft summary{padding:2px 0;font-weight:500;color:var(--acc);cursor:pointer;font-size:14px}.vs.soft[open]{border:1px solid var(--line);border-radius:12px;background:var(--bg);padding:6px 16px 10px}
 .sp i .lk{position:absolute;top:-2px;right:-18px;font-size:11px;font-weight:400;line-height:1;filter:grayscale(.2)}
 .lockbar{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:8px 0 12px;padding:10px 14px;border:1px solid var(--line);border-left:4px solid var(--warn);border-radius:10px;background:var(--bg);font-size:14px}
-.card .msg{padding:10px 14px;border:1px solid var(--line);border-left:4px solid var(--mute);border-radius:10px;background:var(--bg);margin-top:10px}.card .msg:empty{display:none}.rvbtns{align-items:flex-start;gap:8px}.rvbtns button{height:34px;padding:0 14px;min-height:0}.rvbtns label{height:34px;display:flex;align-items:center;gap:6px}.rvmid{flex:1;min-width:220px;margin:0 4px;text-align:center}.card .rvmid .msg{margin:0;height:34px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;padding:0 12px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rvmid .msg b{margin:0 5px 0 6px}.rvwhy,.whyhint{margin:8px 0 0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rvmid .rvprog{margin:0}.rvmid .msg{padding:8px 12px;font-size:13px}.card .msg.err{border-left-color:var(--bad)}.card .msg.ok{border-left-color:var(--ok)}.card .msg[style*="warn"]{border-left-color:var(--warn)}
+.card .msg{padding:10px 14px;border:1px solid var(--line);border-left:4px solid var(--mute);border-radius:10px;background:var(--bg);margin-top:10px}.card .msg:empty{display:none}.card>.msg,.card>.lockbar{margin:8px 0 12px}.card>.msg+p.hint,.card>.lockbar+p.hint,.card>.msg+details.vs,.card>.lockbar+details.vs{margin-top:12px}.rvbtns{align-items:flex-start;gap:8px}.rvbtns button{height:34px;padding:0 14px;min-height:0}.rvbtns label{height:34px;display:flex;align-items:center;gap:6px}.rvmid{flex:1;min-width:220px;margin:0 4px;text-align:center}.card .rvmid .msg{margin:0;height:34px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;padding:0 12px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rvmid .msg b{margin:0 5px 0 6px}.rvwhy,.whyhint{margin:8px 0 0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rvmid .rvprog{margin:0}.rvmid .msg{padding:8px 12px;font-size:13px}.card .msg.err{border-left-color:var(--bad)}.card .msg.ok{border-left-color:var(--ok)}.card .msg[style*="warn"]{border-left-color:var(--warn)}
 </style>
 </head>
 <body>
@@ -527,8 +527,9 @@ function render(){
     const tile=(i,t2,d)=>`<div class="ptile ${cur===i?'on':''} ${prepDone&&!pj?'done':''}"><i>${prepDone&&!pj?'✓':i+1}</i><b>${t2}</b><span>${d}</span></div>`;
     const over=prepDone&&!pj&&v.clip_minutes>lim+0.5;
     return `<div class="card">${hd(5,prepDone,'Build the dataset')}
+    ${v.imported?'<div class="msg">This voice was started from a prepared dataset, so there is nothing to build.</div>':''}
     <p class="hint">This turns your recordings into the material the voice learns from: short clips, each with a written transcript. It runs on your GPU and can take a while for long recordings. You can stop at any time.</p>
-    ${v.imported?'<div class="msg">This voice was started from a prepared dataset, so there is nothing to build.</div>':`
+    ${v.imported?'':`
     <div class="ptiles">
       ${tile(0,'Choose the speech',src+' Very long recordings are thinned out evenly, so no more than about '+Math.round(lim*1.5)+' min is processed.')}
       ${tile(1,'Cut into clips','The prepared audio (voices only) is cut at pauses into clips of about 1.5 to 12 seconds.')}
