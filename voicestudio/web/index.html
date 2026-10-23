@@ -637,7 +637,7 @@ function render(){
     $('#main').innerHTML=`
     <div class="strip">${names.map((n,i)=>{
       const busyNow=[run('import')||run('restore')||run('analyze')||run('fast')||run('fastref'),run('master'),run('speakers'),run('match'),run('prep')||run('cull'),run('trim')||run('score')||run('verify')||run('silence'),!!t.running,run('export')||run('compare')][i];
-      const st=busyNow?(i===stepNo?'cur run':'run'):i===stepNo?(shownDone[i]?'cur ok':'cur'):shownDone[i]?'ok':i<stepNo?(optional[i]?'skip':'warn'):(i===6&&t.checkpoints>0&&!t.running)?'part':'todo';
+      const st=busyNow?(i===stepNo?'cur run':'run'):i===stepNo?(shownDone[i]?'cur ok':'cur'):shownDone[i]?'ok':i<stepNo?(optional[i]?'ok':'warn'):(i===6&&t.checkpoints>0&&!t.running)?'part':'todo';
       const mark=busyNow?'':st.includes('ok')?'✓':st==='skip'?'–':st==='warn'?'!':st==='part'?'…':i+1;
       const locked=i===7&&!t.checkpoints;
       const tip=locked?'locked until training has saved a checkpoint':isLocked(i)?'locked: later steps were built from it. ':v.imported&&i>0&&i<5?'not needed here (this voice started from a prepared dataset). Click to look at it.':'click to open. '+{run:'working now','cur run':'working now (you are here)','cur':'you are here','cur ok':'you are here (done)',ok:'done',skip:'skipped',warn:'not finished',part:'started, not finished',todo:'not started yet'}[st];
