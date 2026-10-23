@@ -216,7 +216,7 @@ def gpu_stats():
 
 _NOTE = {}      # (voice, job) -> was it running when we last looked
 JOBWORDS = {"silence": "trimming silence", "verify": "checking the transcripts", "fastref": "preparing the reference clip", "fast": "cloning the voice", "master": "preparing the audio", "import": "importing the dataset", "restore": "restoring the backup", "compare": "comparing versions", "speakers": "speaker identification", "match": "matching your voice", "score": "checking your clips", "prep": "building the dataset",
-            "trim": "reprocessing clips", "export": "making the test clip", "training": "training"}
+            "trim": "cutting the edited clips", "export": "making the test clip", "training": "training"}
 
 
 def _job_states():

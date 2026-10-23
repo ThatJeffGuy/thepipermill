@@ -276,7 +276,7 @@ function watchJobs(n){
     const j=v.job&&v.job.kind===was?v.job:null,how=j&&j.rc?(j.rc<0?'was stopped':'did not finish'):'finished';tell(`${v.name}: ${jobName(was)} ${how}`)}});
   prevRun=run}
 const cmAuto={};
-const JOBNAME={import:'importing the dataset',cull:'choosing the best clips',analyze:'analyzing the recordings',silence:'trimming silence',verify:'checking the transcripts',fastref:'preparing the reference clip',fast:'cloning the voice',master:'cleaning the recordings',restore:'restoring the backup',compare:'comparing versions',score:'checking your clips',speakers:'speaker identification',match:'matching your voice',prep:'building the dataset',trim:'reprocessing clips',export:'making the test clip',training:'training'};
+const JOBNAME={import:'importing the dataset',cull:'choosing the best clips',analyze:'analyzing the recordings',silence:'trimming silence',verify:'checking the transcripts',fastref:'preparing the reference clip',fast:'cloning the voice',master:'cleaning the recordings',restore:'restoring the backup',compare:'comparing versions',score:'checking your clips',speakers:'speaker identification',match:'matching your voice',prep:'building the dataset',trim:'cutting the edited clips',export:'making the test clip',training:'training'};
 const jobName=k=>JOBNAME[k]||k;
 const logBox=()=>'';          // the console lives in the permanent status bar (Show Console)
 // Beginner mode has no console: a job that failed gets one plain line instead (a job you stopped says so)
@@ -547,7 +547,7 @@ function render(){
   </div>`},
 
   ()=>{const wv=wView||'review';return `<div class="card">${hd(6,wordsDone&&!dirty,'Correct the transcripts <span class="pill">recommended</span>')}
-    <p class="hint">The voice learns exactly what is written here. Press <b>Check automatically</b>: the Mill listens to every clip again and compares it with the text. Clips where both agree are hidden. You only see the ones it is unsure about, with what it heard so you can fix the words in one click. If someone else speaks in a clip, delete their words from the text (anywhere in it, as many stretches as you like), save, and press <b>Reprocess</b>: the clip is cut so only the words you kept remain, and split into separate clips if there is more than one stretch.</p>
+    <p class="hint">The voice learns exactly what is written here. Press <b>Check automatically</b>: the Mill listens to every clip again and compares it with the text. Clips where both agree are hidden. You only see the ones it is unsure about, with what it heard so you can fix the words in one click. If someone else speaks in a clip, delete their words from the text (anywhere in it, as many stretches as you like), press <b>Save changes</b>: the clip is cut so only the words you kept remain, and split into separate clips if there is more than one stretch.</p>
     ${rowsLoaded&&rowsVerified?`<div class="msg ok" style="margin:0 0 8px">${rowsHidden} of ${rows.length} clips look right and are hidden. ${guideLeft()?`<b>${guideLeft()}</b> need${guideLeft()===1?'s':''} a look.`:'Nothing needs a look.'}</div>`:''}
     <div class="row wbar">
       ${rowsLoaded?'':`<button class="sec" id="loadRows" ${prepDone?'':'disabled'}>Show my clips</button>`}
@@ -558,8 +558,7 @@ function render(){
     ${pbar(v.job&&v.job.kind==='score'?v.job:null)}${jobNote(v,'score')}${jobNote(v,'verify',true)}
     ${XTRA?toolsHtml(v,rowsLoaded):''}
     <div id="wbody">${rowsLoaded?'':'<p class="hint">Press <b>Show my clips</b> to load them.</p>'}</div>
-    <div class="row wsave"><button id="saveRows" ${dirty?'':'disabled'}>Save changes</button>
-      <button id="trimBtn" title="Cut each edited clip's audio down to the words you kept. Words deleted anywhere in a clip are cut out; separate stretches that remain become separate clips" ${(!v.edited||dirty||S.busy)?'disabled':''}>Reprocess${v.edited?' ('+v.edited+')':''}</button>${jobRun&&v.job.kind==='trim'?'<button class="bad stopjob">Stop</button>':''}<span class="hint" id="unsaved" style="margin:0" ${dirty?'':'hidden'}>You have unsaved changes</span></div>
+    <div class="row wsave"><button id="saveRows" title="Saves your word changes. If you deleted words from a clip, its audio is also cut down to the words you kept (separate stretches that remain become separate clips)" ${(dirty||v.edited)&&!S.busy?'':'disabled'}>Save changes${v.edited&&!dirty?' ('+v.edited+' to cut)':''}</button>${jobRun&&v.job.kind==='trim'?'<button class="bad stopjob">Stop</button>':''}<span class="hint" id="unsaved" style="margin:0" ${dirty?'':'hidden'}>You have unsaved changes</span></div>
     ${pbar(v.job&&v.job.kind==='trim'?v.job:null)}${jobNote(v,'trim')}
     <div class="row" style="margin-top:6px"><button class="linkbtn" id="dsBtn" title="Your cleaned clips and transcript as one zip, ready to use anywhere" ${(!prepDone||v.edited)?'disabled':''}>Export dataset</button><span class="hint" style="margin:0">${v.edited?'Reprocess your edited clips first.':''}</span></div>
     ${f('tr')}
@@ -624,10 +623,10 @@ function render(){
       run('speakers')?'Finding the speakers… please wait.':v.imported?'This voice has no recordings to scan: press Skip.':!v.people?'Find the speakers, or press Skip if it is just you.':'',
       run('match')?'Matching your voice… please wait.':'',
       run('prep')||run('cull')?'Building the dataset… please wait.':!prepDone?'Build the dataset to continue.':'',
-      dirty?'Save your changes first, or press Skip.':run('score')||run('verify')?'Checking your clips… please wait.':run('trim')?'Reprocessing… please wait.':!wordsDone?'Open your clips to check them, or press Skip.':'',
+      dirty?'Save your changes first, or press Skip.':run('score')||run('verify')?'Checking your clips… please wait.':run('trim')?'Cutting the edited clips… please wait.':!wordsDone?'Open your clips to check them, or press Skip.':'',
       t.running?`${v.name} is training on the GPU…`:!t.checkpoints?'Start training to continue.':'',
       ''];
-    const working=[run('analyze')?'Analyzing your recordings… please wait.':run('import')?'Importing the dataset… please wait.':run('restore')?'Restoring the backup… please wait.':null,run('master')?'Preparing the audio… please wait.':null,run('speakers')?'Finding the speakers… please wait.':null,run('match')?'Finding more like your ticked clips… please wait.':null,run('prep')||run('cull')?'Building the dataset… please wait.':null,run('trim')?'Reprocessing… please wait.':run('score')||run('verify')?'Checking your clips… please wait.':null,
+    const working=[run('analyze')?'Analyzing your recordings… please wait.':run('import')?'Importing the dataset… please wait.':run('restore')?'Restoring the backup… please wait.':null,run('master')?'Preparing the audio… please wait.':null,run('speakers')?'Finding the speakers… please wait.':null,run('match')?'Finding more like your ticked clips… please wait.':null,run('prep')||run('cull')?'Building the dataset… please wait.':null,run('trim')?'Cutting the edited clips… please wait.':run('score')||run('verify')?'Checking your clips… please wait.':null,
       t.running?`${v.name} is training on the GPU…`:null,run('export')?'Making the test clip… please wait.':run('compare')?'Making a sample of each version… please wait.':null];
     const stepNo=wizStep(v,{prepDone,finished});
     $('#main').innerHTML=`
@@ -669,7 +668,7 @@ function wire(v){
   b('#resetBtn',()=>openReset(v));b('#bkBtn',()=>{location.href=`/backup/${encodeURIComponent(v.name)}.zip?ckpt=${$('#bkCk')&&$('#bkCk').checked?1:0}`});b('#renameBtn',()=>openRename(v));
   const leaveWords=()=>{if(wiz[v.name]!==5||!v.prepared)return true;
     if(!(rows&&rowsFor===v.name))return (!v.edited||confirm('Some clips have edited words the audio does not match yet. Go on anyway?'))&&confirm('You have not checked any clips yet. Wrong words and stray voices are learned by the voice too.\n\nGo on to training anyway?');
-    if(v.edited&&!confirm(`${v.edited} clip${v.edited>1?'s have':' has'} edited words that the audio does not match yet (Reprocess could not cut ${v.edited>1?'them':'it'}). Training would learn the new words against the old audio.\n\nGo on anyway? (Remove the clip first, or fix its words.)`))return false;
+    if(v.edited&&!confirm(`${v.edited} clip${v.edited>1?'s have':' has'} edited words that the audio does not match yet (it could not be cut ${v.edited>1?'them':'it'}). Training would learn the new words against the old audio.\n\nGo on anyway? (Remove the clip first, or fix its words.)`))return false;
     const left=guideLeft(),tot=rows.filter(r=>r.tier).length;
     return !left||confirm(`${left} of the ${tot} suggested clips have not been checked yet (the likely errors come first, so those are the ones that matter most).\n\nGo on to training anyway?`)};
   b('#prevBtn',()=>go(v.name,wiz[v.name]-1));b('#nextBtn',()=>{if(leaveWords())go(v.name,wiz[v.name]+1)});b('#skipBtn',()=>{if(leaveWords())go(v.name,wiz[v.name]+1)});
@@ -697,7 +696,6 @@ function wire(v){
   const fm=$('#fastMin');if(fm)fm.onchange=()=>api('/api/fast/minutes',{method:'POST',body:JSON.stringify({voice:v.name,minutes:+fm.value})}).catch(()=>{});
   document.querySelectorAll('[name=useSrc]').forEach(r=>r.onchange=async()=>{try{await api('/api/usematch',{method:'POST',body:JSON.stringify({voice:v.name,on:r.value==='match'})})}catch(e){say('match',e.message,'err')}refresh(true)});
   b('#dsBtn',()=>{location.href=`/dataset/${encodeURIComponent(v.name)}.zip`});
-  b('#trimBtn',()=>act('/api/trim',{voice:v.name},'tr'));
   b('#hfRecheck',()=>pollHf(true));
   b('#anBtn',()=>act('/api/analyze',{voice:v.name},'an'));
   b('#spBtn',()=>act('/api/speakers',{voice:v.name,num:($('#spNum')||{}).value||'',hours:0},'sp'));
@@ -797,7 +795,7 @@ function drawWords(){
   placePlayer();
 }
 function drawRows(){drawWords()}
-function dirtyUI(){dirty=true;const sv=$('#saveRows');if(sv)sv.disabled=false;const un=$('#unsaved');if(un)un.hidden=false;const tb=$('#trimBtn');if(tb)tb.disabled=true;const nb=$('#nextBtn');if(nb){nb.disabled=true;$('#navMsg').textContent='Save your changes first, or press Skip.'}}
+function dirtyUI(){dirty=true;const sv=$('#saveRows');if(sv)sv.disabled=false;const un=$('#unsaved');if(un)un.hidden=false;const nb=$('#nextBtn');if(nb){nb.disabled=true;$('#navMsg').textContent='Save your changes first, or press Skip.'}}
 function bindChips(box){box.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{wFilter=c.dataset.f;rvKey='';page=0;drawWords()})}
 // ----- Review: one clip at a time
 function guideHtml(r){
@@ -826,7 +824,7 @@ function drawReview(box,autoplay){
       <div class="pslot"></div>
       <textarea id="rvText" rows="2" aria-label="What is said in this clip">${esc(r.text)}</textarea>
       ${r.heard&&r.wer>0.05&&!r.approved?`<div class="row" style="margin:6px 0 0;gap:10px;align-items:flex-start"><div class="hint" style="margin:0;flex:1"><b>The checker heard:</b> ${esc(r.heard)}</div><button class="sec" id="rvUse">Use this text</button></div>`:''}
-      <p class="hint" style="margin:6px 0 12px">Correct any words the text got wrong. If someone else speaks in this clip (start, middle or end, as many stretches as you like), delete their words from the text, press <b>Save changes</b>, then <b>Reprocess</b>. The clip is cut to the words you kept; if several stretches remain, each becomes its own clip.</p>
+      <p class="hint" style="margin:6px 0 12px">Correct any words the text got wrong. If someone else speaks in this clip (start, middle or end, as many stretches as you like), delete their words from the text, press <b>Save changes</b>. The clip is cut to the words you kept; if several stretches remain, each becomes its own clip.</p>
       <div class="row rvbtns"><button class="sec dng" id="rvRemove">Remove clip</button><div class="rvmid">${gd.why}<div class="rvprog"><div style="width:${100*(rvIdx+1)/n}%"></div></div></div><label class="hint" style="margin:0"><input type="checkbox" id="rvAuto" ${autoPlay?'checked':''}> play automatically</label><button class="sec" id="rvPrev" ${rvIdx?'':'disabled'}>‹ Back</button><button id="rvNext" class="${flagged(r)||f==='guide'?'ok':''}">${f==='guide'?(isEdited(r)?'✓ I fixed it':'✓ It is right'):flagged(r)?'✓ Approve':'Keep'} ${rvIdx<n-1?'and next ›':'and finish'}</button></div></div>`;
   bindChips(box);
   setClip(`/audio/${cur}/${r.file}`,`Clip ${rvIdx+1}`,r.file);
@@ -850,7 +848,7 @@ function drawList(box){
       <div class="pager"><button class="sec" ${page?'':'disabled'} onclick="pg(-1)">‹ Prev</button><span class="hint" style="margin:0">Page ${page+1} of ${n} · ${ord.length} clip${ord.length===1?'':'s'}</span><button class="sec" ${page<n-1?'':'disabled'} onclick="pg(1)">Next ›</button></div>`:'<p class="hint">No clips to show.</p>'}
     <p class="hint" style="margin:8px 0 0">${rowsScored?'<span class="vdot l0"></span> sounds like the others &nbsp; <span class="vdot l1"></span> a bit different &nbsp; <span class="vdot l2"></span> very different (maybe another speaker or noise). ':''}Two voices in one clip? Delete the other person's words from the start or end of the text, press <b>Save changes</b>, then press <b>Reprocess edited clips</b> to trim the audio to match.</p>`;
   bindChips(box);box.querySelectorAll('textarea.cell').forEach(t=>{t.style.height='auto';t.style.height=t.scrollHeight+'px'});
-  $('#saveRows').disabled=!dirty;
+  $('#saveRows').disabled=!(dirty||(S.voices.find(x=>x.name===cur)||{}).edited);
 }
 function edit(k,t){rows[k].text=t;dirtyUI()}
 function del(k){rows.splice(k,1);dirtyUI();drawWords()}
@@ -876,7 +874,11 @@ function play(f){const r=rows&&rows.find(x=>x.file===f);playIn(`/audio/${cur}/${
 function playS(n,f){playIn(`/speaker-sample/${n}/${f}`,'Speaker sample','')}
 function stopPlayer(hide){pAudio.pause();if(pAudio.getAttribute('src'))pAudio.currentTime=0;playingFile='';if(hide){pAudio.removeAttribute('src');pAudio.load();player.hidden=true}markPlaying()}
 player.querySelector('.pstop').onclick=()=>stopPlayer(false);pAudio.onended=()=>{playingFile='';markPlaying()};
-async function saveRows(name){try{const j=await api('/api/transcript',{method:'PUT',body:JSON.stringify({voice:name,rows})});dirty=false;say('tr',`Saved. ${j.kept} clips kept.${j.edited?` ${j.edited} clip(s) have changed words: press Reprocess to cut their audio to match.`:''}`,'ok');refresh(true)}catch(e){say('tr',e.message,'err')}}
+async function saveRows(name){try{let kept=null,edited=(S.voices.find(x=>x.name===name)||{}).edited||0;
+  if(dirty){const j=await api('/api/transcript',{method:'PUT',body:JSON.stringify({voice:name,rows})});dirty=false;kept=j.kept;edited=j.edited||0}
+  if(edited){await api('/api/trim',{method:'POST',body:JSON.stringify({voice:name})});say('tr',`${kept!=null?`Saved. ${kept} clips kept. `:''}Cutting ${edited} edited clip${edited===1?'':'s'} to match the words you kept…`,'ok')}
+  else say('tr',`Saved. ${kept} clips kept.`,'ok');
+  refresh(true)}catch(e){say('tr',e.message,'err')}}
 
 // One volume for every player on every page. Players get rebuilt whenever the page redraws, and a new one starts at full volume,
 // so the level you set is saved and put on each player as soon as it loads.
@@ -930,7 +932,7 @@ let sbLogKey='';
 function paintStatus(v,t,jobRun,stepNo){
   const box=$('#statusbar');if(!box)return;
   const where={silence:5,verify:5,import:0,restore:0,analyze:0,fastref:0,fast:0,master:1,speakers:2,match:3,prep:4,cull:4,score:5,trim:5,export:7,compare:7},
-    nm={import:'Importing the dataset',restore:'Restoring the backup',analyze:'Analyzing your recordings',silence:'Trimming silence',verify:'Checking the transcripts',fastref:'Preparing the reference clip',fast:'Cloning the voice',master:'Preparing the audio',speakers:'Diarization (who is speaking)',match:'Finding more of your speaker',prep:'Building the dataset',cull:'Keeping the best clips',score:'Checking the clips',trim:'Reprocessing edited clips',export:'Making the test clip',compare:'Comparing versions'},
+    nm={import:'Importing the dataset',restore:'Restoring the backup',analyze:'Analyzing your recordings',silence:'Trimming silence',verify:'Checking the transcripts',fastref:'Preparing the reference clip',fast:'Cloning the voice',master:'Preparing the audio',speakers:'Diarization (who is speaking)',match:'Finding more of your speaker',prep:'Building the dataset',cull:'Keeping the best clips',score:'Checking the clips',trim:'Cutting the edited clips',export:'Making the test clip',compare:'Comparing versions'},
     steps=['Recordings','Prepare','Diarization','Refine','Build dataset','Correct','Train','Listen'];
   let label='Idle',sub='Nothing is running.',pct=0,ind=false,step=null,stop='',log='',cls='idle',detail='';
   if(v&&t&&t.running){cls='';label='Training';step=5;stop='stopTrain';ind=t.done==null;pct=t.total&&t.done!=null?Math.min(100,Math.round(100*t.done/t.total)):0;
