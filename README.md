@@ -10,7 +10,7 @@ Train your own [Piper](https://github.com/OHF-Voice/piper1-gpl) text-to-speech v
 4. It trains on your GPU, with a progress bar.
 5. You listen to a test clip and download `yourvoice.onnx` + `yourvoice.onnx.json`, ready for Piper, Home Assistant and other tools that use Piper voices.
 
-Everything runs locally. Nothing is uploaded anywhere (the only downloads are the tools, the starting voice and the Whisper model).
+The web page is built for a desktop screen: it needs a browser window of at least 1280 × 600 pixels, and below that it shows a short "window too small" message until you enlarge the window or zoom out. Everything runs locally. Nothing is uploaded anywhere (the only downloads are the tools, the starting voice and the Whisper model).
 
 > **Use only your own voice, or the voice of someone who has agreed to it.** Do not train on recordings of other people (actors, public figures, friends) without their permission. Voice cloning of real people without consent can cause real harm and may be illegal where you live.
 

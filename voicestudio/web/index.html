@@ -157,11 +157,13 @@ textarea.cell{width:100%;min-height:38px;resize:none;overflow:hidden;padding:8px
 .card .sub:not(.cmpbox)>b:first-child{font-size:15px}
 .vs.soft{border:0;background:none;padding:0;margin:8px 0 4px}.vs.soft summary{padding:2px 0;font-weight:500;color:var(--acc);cursor:pointer;font-size:14px}.vs.soft[open]{border:1px solid var(--line);border-radius:12px;background:var(--bg);padding:6px 16px 10px}
 .sp i .lk{position:absolute;top:-2px;right:-18px;font-size:11px;font-weight:400;line-height:1;filter:grayscale(.2)}
+html.small .wrap{display:none}#tooSmall{position:fixed;inset:0;z-index:1000;background:var(--bg);display:grid;place-items:center;padding:24px;text-align:center}#tooSmall[hidden]{display:none}#tooSmall>div{max-width:520px}#tooSmall h2{margin:0 0 12px}#tooSmall p{margin:0 0 10px;line-height:1.5}
 .lockbar{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:8px 0 12px;padding:10px 14px;border:1px solid var(--line);border-left:4px solid var(--warn);border-radius:10px;background:var(--bg);font-size:14px}
 .card .msg{padding:10px 14px;border:1px solid var(--line);border-left:4px solid var(--mute);border-radius:10px;background:var(--bg);margin-top:10px}.card .msg:empty{display:none}.card>.msg,.card>.lockbar{margin:8px 0 12px}.card>.msg+p.hint,.card>.lockbar+p.hint,.card>.msg+details.vs,.card>.lockbar+details.vs{margin-top:12px}.rvbtns{align-items:flex-start;gap:8px}.rvbtns button{height:34px;padding:0 14px;min-height:0}.rvbtns label{height:34px;display:flex;align-items:center;gap:6px}.rvmid{flex:1;min-width:220px;margin:0 4px;text-align:center}.card .rvmid .msg{margin:0;height:34px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;padding:0 12px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rvmid .msg b{margin:0 5px 0 6px}.rvwhy,.whyhint{margin:8px 0 0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rvmid .rvprog{margin:0}.rvmid .msg{padding:8px 12px;font-size:13px}.card .msg.err{border-left-color:var(--bad)}.card .msg.ok{border-left-color:var(--ok)}.card .msg[style*="warn"]{border-left-color:var(--warn)}
 </style>
 </head>
 <body>
+<div id="tooSmall" role="alert" hidden><div><h2>This window is too small</h2><p>The Piper Mill trains voices on a computer with a graphics card, and its pages are laid out for a desktop screen: at least <b>1280 × 600</b> pixels of browser window.</p><p>Make the window bigger, or zoom the page out (Ctrl and minus). This message goes away by itself as soon as the window is large enough.</p><p class="hint" id="tooSmallNow"></p></div></div>
 <div class="wrap">
 <header>
   <h1>The Piper Mill</h1>
@@ -453,6 +455,10 @@ function fitCard(){const c=$('#main .card');if(!c)return;c.style.minHeight='';co
   const top=c.getBoundingClientRect().top+window.scrollY,room=window.innerHeight-top-60-(foot?foot.offsetHeight+34:80);      // 60 = the 46 px button row plus its gap, the same on every step
   c.style.minHeight=Math.max(360,Math.round(room))+'px'}
 window.addEventListener('resize',()=>{try{fitCard()}catch(e){}});
+// the pages are built for a desktop-size window: below this the whole app is replaced by a short message instead of a squeezed layout
+const MIN_W=1280,MIN_H=600;
+function checkSize(){const small=window.innerWidth<MIN_W||window.innerHeight<MIN_H;document.documentElement.classList.toggle('small',small);const t=$('#tooSmall');if(t)t.hidden=!small;const n=$('#tooSmallNow');if(n)n.textContent=`Your window is ${window.innerWidth} × ${window.innerHeight}.`;if(!small)try{fitCard()}catch(e){}}
+window.addEventListener('resize',checkSize);
 function render(){
   const keep={txt:$('#txt')&&$('#txt').value,ep:$('#ep')&&$('#ep').value,sp:$('#spNum')&&$('#spNum').value,ff:$('#frFind')&&$('#frFind').value,fr:$('#frRep')&&$('#frRep').value,fc:$('#frCase')&&$('#frCase').checked,mm:$('#maxMin')&&$('#maxMin').value,gl:$('#gpuLoad')&&$('#gpuLoad').value,wh:$('#which')&&$('#which').value};
   if(player.parentNode)player.remove();      // put back right after the redraw, in the same moment, so playback is not interrupted
@@ -990,7 +996,7 @@ $('#newOk').onclick=async()=>{const b=$('#newOk');b.disabled=true;b.textContent=
   try{const r=await api('/api/voices',{method:'POST',body:JSON.stringify({name:$('#newName').value.trim(),base:$('#newBase').value,source:$('#newSrc').value,folder:$('#newFolder').value.trim(),path:$('#newFolder').value.trim()})});cur=$('#newName').value.trim();localStorage.setItem('voice',cur);$('#newDlg').close();$('#newName').value='';$('#newFolder').value='';if(r.license)alert('Licence of the starting voice (its original dataset):\n\n'+r.license.slice(0,600))}
   catch(e){$('#newErr').textContent=e.message}b.disabled=false;b.textContent='Create';refresh(true)};
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});
-refresh(true);setInterval(()=>refresh(),4000);
+checkSize();refresh(true);setInterval(()=>refresh(),4000);
 </script>
 </body>
 </html>
