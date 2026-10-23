@@ -414,10 +414,7 @@ const LOCKS={
      warn:'Training used the clips made here.\n\nChanging these means: building the dataset again (which replaces the clips and any word corrections), then training again from the new clips.'},
   5:{sel:'#saveRows,#vfyBtn,#scoreBtn,#trimBtn,#wbody input,#wbody textarea,#wbody select',
      what:'the word corrections',
-     warn:'The voice has already been trained on the clips as they are now.\n\nEditing the words or clips means: the voice has to be trained again for the changes to be heard (the old test clips will not change).'},
-  6:{sel:'#ep,#maxMin,#gpuLoad,#plL,#plM,#trainBtn',
-     what:'the training settings',
-     warn:'A test clip or export has already been made from this training.\n\nChanging these and training more means: making the test clip and export again afterwards.'}};
+     warn:'The voice has already been trained on the clips as they are now.\n\nEditing the words or clips means: the voice has to be trained again for the changes to be heard (the old test clips will not change).'}};
 const UNLOCKED={};
 function applyLocks(v,stepNo,downstream){
   const L=LOCKS[stepNo],card=$('#main .card');if(!L||!card||!downstream)return;
@@ -644,7 +641,7 @@ function render(){
   if(keep.sp&&$('#spNum'))$('#spNum').value=keep.sp;if(keep.ff!=null&&$('#frFind')){$('#frFind').value=keep.ff;$('#frRep').value=keep.fr;$('#frCase').checked=!!keep.fc}if(keep.wh&&$('#which'))$('#which').value=keep.wh;if(keep.txt!=null&&$('#txt'))$('#txt').value=keep.txt;if(keep.ep!=null&&$('#ep'))$('#ep').value=keep.ep;if(keep.mm!=null&&$('#maxMin'))$('#maxMin').value=keep.mm;if(keep.gl!=null&&$('#gpuLoad'))$('#gpuLoad').value=keep.gl;
   if(rows&&rowsFor===v.name&&v.verified&&!rowsVerified&&!dirty&&!(v.job&&v.job.running)){loadRows(v.name).catch(()=>{})}
   if(rows&&rowsFor===v.name){if(v.scored&&!rowsScored&&!dirty){rowsScored=true;loadRows(v.name).catch(()=>{})}else if(!v.scored&&rowsScored){rows.forEach(r=>r.score=null);rowsScored=false}}
-  const tr=t.checkpoints>0,downstream=[!!v.people||!!v.match||prepDone||tr||!!v.exported,!!v.people||!!v.match||prepDone||tr||!!v.exported,!!v.match||prepDone||tr||!!v.exported,prepDone||tr||!!v.exported,tr||!!v.exported,tr||!!v.exported,!!v.exported];
+  const tr=t.checkpoints>0,downstream=[!!v.people||!!v.match||prepDone||tr||!!v.exported,!!v.people||!!v.match||prepDone||tr||!!v.exported,!!v.match||prepDone||tr||!!v.exported,prepDone||tr||!!v.exported,tr||!!v.exported,tr||!!v.exported,false];   // Train is never locked: you can always resume or train more; a new test clip is made on the Listen step
   applyLocks(v,stepNo,downstream[stepNo]&&!jobRun);
   paintStatus(v,t,jobRun,stepNo);if(!menuOpen)paintMenu(v);
   wire(v);updPlan();syncGpu(stepNo===6);if(rows&&rowsFor===v.name&&$('#wbody'))drawWords();placePlayer();
