@@ -37,7 +37,7 @@ def pick_for(name, log=print):
     """Choose the closer starting voice by measuring the average pitch of the prepared clips."""
     import random, numpy as np, soundfile as sf, librosa
     from . import voices
-    said = voices.read(name).get("voice_type")                       # you told us: no need to guess from the audio
+    said = None                       # you told us: no need to guess from the audio
     if said in ("male", "female"):
         key = FEMALE if said == "female" else MALE
         log(f"You said this is a {said} voice -> starting from the {said} base voice ({key})."); return key

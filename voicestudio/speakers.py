@@ -29,6 +29,12 @@ def audio_files(name):
 def rel(name, f): return f.relative_to(voices.source_dir(name)).as_posix()
 
 
+def source(name, f):
+    """The audio every step reads for recording `f`: its cleaned master when the Prepare step has made one, else the raw file (older voices)."""
+    from . import master
+    return master.master_path(name, f) or f
+
+
 def result_path(name): return CFG.runs / name / "speakers.json"
 
 def archive(name, keep_last=12):
@@ -101,6 +107,11 @@ def cluster(embeddings, threshold, files=None):
     return [int(i) for i in lab]
 
 
+def _has_master(name):
+    from . import master
+    return master.available(name)
+
+
 def _separator(log):
     """The background remover, or None if it cannot be loaded (the samples are then left as they are)."""
     try:
@@ -141,7 +152,7 @@ def _samples(name, people, per_file, log, sep=None):
             p["samples"].append(fn); p["sample_times"].append(round(a, 1)); p["sample_ranges"].append([fkey, round(a, 2), round(b, 2)])
 
 
-SCAN_HOURS = 40            # how much recording audio the scan listens to by default: an even sample is plenty to find a speaker (0 = everything)
+SCAN_HOURS = 0             # the scan always listens to everything (0 = everything)
 
 
 def cache_wav(name, key): return CFG.runs / name / "diar" / (re.sub(r"[^A-Za-z0-9._-]", "_", key) + ".16k.wav")
@@ -165,7 +176,7 @@ def scan_pick(files, hours, log=print, durs=None):
 def run(name, num_speakers=None, log=print, pipeline=None):
     files = audio_files(name)
     if not files: raise SystemExit(f"No audio files found in {voices.source_dir(name) or 'a folder (choose your recordings folder first)'}")
-    every = list(files); hrs = voices.read(name).get("scan_hours"); hrs = SCAN_HOURS if hrs is None else hrs
+    every = list(files); hrs = SCAN_HOURS
     from . import analyze
     files, left_out = scan_pick(files, hrs, log, durs=analyze.durations(name, files))
     pipe = pipeline or _load_pipeline()
@@ -185,7 +196,8 @@ def run(name, num_speakers=None, log=print, pipeline=None):
         key = rel(name, f); wav = cache_wav(name, key)
         prog.update("Finding who speaks in each recording", i - 1, len(files), key)
         try:
-            if not (wav.exists() and wav.stat().st_mtime >= f.stat().st_mtime): audio.decode(f, wav, SR, log=log)
+            src = source(name, f)
+            if not (wav.exists() and wav.stat().st_mtime >= src.stat().st_mtime): audio.decode(src, wav, SR, log=log)
             kw = {"num_speakers": int(num_speakers)} if num_speakers else {}
             out = pipe(str(wav), hook=hook, **kw)
             labels = list(out.speaker_diarization.labels())
@@ -195,7 +207,10 @@ def run(name, num_speakers=None, log=print, pipeline=None):
             skipped.append((key, str(e))); log(f"[{i}/{len(files)}] SKIPPED {key}: {e}"); continue
         per_file[key] = {"wav": str(wav), "segments": segs}
         for k, lab in enumerate(labels):
-            if emb is not None and k < len(emb) and any(s[2] == lab for s in segs): fps.append((key, lab, emb[k]))
+            if emb is not None and k < len(emb) and any(s[2] == lab for s in segs):
+                if not all(x == x and abs(x) != float("inf") for x in emb[k]):       # too little speech to fingerprint (NaN): leave this one out
+                    log(f"  {key}: no usable voice fingerprint for {lab} (too little speech), left out"); continue
+                fps.append((key, lab, emb[k]))
         log(f"[{i}/{len(files)}] {key}: {len(labels)} speaker(s)")
     if not fps: raise SystemExit("No speech found." + (f" {len(skipped)} file(s) could not be read." if skipped else ""))
     ids = cluster([e for _, _, e in fps], float(CFG["speaker_match_distance"]), [k for k, _, _ in fps])
@@ -212,8 +227,8 @@ def run(name, num_speakers=None, log=print, pipeline=None):
     plist = []
     for pid in sorted(people):
         p = people[pid]; p["members"] = [[k, v] for k, v in p["members"].items()]; plist.append(p)
-    log("Making the samples (music and background noise removed, so you hear just the voices)...")
-    sep = _separator(log)
+    sep = None if _has_master(name) else _separator(log)
+    log("Making the samples from your prepared audio..." if sep is None else "Making the samples (music and background noise removed, so you hear just the voices)...")
     try: _samples(name, plist, per_file, log, sep)
     finally:
         if sep: sep.close()
@@ -323,7 +338,7 @@ def match(name, log=print, pipeline=None):
     c = np.mean(P, axis=0); c /= np.linalg.norm(c) + 1e-9
     log(f"Learning your voice from {len(P)} ticked clip(s)" + (f", avoiding {len(N)} crossed clip(s)." if N else "."))
     cands = [(key, a, b) for key, v in r["files"].items() for a, b, l in v["segments"] if b - a >= MATCH_MIN_S]
-    vt = m.get("voice_type") or ""; acc, t0, wrong = [], 0.0, 0
+    vt = ""; acc, t0, wrong = [], 0.0, 0
     if vt: log(f"Looking for a {vt} voice: stretches clearly outside that pitch range are skipped.")
     for i, (key, a, b) in enumerate(cands):
         if time.time() - t0 > 0.5: t0 = time.time(); prog.update("Comparing every voice with your ticked clips", i, len(cands), frac=i / max(1, len(cands)))
@@ -360,7 +375,7 @@ def match(name, log=print, pipeline=None):
     edge = [x for x in sorted(acc, key=lambda x: -x[3]) if x[2] - x[1] >= MIN_SAMPLE_S and x not in spread][:3]
     outdir = CFG.runs / name / "speakers"; outdir.mkdir(parents=True, exist_ok=True)
     for old in outdir.glob("match_*.wav"): old.unlink()
-    samples = []; sep = _separator(log)
+    samples = []; sep = None if _has_master(name) else _separator(log)
     for border, group in ((False, spread), (True, edge)):
         for key, a, b, d in dict.fromkeys(group):
             b = min(b, a + MAX_SAMPLE_S); y = _grab(sep, _wavpath(name, key), a, b)
@@ -394,7 +409,7 @@ def score_clips(name, log=print, pipeline=None, frac_range=(0.0, 1.0), prog=None
     person, or with a lot of noise, stand out. Needs the same speaker model as "Who is speaking?"."""
     import numpy as np, soundfile as sf, torch, librosa
     root = CFG.data / name; md = root / "metadata.csv"
-    if not md.exists(): raise SystemExit("Prepare the recordings first.")
+    if not md.exists(): raise SystemExit("Build the dataset first.")
     files = [l.split("|", 1)[0] for l in md.read_text(encoding="utf-8").splitlines() if "|" in l]
     if len(files) < 5: raise SystemExit("Need at least 5 clips to compare them.")
     pipe = pipeline or _load_pipeline(); em = pipe._embedding; prog = prog or Progress(name, "score"); vec, ok = [], []

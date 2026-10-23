@@ -7,7 +7,7 @@ import json, os, re, shutil, signal, subprocess, sys, tempfile, threading, time,
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote
-from . import analyze, backup, base, compare, gpu as gpu_mod, importer, logclean, models, progress, speakers, train as train_mod, triage, trim, voices
+from . import autostart, warm, export as export_mod, live, analyze, backup, base, compare, gpu as gpu_mod, importer, logclean, models, progress, speakers, train as train_mod, triage, trim, voices
 from .config import CFG
 
 WEB = Path(__file__).parent / "web"
@@ -31,7 +31,7 @@ def train_pid(n):
         return None
 
 
-JOB_KINDS = ("speakers", "match", "score", "prep", "trim", "export", "compare", "import", "restore")
+JOB_KINDS = ("speakers", "match", "score", "prep", "trim", "export", "compare", "import", "restore", "master")
 
 
 def job_pids(n):
@@ -215,7 +215,7 @@ def gpu_stats():
 
 
 _NOTE = {}      # (voice, job) -> was it running when we last looked
-JOBWORDS = {"silence": "trimming silence", "verify": "checking the transcripts", "fastref": "preparing the reference clip", "fast": "cloning the voice", "cleanprev": "making the clean-up previews", "master": "cleaning the recordings", "import": "importing the dataset", "restore": "restoring the backup", "compare": "comparing versions", "speakers": "speaker identification", "match": "matching your voice", "score": "checking your clips", "prep": "preparing your recordings",
+JOBWORDS = {"silence": "trimming silence", "verify": "checking the transcripts", "fastref": "preparing the reference clip", "fast": "cloning the voice", "master": "preparing the audio", "import": "importing the dataset", "restore": "restoring the backup", "compare": "comparing versions", "speakers": "speaker identification", "match": "matching your voice", "score": "checking your clips", "prep": "building the dataset",
             "trim": "reprocessing clips", "export": "making the test clip", "training": "training"}
 
 
@@ -272,10 +272,23 @@ def _watch():
         time.sleep(3)
 
 
+def _compare_stale(n):
+    """True when the Compare versions samples are missing, were made with another sentence, or are older than the newest checkpoint."""
+    try:
+        mp = compare.meta_path(n); m = json.loads(mp.read_text())
+        if m.get("text") != compare.COMPARE_TEXT or not m.get("items") or not all("onnx" in it for it in m["items"]): return True
+        ck = train_mod.newest_ckpt(n)
+        return bool(ck and ck.stat().st_mtime > mp.stat().st_mtime)
+    except (OSError, ValueError): return True
+
+
 def _compare_info(n):
     try: m = json.loads(compare.meta_path(n).read_text())
     except (OSError, ValueError): return None
-    for i, it in enumerate(m["items"]): it.setdefault("file", compare.clip_path(n, i).name)
+    for i, it in enumerate(m["items"]):
+        it.setdefault("file", compare.clip_path(n, i).name)
+        try: it["stamp"] = (CFG.out / it["file"]).stat().st_mtime_ns        # changes on every re-render, so the page never plays a stale clip
+        except OSError: it["stamp"] = 0
     return m
 
 
@@ -343,13 +356,21 @@ def hf_status(fresh=False):
         try:
             import huggingface_hub as H
             H.HfApi().auth_check(model, token=tok); out["state"] = "ready"
-            out["update"] = models.newer_available(model, tok)
         except Exception as e:
             n = type(e).__name__
             out["state"] = "not_accepted" if "Gated" in n else "bad_token" if ("NotFound" in n or "401" in str(e)) else "error"
     out["copy"] = models.status(model)
     _HF["t"], _HF["v"] = time.time(), out
     return out
+
+
+def need_master(n):
+    """A new voice must have its audio prepared (step 2) before anything reads the recordings. Voices that are already past that point keep working."""
+    from . import master
+    m = voices.read(n)
+    if m.get("imported") or master.available(n): return
+    if speakers.load(n) or (CFG.data / n / "metadata.csv").exists() or train_mod.all_ckpts(n): return
+    raise ValueError("Prepare the audio first (step 2). It cleans your recordings so every later step works from clean sound.")
 
 
 def need_hf():
@@ -414,16 +435,16 @@ def info(n):
           "minutes": m.get("fast_minutes") or 40, "report": m.get("fast_report")}
     from . import verify as _verify
     _cf = _verify.read(n)
-    cl = {"opts": _master.options(n), "preview": _master.state(n), "approved": _master.approved(n), "master": _master.available(n)}
+    cl = {"master": _master.available(n), "info": _master.info(n)}
     return {"verified": _cf is not None, "fast_mode": fm, "fast": fa, "clean": cl, "one_person": bool(m.get("one_person")), "coverage": cov, "name": n, "base": m.get("base"), "base_used": m.get("base_used"),
             "people": sp["people"] if sp else None, "keep": m.get("keep_people") or [], 
-            "scored": speakers.score_path(n).exists(), "imported": bool(m.get("imported")) or fm, "restoring": bool(m.get("restoring")), "words_seen": bool(m.get("words_seen")), "people_names": m.get("people_names") or {}, "people_voices": m.get("people_voices") or {}, "voice_type": m.get("voice_type") or "", "ref_yes": m.get("ref_yes") or [], "ref_no": m.get("ref_no") or [], "strict": m.get("strict") or "normal", "use_match": bool(m.get("use_match")),
+            "scored": speakers.score_path(n).exists(), "imported": bool(m.get("imported")) or fm, "restoring": bool(m.get("restoring")), "words_seen": bool(m.get("words_seen")), "people_names": m.get("people_names") or {}, "people_voices": m.get("people_voices") or {}, "voice_type": "", "ref_yes": m.get("ref_yes") or [], "ref_no": m.get("ref_no") or [], "strict": m.get("strict") or "normal", "use_match": bool(m.get("use_match")),
             "match": ({k: sp["match"].get(k) for k in ("minutes", "stretches", "strict", "samples", "settled", "history", "found", "cap")} if sp and sp.get("match") else None), "people_stale": speakers.stale(n) if sp else False, "folder": str(src) if src else None, "folder_ok": bool(src and src.is_dir()),
             "files": [{"name": speakers.rel(n, p), "mb": round(p.stat().st_size / 1e6, 1)} for p in files],
             "clips": clips, "clip_minutes": round(sum(_size(p) for p in (CFG.data / n / "wavs").glob("*.wav")) / (2 * 22050 * 60), 1), "prepared": md.exists(), "max_minutes": m.get("max_minutes") or 0, "scan_hours": m.get("scan_hours"), "analysis": analyze.summary(n, files), "scan": (sp or {}).get("scan"), "gpu_load": m.get("gpu_load") or 0, "batch_top": batch_top(), "gpu_gb": gpu_gb(), "edited": len(trim.pending(n)),
             "train": {"running": bool(train_pid(n)), "total": total, "done": max(0, done) if done is not None else None,
                       "mos": met["mos"] if met["mos"] is not None else (float(mos[-1]) if mos else None), "mos_first": met["first"], "eta": (round((total - done) / met["rate"] * 60) if (train_pid(n) and met["rate"] and total and done is not None and total > done) else None), "checkpoints": len(ck), "disk_gb": round(sum(_size(p) for p in ck) / 2**30, 1), "log": tl.split("\n")[-3:] if tl else []},
-            "job": job, "exported": (CFG.out / f"{n}.onnx").exists(), "exported_at": (CFG.out / f"{n}.onnx").stat().st_mtime if (CFG.out / f"{n}.onnx").exists() else None,
+            "job": job, "exported": (CFG.out / f"{n}.onnx").exists(), "compare_text": compare.COMPARE_TEXT, "compare_stale": _compare_stale(n), "live": live.keeping(n), "live_loaded": live.loaded(n), "test_stamp": ((CFG.out / f"{n}-test.wav").stat().st_mtime_ns if (CFG.out / f"{n}-test.wav").exists() else 0), "exported_at": (CFG.out / f"{n}.onnx").stat().st_mtime if (CFG.out / f"{n}.onnx").exists() else None,
             "export_what": ((CFG.out / f"{n}.version.txt").read_text() if (CFG.out / f"{n}.version.txt").exists() else None),
             "compare": _compare_info(n)}
 
@@ -474,18 +495,27 @@ class H(BaseHTTPRequestHandler):
         except OSError: return self._err("not found", 404)
         start, end, code = 0, size - 1, 200
         rng = self.headers.get("Range")
-        if rng and rng.startswith("bytes="):
-            a, _, b = rng[6:].partition("-"); start = int(a or 0); end = int(b) if b else size - 1; code = 206
+        if rng and rng.startswith("bytes=") and "," not in rng:                      # one range: bytes=a-b, bytes=a- or bytes=-n (the last n bytes)
+            a, _, b = rng[6:].strip().partition("-")
+            try:
+                if a == "": start, end = max(0, size - int(b)), size - 1
+                else: start, end = int(a), (min(int(b), size - 1) if b else size - 1)
+            except ValueError: start, end = 0, size - 1
+            if start >= size or start > end:
+                f.close(); self.send_response(416); self.send_header("Content-Range", f"bytes */{size}"); self.send_header("Content-Length", "0"); self.end_headers(); return
+            code = 206
         self.send_response(code)
         if code == 206: self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
         self.send_header("Content-Type", ctype); self.send_header("Accept-Ranges", "bytes")
-        self.send_header("Content-Length", str(end - start + 1)); self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(end - start + 1)); self.send_header("Cache-Control", "no-cache")
         if download: self.send_header("Content-Disposition", f'attachment; filename="{download}"')
         self.end_headers(); f.seek(start); left = end - start + 1
         while left > 0:
             c = f.read(min(1 << 20, left))
             if not c: break
-            self.wfile.write(c); left -= len(c)
+            try: self.wfile.write(c)
+            except (BrokenPipeError, ConnectionResetError): break                    # the player moved on (a seek) and closed this request
+            left -= len(c)
         f.close()
 
     def _body(self):
@@ -522,6 +552,24 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Content-Disposition", f'attachment; filename="{n}-voice.zip"'); self.send_header("Cache-Control", "no-store"); self.end_headers()
         shutil.copyfileobj(spool, self.wfile); spool.close()
 
+    def _version_zip(self, n, stem):
+        """One compared version as a zip: name.onnx + name.onnx.json (renamed to the voice name so Piper pairs them)."""
+        onnx, js = CFG.out / f"{stem}.onnx", CFG.out / f"{stem}.onnx.json"
+        if not (onnx.exists() and js.exists()): return self._err("Press Compare versions again: the voice files for this version are not saved yet.", 404)
+        label = "version"
+        try:
+            for it in json.loads(compare.meta_path(n).read_text())["items"]:
+                if it.get("onnx") == onnx.name: label = "-".join(x["label"] for x in it["versions"]); break
+        except (OSError, ValueError, KeyError): pass
+        label = re.sub(r"[^\w.-]+", "_", label)
+        spool = tempfile.SpooledTemporaryFile(max_size=64 << 20)
+        with zipfile.ZipFile(spool, "w", zipfile.ZIP_STORED) as z:
+            z.write(onnx, f"{n}.onnx"); z.write(js, f"{n}.onnx.json")
+        size = spool.tell(); spool.seek(0)
+        self.send_response(200); self.send_header("Content-Type", "application/zip"); self.send_header("Content-Length", str(size))
+        self.send_header("Content-Disposition", f'attachment; filename="{n}-{label}.zip"'); self.send_header("Cache-Control", "no-store"); self.end_headers()
+        shutil.copyfileobj(spool, self.wfile); spool.close()
+
     def do_GET(self):
         if not self._guard(): return
         u = urlparse(self.path); q = parse_qs(u.query)
@@ -537,6 +585,8 @@ class H(BaseHTTPRequestHandler):
                 try: backup.write_zip(n, q.get("ckpt", ["0"])[0] == "1", self.wfile)
                 except (BrokenPipeError, ConnectionResetError): pass
                 return
+            if u.path == "/api/autostart": return self._json(autostart.status())
+            if u.path == "/api/models": return self._json({"models": warm.listing()})
             if u.path == "/api/hf": return self._json(hf_status(q.get("fresh", [""])[0] == "1"))
             if u.path == "/api/gpu": return self._json(gpu_stats() or {"error": "no GPU information available"})
             if u.path == "/api/voices":
@@ -567,6 +617,10 @@ class H(BaseHTTPRequestHandler):
                         if r["approved"]: r["heard"] = r.get("heard", ""); r["wer"] = 0.0           # you approved it: it stays hidden
                     return self._json({"rows": rows, "scored": sc is not None, "triage": triage.triage_verified(rows)})
                 return self._json({"rows": rows, "scored": sc is not None, "triage": triage.triage(rows)})
+            if u.path.startswith("/download-version/") and u.path.endswith(".zip"):
+                _, _, vn, fn = u.path.split("/", 3); vn = CFG.check_name(vn); stem = unquote(fn)[:-4]
+                if not re.fullmatch(re.escape(vn) + r"-compare-\d+", stem): return self._err("not found", 404)
+                return self._version_zip(vn, stem)
             if u.path.startswith("/download-voice/") and u.path.endswith(".zip"):
                 return self._voice_zip(CFG.check_name(os.path.basename(unquote(u.path))[:-4]))
             if u.path.startswith("/dataset/") and u.path.endswith(".zip"):
@@ -576,10 +630,6 @@ class H(BaseHTTPRequestHandler):
                 return self._file(CFG.data / CFG.check_name(n) / "wavs" / os.path.basename(unquote(f)), "audio/wav")
             if u.path.startswith("/fast-ref/") and u.path.endswith(".wav"):
                 return self._file(CFG.runs / CFG.check_name(os.path.basename(unquote(u.path))[:-4]) / "fast" / "ref.wav", "audio/wav")
-            if u.path.startswith("/clean-preview/"):
-                _, _, vn, fn = u.path.split("/", 3)
-                if not re.fullmatch(r"p[0-9]_(original|cleaned)\.wav", fn): return self._err("not found", 404)
-                return self._file(CFG.runs / CFG.check_name(vn) / "clean-preview" / fn, "audio/wav")
             if u.path.startswith("/speaker-sample/"):
                 _, _, n, f = u.path.split("/", 3)
                 return self._file(CFG.runs / CFG.check_name(n) / "speakers" / os.path.basename(unquote(f)), "audio/wav")
@@ -619,37 +669,39 @@ class H(BaseHTTPRequestHandler):
                 vt = d.get("voice_type") if d.get("voice_type") in ("male", "female") else ""
                 voices.write(n, base=key, source_dir=str(Path(folder).expanduser().resolve()), voice_type=vt)
                 return self._json({"ok": True, "license": (base.info(key) or {}).get("license", "") if key != base.AUTO else ""})
+            if u.path == "/api/autostart":
+                try: return self._json(autostart.set_enabled(bool(d.get("enable"))))
+                except Exception as e: raise ValueError(f"Could not change the start-up setting: {e}")
+            if u.path == "/api/models/delete":
+                if busy(): raise RuntimeError("A job is running. Delete stored models when it has finished.")
+                warm.delete_all(); _HF["v"] = None
+                return self._json({"ok": True, "models": warm.listing()})
             n = CFG.check_name(d.get("voice"))
             if not voices.exists(n): raise ValueError("That voice no longer exists.")
             if u.path == "/api/prep":
-                if voices.read(n).get("imported"): raise ValueError("This voice was started from a prepared dataset, so there is nothing to prepare.")
-                need_hf()
+                if voices.read(n).get("imported"): raise ValueError("This voice was started from a prepared dataset, so there is nothing to build.")
+                need_hf(); need_master(n)
                 start_job(n, "prep", ["prep", n])
-            elif u.path == "/api/hfupdate":
-                tok = speakers._token()
-                if not tok: raise ValueError("Add your Hugging Face token first.")
-                try: models.ensure(CFG["diarization_model"], tok, log=lambda t: None, force=True)
-                except Exception: raise ValueError("Could not reach Hugging Face to check for an update. Try again when you are online.")
-                hf_status(True)
             elif u.path == "/api/analyze":
                 if not voices.source_dir(n) or not speakers.audio_files(n): raise ValueError("Choose a folder that has audio files first.")
                 start_job(n, "analyze", ["analyze", n])
             elif u.path == "/api/cull":
-                if not (CFG.data / n / "metadata.csv").exists(): raise ValueError("Prepare the recordings first.")
+                if not (CFG.data / n / "metadata.csv").exists(): raise ValueError("Build the dataset first.")
                 start_job(n, "cull", ["cull", n])
             elif u.path == "/api/train":
                 ep = max(1, min(3000, int(d.get("epochs", 700))))      # the page offers at most 3000; nothing sent to the server can ask for more
-                if not (CFG.data / n / "metadata.csv").exists(): raise ValueError("Prepare the recordings first.")
+                if not (CFG.data / n / "metadata.csv").exists(): raise ValueError("Build the dataset first.")
                 if trim.pending(n): raise ValueError(f"{len(trim.pending(n))} clip(s) have edited words but their audio was not cut to match. Press 'Reprocess edited clips' in the Transcripts step first.")
                 start_job(n, "train", ["train", n, str(ep)], meta={"epochs": ep, **({"base": 0} if voices.read(n).get("speakers") else {})})
             elif u.path == "/api/score":
-                if not (CFG.data / n / "metadata.csv").exists(): raise ValueError("Prepare the recordings first.")
+                if not (CFG.data / n / "metadata.csv").exists(): raise ValueError("Build the dataset first.")
                 need_hf()
                 start_job(n, "score", ["score", n])
             elif u.path == "/api/compare":
                 if not train_mod.all_ckpts(n): raise ValueError("Train first: there is nothing to compare yet.")
-                start_job(n, "compare", ["compare", n, "--text", (d.get("text") or "")[:400]])
+                start_job(n, "compare", ["compare", n, "--text", compare.COMPARE_TEXT])      # always the fixed passage, never the test-clip text box
             elif u.path == "/api/match":
+                need_master(n)
                 def ranges(v):
                     out = []
                     for x in v or []:
@@ -702,18 +754,7 @@ class H(BaseHTTPRequestHandler):
             elif u.path == "/api/fast/run":
                 if not (CFG.runs / n / "fast" / "ref.wav").exists(): raise ValueError("Choose the reference clip first.")
                 start_job(n, "fast", ["fast", n, "--minutes", str(voices.read(n).get("fast_minutes") or 40)])
-            elif u.path == "/api/clean/options":
-                from . import master
-                allowed = ("vocals", "highpass", "denoise", "boost", "loudness")
-                voices.write(n, clean_opts={**master.options(n), **{k: bool(v) for k, v in (d.get("opts") or {}).items() if k in allowed}})
-            elif u.path == "/api/clean/preview":
-                start_job(n, "cleanprev", ["clean-preview", n, "--n", "4"])
-            elif u.path == "/api/clean/decide":
-                from . import master
-                master.decide(n, d.get("id"), bool(d.get("ok")))
             elif u.path == "/api/clean/master":
-                from . import master
-                if not master.approved(n): raise ValueError("Approve every preview clip first.")
                 start_job(n, "master", ["clean-master", n])
             elif u.path == "/api/oneperson":
                 on = bool(d.get("on"))
@@ -732,7 +773,7 @@ class H(BaseHTTPRequestHandler):
                 if not trim.pending(n): raise ValueError("No clip's words have been changed, so there is nothing to reprocess. Save your edits first.")
                 start_job(n, "trim", ["trim", n])
             elif u.path == "/api/speakers":
-                need_hf()
+                need_hf(); need_master(n)
                 if d.get("hours") is not None:
                     try: voices.write(n, scan_hours=max(0, min(1000, int(d["hours"]))))
                     except (TypeError, ValueError): raise ValueError("Choose how much to scan, or Everything.")
@@ -769,6 +810,15 @@ class H(BaseHTTPRequestHandler):
             elif u.path == "/api/train/stop":
                 pid = train_pid(n)
                 if pid: _stop_group(pid)
+            elif u.path == "/api/live/keep":
+                live.set_keep(n, bool(d.get("keep")))
+            elif u.path == "/api/live":
+                text = (d.get("text") or "").strip()[:400] or export_mod.DEFAULT_TEXT
+                wav = live.render(n, text)
+                if d.get("raw"):
+                    self.send_response(200); self.send_header("Content-Type", "audio/wav"); self.send_header("Content-Length", str(len(wav))); self.send_header("Cache-Control", "no-store")
+                    self.end_headers(); self.wfile.write(wav); return
+                (CFG.out / f"{n}-test.wav").write_bytes(wav)
             elif u.path == "/api/export":
                 which = d.get("which") if d.get("which") in ("best", "accurate", "latest") else "best"
                 start_job(n, "export", ["export", n, "--text", (d.get("text") or "")[:400], "--which", which])
@@ -791,7 +841,7 @@ class H(BaseHTTPRequestHandler):
         try:
             if u.path == "/api/transcript":
                 d = self._body(); n = CFG.check_name(d["voice"]); md = CFG.data / n / "metadata.csv"
-                if not md.exists(): raise ValueError("Prepare the recordings first.")
+                if not md.exists(): raise ValueError("Build the dataset first.")
                 shutil.copy(md, md.with_suffix(".csv.bak"))
                 if not (md.parent / "metadata.orig.csv").exists(): shutil.copy(md, md.parent / "metadata.orig.csv")   # first edit: remember the transcript as it was
                 wavs = CFG.data / n / "wavs"; lines = []
@@ -847,5 +897,6 @@ def serve():
     if host not in ("127.0.0.1", "localhost", "::1"):
         print("WARNING: listening beyond this computer. There is no login. Only do this on a network you trust.", flush=True)
     if (CFG["notify_url"] or "").strip(): threading.Thread(target=_watch, daemon=True).start()
+    warm.start()                                  # download missing models and check the stored ones for updates
     print(f"The Piper Mill on http://{host}:{port}   (data: {CFG.home})", flush=True)
     QuietServer((host, port), H).serve_forever()

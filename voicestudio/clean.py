@@ -1,10 +1,8 @@
-"""Remove music, sound effects and background noise: keep only the voices (Demucs "htdemucs", vocals stem).
+"""The voice separator: remove music, sound effects and background noise, keep only the voices (Demucs "htdemucs", vocals stem).
 
-Optional, used by Prepare. It runs only on the parts of the recording that Prepare keeps (your chosen speaker, or the voice you
-matched), so it has far less to process than the whole file, and the clips and their transcripts come from the cleaned audio.
-Your recordings are never changed. The Demucs model (about 80 MB) downloads the first time it is used.
-"""
-SR = 22050                  # the sample rate Prepare works at; Demucs itself runs at 44.1 kHz inside
+Used by the Prepare step (master.py), which cleans every recording once, whole, before anything else reads it.
+Your recordings are never changed. The Demucs model (about 80 MB) downloads the first time it is used."""
+SR = 22050                  # the sample rate the cleaned audio is written at; Demucs itself runs at 44.1 kHz inside
 DEMUCS_SR = 44100
 CHUNK_S, OVERLAP_S = 300, 4  # a long stretch goes through in 5 minute pieces so it always fits in GPU memory
 CONTEXT_S = 1.5              # a little audio on each side of a short stretch, so its edges separate as well as its middle

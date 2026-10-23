@@ -56,14 +56,15 @@ def run(name, log=print):
             info[key] = {"ok": False, "err": str(e)}; log(f"{key}: {e}. It will be left out.")
     good = [f for f in files if info[speakers.rel(name, f)]["ok"]]
     if not good: raise SystemExit("None of the files could be read as audio.")
-    hrs = voices.read(name).get("scan_hours"); hrs = speakers.SCAN_HOURS if hrs is None else hrs
+    hrs = speakers.SCAN_HOURS
     sample, _ = speakers.scan_pick(good, hrs, log, durs={f: info[speakers.rel(name, f)]["secs"] / 3600 for f in good})
     cache = CFG.runs / name / "diar"; cache.mkdir(parents=True, exist_ok=True); ready = 0
     for j, f in enumerate(sample):
         key = speakers.rel(name, f); wav = speakers.cache_wav(name, key)
         prog.update("Getting the recordings ready", j, len(sample), key, frac=0.4 + 0.6 * j / max(1, len(sample)))
         try:
-            if not (wav.exists() and wav.stat().st_mtime >= f.stat().st_mtime): audio.decode(f, wav, speakers.SR, log=log)
+            src = speakers.source(name, f)
+            if not (wav.exists() and wav.stat().st_mtime >= src.stat().st_mtime): audio.decode(src, wav, speakers.SR, log=log)
             ready += 1
         except audio.AudioError as e:
             info[key] = {"ok": False, "err": str(e)}; log(f"{key}: {e}. It will be left out.")

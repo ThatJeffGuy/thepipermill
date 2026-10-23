@@ -154,7 +154,7 @@ def run(name, top_db=None, min_s=1.5, max_s=12.0, join_gap=0.45, log=print):
             f"(your {lim}-minute limit plus some room to drop weak clips). This keeps the later steps fast and small.")
     from . import master
     use_master = master.available(name)
-    if use_master: log("Using your cleaned recordings (the 'Clean the audio' step), so nothing is cleaned again here."); sep = None
+    if use_master: log("Using your prepared audio (the Prepare step), so nothing is cleaned again here."); sep = None
     else:
         log("Removing music and background noise from the parts that are kept (only the voice is left in)...")
         sep = clean.Separator(log)

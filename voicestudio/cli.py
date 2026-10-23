@@ -21,10 +21,7 @@ def main(argv=None):
     p = sub.add_parser("import", help="start a voice from a dataset folder or zip (metadata.csv + clips)"); p.add_argument("name"); p.add_argument("path")
     p = sub.add_parser("fast-ref", help="fast path: choose the reference clip (5 to 12 s of one clean voice)"); p.add_argument("name"); p.add_argument("audio"); p.add_argument("--text", default=None, help="what is said (default: Whisper writes it down)")
     p = sub.add_parser("fast", help="fast path: clone the reference voice into a clean dataset"); p.add_argument("name"); p.add_argument("--minutes", type=float, default=None); p.add_argument("--device", choices=["cuda", "cpu"], default=None)
-    p = sub.add_parser("clean-preview", help="2.0 stage 1: render 3 to 5 original-vs-cleaned excerpts to approve"); p.add_argument("name"); p.add_argument("--n", type=int, default=4)
-    for _o in ("no-vocals", "denoise", "boost", "no-loudness", "no-highpass"): p.add_argument("--" + _o, action="store_true")
-    p = sub.add_parser("clean-decide", help="approve or deny one preview clip"); p.add_argument("name"); p.add_argument("id", type=int); p.add_argument("verdict", choices=["approve", "deny"])
-    p = sub.add_parser("clean-master", help="2.0 stage 1: clean all recordings into a master (needs the preview approved)"); p.add_argument("name"); p.add_argument("--skip-approval", action="store_true", help="run without the preview (for scripted runs)")
+    p = sub.add_parser("clean-master", help="clean all recordings into one master (vocals only, dehissed, boosted, one level); every later step reads it"); p.add_argument("name")
     p = sub.add_parser("verify", help="listen to every clip again and compare with the text (finds clips that need correction)"); p.add_argument("name")
     p = sub.add_parser("silence", help="trim silence from the clips (edges, and optionally long pauses inside)"); p.add_argument("name"); p.add_argument("--lead", type=float, default=0.15); p.add_argument("--tail", type=float, default=0.25); p.add_argument("--pauses", action="store_true", help="also shorten long pauses inside clips"); p.add_argument("--max-pause", type=float, default=0.6)
     p = sub.add_parser("restore", help="restore a voice from a backup zip, under this name"); p.add_argument("name"); p.add_argument("path")
@@ -83,17 +80,8 @@ def main(argv=None):
         from . import fast; fast.reference(n, a.audio, a.text)
     elif a.cmd == "fast":
         from . import fast; fast.run(n, a.minutes, device=a.device)
-    elif a.cmd in ("clean-preview", "clean-decide", "clean-master"):
-        from . import master
-        if a.cmd == "clean-preview":
-            ov = master.options(n)
-            for k, bad in (("vocals", a.no_vocals), ("highpass", a.no_highpass), ("loudness", a.no_loudness)):
-                if bad: ov[k] = False
-            for k, on in (("denoise", a.denoise), ("boost", a.boost)):
-                if on: ov[k] = True
-            voices.write(n, clean_opts=ov); master.preview(n, a.n)
-        elif a.cmd == "clean-decide": master.decide(n, a.id, a.verdict == "approve"); print("ok")
-        else: master.run(n, override={"skip_approval": True} if a.skip_approval else None)
+    elif a.cmd == "clean-master":
+        from . import master; master.run(n)
     elif a.cmd == "verify":
         from . import verify; verify.run(n)
     elif a.cmd == "silence":
@@ -110,7 +98,7 @@ def main(argv=None):
     elif a.cmd == "train":
         from . import train; train.run(n, a.epochs, a.batch)
     elif a.cmd == "compare":
-        from . import compare, export; compare.run(n, a.text or export.DEFAULT_TEXT)
+        from . import compare, export; compare.run(n, a.text or compare.COMPARE_TEXT)
     elif a.cmd == "export":
         from . import export; export.run(n, a.text or export.DEFAULT_TEXT, "last" if a.which == "latest" else a.which)
     elif a.cmd == "clean":

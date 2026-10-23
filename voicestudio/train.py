@@ -116,7 +116,7 @@ def _check_cache(name, md):
 def run(name, extra_epochs=1000, batch=0):
     gpu.check()
     m = voices.read(name)
-    if not (CFG.data / name / "metadata.csv").exists(): raise SystemExit("Prepare the recordings first.")
+    if not (CFG.data / name / "metadata.csv").exists(): raise SystemExit("Build the dataset first.")
     key = m.get("base", base.AUTO)
     if key == base.AUTO:
         key = m.get("base_used") or base.pick_for(name, log=lambda t: print(t, flush=True))

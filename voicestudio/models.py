@@ -2,13 +2,13 @@
 
 The copy lives in the data folder (models/), downloaded once with your own Hugging Face access. It is never part of this program's
 repository: each person accepts the model's terms themselves. The copy lets the speaker steps start without asking Hugging Face
-every time and keeps them working offline. Roughly once a day (and whenever you press Update) the program asks Hugging Face
+every time and keeps them working offline. Every time the model is used (and when the program starts) it asks Hugging Face
 whether a newer version exists and, if so, installs it; if Hugging Face cannot be reached it simply keeps using the copy it has.
 """
 import json, shutil, time
 from .config import CFG
 
-CHECK_EVERY = 24 * 3600          # seconds between update checks
+CHECK_EVERY = 0                  # seconds between update checks: 0 = ask Hugging Face every time the model is used (it is a tiny request)
 
 
 def dir_for(model): return CFG.home / "models" / model.replace("/", "__")

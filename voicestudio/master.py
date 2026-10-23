@@ -7,12 +7,11 @@ at every piece's edges (dead gaps, odd noises), and the speaker/pause detection 
 What the master chain does, in order (each part can be switched off):
   vocals    Demucs keeps only the voices (removes music, effects, background)
   highpass  removes rumble below 70 Hz
-  denoise   gentle FFT noise reduction for steady hiss/hum (off by default: heavy use can smooth a gravelly voice)
-  boost     a little presence and light compression so quiet words are not lost (off by default)
+  denoise   FFT noise reduction for steady hiss and hum
+  boost     a little presence and light compression so quiet words are not lost
   loudness  one consistent volume (about -20 LUFS) with a peak limit
   mono      always: one channel at 22.05 kHz
-Before a long run, `preview` renders 3 to 5 varied excerpts original-vs-cleaned for you to approve or deny. Nothing is processed in bulk until
-you approve. Your original recordings are never changed.
+Every step after it (speaker finding, matching, clip cutting, transcripts) reads the master, never the raw files. Your original recordings are never changed.
 """
 import json, shutil, subprocess, tempfile
 from pathlib import Path
@@ -21,8 +20,7 @@ from .config import CFG
 from .progress import Progress
 
 SR = 22050
-EXCERPT_S = 8.0
-DEFAULTS = {"vocals": True, "highpass": True, "denoise": False, "boost": False, "loudness": True, "target_lufs": -20}
+DEFAULTS = {"vocals": True, "highpass": True, "denoise": True, "boost": True, "loudness": True, "target_lufs": -20}
 
 
 def options(name, override=None):
@@ -62,10 +60,9 @@ def master_dir(name): return CFG.runs / name / "master"
 
 
 def run(name, log=print, override=None):
-    """Clean every recording into runs/<name>/master/. Requires the preview to be approved (or skipped with override={'skip_approval': True})."""
+    """Clean every recording into runs/<name>/master/."""
     import soundfile as sf
     o = options(name, override)
-    if not (override or {}).get("skip_approval") and not approved(name): raise SystemExit("Preview the clean-up and approve it first.")
     files = speakers.audio_files(name)
     if not files: raise SystemExit("No audio files found. Choose your recordings folder first.")
     out = master_dir(name); shutil.rmtree(out, ignore_errors=True); out.mkdir(parents=True)
@@ -97,68 +94,13 @@ def master_path(name, f):
 
 
 def available(name):
-    """True when a master exists for every recording, so Prepare can use it instead of cleaning short pieces."""
+    """True when a master exists for every recording: every later step then reads the master instead of the raw files."""
     files = speakers.audio_files(name)
     return bool(files) and (master_dir(name) / "master.json").exists() and all(master_path(name, f) for f in files)
 
 
-def preview_dir(name): return CFG.runs / name / "clean-preview"
-
-
-def _pick_excerpts(y, n):
-    """Start times (s) of n varied windows: quietest speech, loudest, in between, and spread through the file."""
-    import numpy as np
-    w = int(EXCERPT_S * SR); hop = w // 2
-    if len(y) <= w: return [0.0]
-    starts = list(range(0, len(y) - w, hop)); lv = np.array([float(np.sqrt((y[s:s + w] ** 2).mean())) for s in starts])
-    ok = [i for i in range(len(starts)) if lv[i] > 0.4 * np.median(lv) and lv[i] > 0.003] or list(range(len(starts)))
-    ok.sort(key=lambda i: lv[i]); pick = [ok[0], ok[-1]]
-    for q in np.linspace(0.25, 0.75, max(0, n - 2)): pick.append(ok[int(q * (len(ok) - 1))])
-    return sorted({round(starts[i] / SR, 1) for i in pick})[:n]
-
-
-def preview(name, n=4, log=print, override=None):
-    """Render n varied excerpts from the recordings, original next to cleaned, for the user to approve or deny."""
-    import soundfile as sf
-    n = max(3, min(5, n)); o = options(name, override)
-    files = speakers.audio_files(name)
-    if not files: raise SystemExit("No audio files found. Choose your recordings folder first.")
-    d = preview_dir(name); shutil.rmtree(d, ignore_errors=True); d.mkdir(parents=True); prog = Progress(name, "cleanprev"); prog.update("Making the previews", 0, n, frac=0.02)
-    # spread the excerpts over up to n files (longest first), or over one long file
-    sizes = sorted(files, key=lambda p: -p.stat().st_size)[:n]; per = [n // len(sizes) + (1 if i < n % len(sizes) else 0) for i in range(len(sizes))]
-    sep = clean.Separator(log) if o.get("vocals") else None; items = []; pad = int(clean.CONTEXT_S * SR)
-    try:
-        for f, k in zip(sizes, per):
-            with tempfile.TemporaryDirectory() as td:
-                raw = Path(td) / "raw.wav"; audio.decode(f, raw, SR, log=log); y, _ = sf.read(raw, dtype="float32")
-            for t in _pick_excerpts(y, k):
-                a = int(t * SR); b = min(len(y), a + int(EXCERPT_S * SR)); c0, c1 = max(0, a - pad), min(len(y), b + pad)
-                cleaned = process_array(y[c0:c1], o, sep)[a - c0: a - c0 + (b - a)]
-                i = len(items) + 1
-                sf.write(d / f"p{i}_original.wav", y[a:b], SR, subtype="PCM_16"); sf.write(d / f"p{i}_cleaned.wav", cleaned, SR, subtype="PCM_16")
-                prog.update("Making the previews", i, n, frac=min(0.95, i / n))
-                items.append({"id": i, "source": speakers.rel(name, f), "start": t, "seconds": round((b - a) / SR, 1), "approved": None}); log(f"Preview {i}: {speakers.rel(name, f)} at {t:.0f} s")
-    finally:
-        if sep: sep.close()
-    (d / "preview.json").write_text(json.dumps({"options": o, "items": items})); prog.finish(f"{len(items)} previews")
-    log("Listen to each pair, then approve or deny it. Denied? Change the options and preview again.")
-    return items
-
-
-def state(name):
-    try: return json.loads((preview_dir(name) / "preview.json").read_text())
+def info(name):
+    """{'files': n, 'minutes': m} of the finished master, else None."""
+    try: j = json.loads((master_dir(name) / "master.json").read_text())
     except (OSError, ValueError): return None
-
-
-def decide(name, item_id, ok):
-    s = state(name)
-    if not s: raise SystemExit("There is no preview yet.")
-    hit = [i for i in s["items"] if i["id"] == int(item_id)]
-    if not hit: raise SystemExit("Unknown preview clip.")
-    hit[0]["approved"] = bool(ok); (preview_dir(name) / "preview.json").write_text(json.dumps(s)); return s
-
-
-def approved(name):
-    """True when every preview clip is approved and the preview was made with the options now in use."""
-    s = state(name)
-    return bool(s) and all(i["approved"] is True for i in s["items"]) and s["options"] == options(name)
+    return {"files": len(j["files"]), "minutes": round(sum(f.get("minutes", 0) for f in j["files"]), 1)}
