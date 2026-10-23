@@ -402,6 +402,9 @@ const LOCKS={
   0:{sel:'#srcIn,#browseSrc,[data-vpath],#anBtn,#fastFile,#fastBrowse,#fastText,#fastRef,#fastMin,#fastGo',
      what:'the recordings folder',
      warn:'Everything after this step was built from these recordings and settings.\n\nChanging them means: analyzing again, preparing the audio again, then the speaker scan, Refine, building the dataset and any corrections, and then training again. Clips you already corrected would be replaced.'},
+  1:{sel:'#mastGo',
+     what:'the prepared audio',
+     warn:'Every later step was built from this cleaned audio.\n\nRunning it again means: finding the speakers again, Refine, building the dataset again and any corrections, then training again.'},
   2:{sel:'#spNum,#spBtn,#keepBtn,.pk,.pedit,[data-next]',
      what:'the speaker scan',
      warn:'The dataset and the later steps were built from these speakers.\n\nChanging or re-running the scan means: redoing Refine (if you used it) and building the dataset, re-checking the words, and training again.'},
@@ -416,7 +419,7 @@ const LOCKS={
      warn:'The voice has already been trained on the clips as they are now.\n\nEditing the words or clips means: the voice has to be trained again for the changes to be heard (the old test clips will not change).'}};
 const UNLOCKED={};
 function applyLocks(v,stepNo,downstream){
-  const L=LOCKS[stepNo],card=$('#main .card');if(!L||!card||!downstream||(v.imported&&stepNo<=1))return;      // Recordings and Prepare have nothing to unlock on an imported dataset; the later steps show the lock like any other voice
+  const L=LOCKS[stepNo],card=$('#main .card');if(!L||!card||!downstream)return;
   const h=card.querySelector('h2'),key=v.name+':'+stepNo;
   if(UNLOCKED[key]){if(h)h.insertAdjacentHTML('afterend',`<div class="lockbar"><span><b>Unlocked.</b> You are changing ${L.what}. Anything built from it may need redoing.</span><button class="sec" id="relockBtn">Lock again</button></div>`);
     const r=$('#relockBtn');if(r)r.onclick=()=>{delete UNLOCKED[key];render()};return}
@@ -629,7 +632,7 @@ function render(){
       t.running?`${v.name} is training on the GPU…`:null,run('export')?'Making the test clip… please wait.':run('compare')?'Making a sample of each version… please wait.':null];
     const stepNo=wizStep(v,{prepDone,finished});
     const tr=t.checkpoints>0,downstream=[!!v.people||!!v.match||prepDone||tr||!!v.exported,!!v.people||!!v.match||prepDone||tr||!!v.exported,!!v.match||prepDone||tr||!!v.exported,prepDone||tr||!!v.exported,tr||!!v.exported,tr||!!v.exported,false];   // Train is never locked: you can always resume or train more; a new test clip is made on the Listen step
-    const isLocked=i=>(i===7&&!t.checkpoints)||(!!LOCKS[i]&&!!downstream[i]&&!jobRun&&!UNLOCKED[v.name+':'+i]&&!(v.imported&&i<=1));
+    const isLocked=i=>(i===7&&!t.checkpoints)||(!!LOCKS[i]&&!!downstream[i]&&!jobRun&&!UNLOCKED[v.name+':'+i]);
     $('#main').innerHTML=`
     <div class="strip">${names.map((n,i)=>{
       const busyNow=[run('import')||run('restore')||run('analyze')||run('fast')||run('fastref'),run('master'),run('speakers'),run('match'),run('prep')||run('cull'),run('trim')||run('score')||run('verify')||run('silence'),!!t.running,run('export')||run('compare')][i];
