@@ -447,6 +447,12 @@ async function refresh(force){
   render();
 }
 
+// The page card gets one minimum height on every step (the room left in the window above the buttons), so the Prev / Next row
+// stays in the same place as you move between steps. A step with more content than that simply grows past it.
+function fitCard(){const c=$('#main .card');if(!c)return;c.style.minHeight='';const foot=document.querySelector('.foot');
+  const top=c.getBoundingClientRect().top+window.scrollY,room=window.innerHeight-top-60-(foot?foot.offsetHeight+34:80);      // 60 = the 46 px button row plus its gap, the same on every step
+  c.style.minHeight=Math.max(360,Math.round(room))+'px'}
+window.addEventListener('resize',()=>{try{fitCard()}catch(e){}});
 function render(){
   const keep={txt:$('#txt')&&$('#txt').value,ep:$('#ep')&&$('#ep').value,sp:$('#spNum')&&$('#spNum').value,ff:$('#frFind')&&$('#frFind').value,fr:$('#frRep')&&$('#frRep').value,fc:$('#frCase')&&$('#frCase').checked,mm:$('#maxMin')&&$('#maxMin').value,gl:$('#gpuLoad')&&$('#gpuLoad').value,wh:$('#which')&&$('#which').value};
   if(player.parentNode)player.remove();      // put back right after the redraw, in the same moment, so playback is not interrupted
@@ -652,7 +658,7 @@ function render(){
   if(rows&&rowsFor===v.name){if(v.scored&&!rowsScored&&!dirty){rowsScored=true;loadRows(v.name).catch(()=>{})}else if(!v.scored&&rowsScored){rows.forEach(r=>r.score=null);rowsScored=false}}
   applyLocks(v,stepNo,downstream[stepNo]&&!jobRun);
   paintStatus(v,t,jobRun,stepNo);if(!menuOpen)paintMenu(v);
-  wire(v);updPlan();syncGpu(stepNo===6);if(rows&&rowsFor===v.name&&$('#wbody'))drawWords();placePlayer();
+  fitCard();wire(v);updPlan();syncGpu(stepNo===6);if(rows&&rowsFor===v.name&&$('#wbody'))drawWords();placePlayer();
   // opening the Words step shows your clips straight away (no need to press "Show my clips" after a refresh)
   if(stepNo===5&&v.prepared&&!(rows&&rowsFor===v.name)&&!autoRows[v.name+':'+v.clips]){autoRows[v.name+':'+v.clips]=1;loadRows(v.name).catch(()=>{})}
 }
