@@ -159,4 +159,4 @@ The speaker scan, "find more like these", "check clips" and the best-clips ranki
 
 `scripts/sanitize_check.sh` scans the repository for private addresses, usernames, tokens and stray models or audio. Run it before publishing.
 
-`scripts/sync.sh` is the two-step publish: it pushes every commit to a private remote first (a full copy of your work, named `gitserver` by default), and only if the sanitize check passes does it push `main` to the public remote (`origin`). A local `pre-push` hook can enforce the same check on any push to GitHub.
+`scripts/sync.sh` is the publish script: it runs the sanitize check first and stops if anything personal is found, then pushes every commit to a private remote (a full copy of your work, named `gitserver` by default), then pushes `main` to the public remote (`origin`). A local `pre-push` hook can enforce the same check on any push to GitHub.
