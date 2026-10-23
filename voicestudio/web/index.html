@@ -140,7 +140,7 @@ textarea.cell{width:100%;min-height:38px;resize:none;overflow:hidden;padding:8px
 .sp.run{border-top-color:var(--bad);color:var(--ink);font-weight:700}.sp.run i{background:var(--bad);border-color:var(--bad);color:transparent;animation:glow 1.6s ease-in-out infinite}
 .sp.run i::after{content:"";position:absolute;inset:6px;border-radius:50%;background:#fff;animation:beat 1.6s ease-in-out infinite}
 @media (prefers-reduced-motion:reduce){.sp.run i,.sp.run i::after{animation:none}}
-.nav{display:grid;grid-template-columns:1fr minmax(0,auto) 1fr;gap:10px;align-items:center;margin-top:4px}.nav>:first-child{justify-self:start}.nav>:last-child{justify-self:end}.nav .nm{margin:0;text-align:center;max-width:100%}
+.nav{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;margin-top:4px}.nav>:first-child{justify-self:start}.nav>:last-child{justify-self:end}.navmid{min-width:0;display:flex;flex-direction:column;gap:6px}.navmid .sbar{position:static;margin:0;box-shadow:none}.navmid .nm:empty{display:none}.nav .nm{margin:0;text-align:center;max-width:100%}
 @media (max-width:520px){.sp span{display:none}.sp.cur span{display:inline}}
 @media (max-width:560px){.nav{grid-template-columns:1fr auto}.nav .nm{grid-column:1/-1;order:3}}
 .smp{display:flex;flex:1 1 0;min-width:0;align-items:stretch;border-radius:8px;overflow:hidden;background:var(--acc2)}
@@ -168,11 +168,9 @@ textarea.cell{width:100%;min-height:38px;resize:none;overflow:hidden;padding:8px
   <button class="sec advbtn" id="advBtn" aria-pressed="false" title="Show the console: the live text output of whatever is running">Show Console</button>
   <div class="vopt"><button class="sec" id="voBtn" aria-haspopup="true" aria-expanded="false" title="Switch voice, start a new one, rename, back up or delete">Voice options ▾</button><div id="voMenu" class="vomenu" hidden></div></div>
 </header>
-<div id="statusbar"></div>
 <div id="busyBar"></div>
 <div id="main"></div>
 <footer class="foot">
-  <div id="sub">Loading…</div>
   <div><button class="linkbtn" id="notifyBtn" aria-pressed="false" title="Play a sound and show a desktop notification when a job finishes"></button><span id="notifyMsg" class="hint" style="margin:0 0 0 6px"></span></div>
   <div><b>Made by <a href="https://www.everydaysciencestuff.com" target="_blank" rel="noopener">That Scottish Guy</a></b> · &copy; 2026 · <a href="https://github.com/ThatJeffGuy/thepipermill/blob/main/LICENSE" target="_blank" rel="noopener">MIT</a> · <a href="https://github.com/ThatJeffGuy/thepipermill" target="_blank" rel="noopener">Source on GitHub</a></div>
 </footer>
@@ -437,7 +435,6 @@ let last='';
 async function refresh(force){
   let n;try{n=await api('/api/voices')}catch(e){return}
   if(Date.now()-hfT>60000)pollHf(false);
-  $('#sub').textContent=n.busy?(n.busy.kind==='training'?`${n.busy.voice} is training on the GPU`:`GPU is busy with ${jobName(n.busy.kind)}`):'GPU is free';
   watchJobs(n);
   const ae=document.activeElement, typing=ae&&(ae.closest&&ae.closest('#tbl')||['txt','srcIn','spNum','pnameIn','frFind','frRep'].includes(ae.id));
   const sig=JSON.stringify(n);
@@ -643,7 +640,7 @@ function render(){
       return `<button class="sp ${st}" data-go="${i}" title="${n}: ${tip}" aria-label="${n}: ${tip}" ${i===7&&!t.checkpoints?'disabled':''} ${i===stepNo?'aria-current="step"':''}><i>${mark}</i><span>${n}${isLocked(i)?' <b class="lk" aria-hidden="true">&#128274;</b>':''}</span></button>`}).join('')}</div>
     ${wcards[stepNo]()}
     <div class="nav"><span class="row" style="gap:8px;flex-wrap:nowrap"><button class="sec" id="prevBtn" ${stepNo>0?'':'disabled'}>‹ ${stepNo>0?'Return to '+['Sources','Prepare','Diarization','Refine','Build','Correct','Training'][v.imported&&stepNo===5?0:stepNo-1]:'Prev'}</button>${v.imported?'':`<button class="sec" id="resetBtn" title="Go back to the beginning with this voice. Your recordings are never touched." ${S.busy?'disabled':''}>Start over</button>`}</span>
-      <span class="hint nm" id="navMsg">${working[stepNo]?live(esc(working[stepNo])):esc(gate[stepNo])}</span>
+      <div class="navmid"><div id="statusbar"></div><span class="hint nm" id="navMsg">${working[stepNo]?'':esc(gate[stepNo])}</span></div>
       <span class="row">${optional[stepNo]?`<button class="sec" id="skipBtn" ${(run('speakers')||run('match')||run('trim')||run('score')||run('verify'))?'disabled':''}>Skip ›</button>`:''}${stepNo<names.length-1?`<button id="nextBtn" ${gate[stepNo]?'disabled':''}>Next ›</button>`:`<button id="newVoiceBtn" title="Start another voice. This voice stays saved exactly as it is: you can switch back to it any time from the voice menu at the top.">New voice ›</button>`}</span></div>
 `;
   if(keep.sp&&$('#spNum'))$('#spNum').value=keep.sp;if(keep.ff!=null&&$('#frFind')){$('#frFind').value=keep.ff;$('#frRep').value=keep.fr;$('#frCase').checked=!!keep.fc}if(keep.wh&&$('#which'))$('#which').value=keep.wh;if(keep.txt!=null&&$('#txt'))$('#txt').value=keep.txt;if(keep.ep!=null&&$('#ep'))$('#ep').value=keep.ep;if(keep.mm!=null&&$('#maxMin'))$('#maxMin').value=keep.mm;if(keep.gl!=null&&$('#gpuLoad'))$('#gpuLoad').value=keep.gl;
