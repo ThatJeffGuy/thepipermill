@@ -140,7 +140,7 @@ textarea.cell{width:100%;min-height:38px;resize:none;overflow:hidden;padding:8px
 .sp.run{border-top-color:var(--bad);color:var(--ink);font-weight:700}.sp.run i{background:var(--bad);border-color:var(--bad);color:transparent;animation:glow 1.6s ease-in-out infinite}
 .sp.run i::after{content:"";position:absolute;inset:6px;border-radius:50%;background:#fff;animation:beat 1.6s ease-in-out infinite}
 @media (prefers-reduced-motion:reduce){.sp.run i,.sp.run i::after{animation:none}}
-.nav{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:start;margin-top:4px}.nav button{height:46px;min-width:150px;padding:0 20px}.nav .row{align-items:flex-start}.nav .sbar{min-height:46px}.nav>:first-child{justify-self:start}.nav>:last-child{justify-self:end}.navmid{min-width:0;display:flex;flex-direction:column;gap:6px}.navmid .sbar{position:static;margin:0;box-shadow:none}.navmid .nm:empty{display:none}.nav .nm{margin:0;text-align:center;max-width:100%}
+.nav{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:start;margin-top:4px;position:sticky;bottom:0;z-index:15;background:var(--bg);padding:10px 0 8px;box-shadow:0 -10px 12px -10px rgba(0,0,0,.12)}.nav button{height:46px;min-width:150px;padding:0 20px}.nav .row{align-items:flex-start}.nav .sbar{min-height:46px}.nav>:first-child{justify-self:start}.nav>:last-child{justify-self:end}.navmid{min-width:0;display:flex;flex-direction:column;gap:6px}.navmid .sbar{position:static;margin:0;box-shadow:none}.navmid .nm:empty{display:none}.nav .nm{margin:0;text-align:center;max-width:100%}
 @media (max-width:520px){.sp span{display:none}.sp.cur span{display:inline}}
 @media (max-width:560px){.nav{grid-template-columns:1fr auto}.nav .nm{grid-column:1/-1;order:3}}
 .smp{display:flex;flex:1 1 0;min-width:0;align-items:stretch;border-radius:8px;overflow:hidden;background:var(--acc2)}
@@ -170,7 +170,6 @@ html.small .wrap{display:none}#tooSmall{position:fixed;inset:0;z-index:1000;back
   <button class="sec advbtn" id="advBtn" aria-pressed="false" title="Show the console: the live text output of whatever is running">Show Console</button>
   <div class="vopt"><button class="sec" id="voBtn" aria-haspopup="true" aria-expanded="false" title="Switch voice, start a new one, rename, back up or delete">Voice options ▾</button><div id="voMenu" class="vomenu" hidden></div></div>
 </header>
-<div id="busyBar"></div>
 <div id="main"></div>
 <footer class="foot">
   <div><button class="linkbtn" id="notifyBtn" aria-pressed="false" title="Play a sound and show a desktop notification when a job finishes"></button><span id="notifyMsg" class="hint" style="margin:0 0 0 6px"></span></div>
@@ -452,7 +451,7 @@ async function refresh(force){
 // The page card gets one minimum height on every step (the room left in the window above the buttons), so the Prev / Next row
 // stays in the same place as you move between steps. A step with more content than that simply grows past it.
 function fitCard(){const c=$('#main .card');if(!c)return;c.style.minHeight='';const foot=document.querySelector('.foot');
-  const top=c.getBoundingClientRect().top+window.scrollY,room=window.innerHeight-top-60-(foot?foot.offsetHeight+34:80);      // 60 = the 46 px button row plus its gap, the same on every step
+  const top=c.getBoundingClientRect().top+window.scrollY,room=window.innerHeight-top-78-(foot?foot.offsetHeight+34:80);      // 78 = the 46 px button row plus its padding and gap, the same on every step
   c.style.minHeight=Math.max(360,Math.round(room))+'px'}
 window.addEventListener('resize',()=>{try{fitCard()}catch(e){}});
 // the pages are built for a desktop-size window: below this the whole app is replaced by a short message instead of a squeezed layout
@@ -462,7 +461,6 @@ window.addEventListener('resize',checkSize);
 function render(){
   const keep={txt:$('#txt')&&$('#txt').value,ep:$('#ep')&&$('#ep').value,sp:$('#spNum')&&$('#spNum').value,mm:$('#maxMin')&&$('#maxMin').value,gl:$('#gpuLoad')&&$('#gpuLoad').value,wh:$('#which')&&$('#which').value};
   if(player.parentNode)player.remove();      // put back right after the redraw, in the same moment, so playback is not interrupted
-  $('#busyBar').innerHTML=S.busy&&S.busy.voice!==cur?`<div class="card" style="padding:10px 16px">${live('Busy')} <b>${esc(S.busy.voice)}</b>: the GPU is busy with ${jobName(S.busy.kind)}. Other jobs wait until it finishes.</div>`:'';
   const v=S.voices.find(x=>x.name===cur);
   if(!v){paintStatus(null);paintMenu(null);$('#main').innerHTML=`<div class="card empty"><h2>Welcome to The Piper Mill</h2><p>Train your own text-to-speech voice for Piper from a folder of recordings, entirely on this computer. Nothing you record is uploaded anywhere.</p><p>Please train only on your own voice, or on the voice of someone who has agreed to it.</p><button onclick="openNew()">+ New voice</button></div>`;syncGpu(false);return}
   const f=k=>flash[k]?`<div class="msg ${flash[k].cls||''}">${esc(flash[k].text)}</div>`:'';
@@ -656,7 +654,7 @@ function render(){
       return `<button class="sp ${st}" data-go="${i}" title="${n}: ${tip}" aria-label="${n}: ${tip}" ${i===7&&!t.checkpoints?'disabled':''} ${i===stepNo?'aria-current="step"':''}><i>${mark}${isLocked(i)?'<b class="lk" aria-hidden="true">&#128274;</b>':''}</i><span>${n}</span></button>`}).join('')}</div>
     ${wcards[stepNo]()}
     <div class="nav"><span class="row" style="gap:8px;flex-wrap:nowrap"><button class="sec" id="prevBtn" ${stepNo>0?'':'disabled style="visibility:hidden" tabindex="-1" aria-hidden="true"'}>‹ ${stepNo>0?'Return to '+['Sources','Prepare','Diarization','Refine','Build','Correct','Training'][v.imported&&stepNo===5?0:stepNo-1]:'Return to Sources'}</button>${v.imported?'':`<button class="sec" id="resetBtn" title="Go back to the beginning with this voice. Your recordings are never touched." ${S.busy?'disabled':''}>Start over</button>`}</span>
-      <div class="navmid"><div id="statusbar"></div><span class="hint nm" id="navMsg">${working[stepNo]?'':esc(gate[stepNo])}</span></div>
+      <div class="navmid"><div id="statusbar"></div><div id="busyBar"></div><span class="hint nm" id="navMsg">${working[stepNo]?'':esc(gate[stepNo])}</span></div>
       <span class="row">${optional[stepNo]?`<button class="sec" id="skipBtn" ${(run('speakers')||run('match')||run('trim')||run('score')||run('verify'))?'disabled':''}>Skip ›</button>`:''}${stepNo<names.length-1?`<button id="nextBtn" ${gate[stepNo]?'disabled':''}>Next ›</button>`:`<button id="newVoiceBtn" title="Start another voice. This voice stays saved exactly as it is: you can switch back to it any time from the voice menu at the top.">New voice ›</button>`}</span></div>
 `;
   if(keep.sp&&$('#spNum'))$('#spNum').value=keep.sp;if(keep.wh&&$('#which'))$('#which').value=keep.wh;if(keep.txt!=null&&$('#txt'))$('#txt').value=keep.txt;if(keep.ep!=null&&$('#ep'))$('#ep').value=keep.ep;if(keep.mm!=null&&$('#maxMin'))$('#maxMin').value=keep.mm;if(keep.gl!=null&&$('#gpuLoad'))$('#gpuLoad').value=keep.gl;
@@ -957,6 +955,7 @@ function paintStatus(v,t,jobRun,stepNo){
   const txt=cls?sub:(here?detail:`on the ${steps[step]} step${detail?' · '+detail:''}`);
   box.innerHTML=`<div class="sbar ${cls}"><div class="sline"><b>${esc(label)}</b><span class="hint sbtxt" title="${esc(txt)}">${esc(txt)}</span><div class="bar ${ind?'ind':''}"><div style="width:${ind?0:pct}%"></div></div>${step!=null&&!here?`<button class="sec" data-go="${step}">Go there</button>`:''}${stop?`<button class="bad ${stop}">Stop</button>`:''}</div>
     ${mode==='advanced'?`<pre id="sbLog">${esc(log||'(no output yet)')}</pre>`:''}</div>`;
+  const bb=$('#busyBar');if(bb)bb.innerHTML=S.busy&&S.busy.voice!==cur?`<div class="msg" style="margin:0"><b>${esc(S.busy.voice)}</b> is busy with ${esc(jobName(S.busy.kind))}. Other jobs wait until it finishes.</div>`:'';
   const pre=$('#sbLog');if(pre){const key=(v?v.name:'')+':'+log.length;pre.scrollTop=pre.scrollHeight;sbLogKey=key}
 }
 const SRCINFO={recordings:{ph:'Folder with your recordings',hint:'',pick:'folder'},
