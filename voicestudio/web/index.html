@@ -515,7 +515,8 @@ function render(){
     ${v.imported?'<div class="msg">This voice was started from a prepared dataset, so there are no recordings to prepare. Press <b>Next</b>.</div>':`
     <p class="hint">Every recording is cleaned once, whole, before anything else happens to it: music, effects and background are removed so only the voices are left, hiss is reduced, the voice is brought forward, and everything is set to one even volume. Every later step (finding speakers, cutting clips, transcripts, training) uses this cleaned copy. Your original recordings are never changed. This starts by itself and can take a while for long recordings.</p>
     <div class="sub" style="margin-top:12px"><div class="row inl">${mj?`<button class="bad stopjob">Stop</button><div style="flex:1;min-width:240px">${pbar(mj)}</div>`:prepOk?`<span class="pill ok">prepared${mi?` · ${mi.files} recording${mi.files===1?'':'s'}, ${mi.minutes} min`:''}</span><button class="linkbtn" type="button" id="mastGo" ${S.busy?'disabled':''}>Run again</button>`:`<button id="mastGo" ${(!v.files.length||!anOk||S.busy)?'disabled':''}>Prepare the audio</button>`}</div>
-    ${!v.files.length?'<div class="msg err">Choose your recordings folder on the first step.</div>':!anOk?'<div class="msg err">Analyze your recordings on the first step first.</div>':''}
+    ${!v.files.length?'<div class="msg err">Choose your recordings folder on the first step.</div>':!anOk?(()=>{const aj=jobRun&&v.job.kind==='analyze'?v.job:null,st=v.analysis&&v.analysis.stale;return `<div class="msg">${st?'Your recordings have changed since they were last analyzed.':'Your recordings have not been analyzed yet.'} Analyze them first (this can take a while for a lot of audio). Preparing the audio then starts by itself.</div>
+      <div class="row inl" style="margin-top:8px">${aj?`<button class="bad stopjob">Stop</button><div style="flex:1;min-width:240px">${pbar(aj)}</div>`:`<button id="anBtn2" ${S.busy?'disabled':''}>Analyze recordings</button>`}</div>${jobNote(v,'analyze',true)}`})():''}
     ${jobNote(v,'master',true)}${f('cl')}</div>`}</div>`},
 
   ()=>`<div class="card">${hd(3,v.people,'Diarization: who is speaking? <span class="pill">optional</span>')}
@@ -721,6 +722,7 @@ function wire(v){
   b('#dsBtn',()=>{location.href=`/dataset/${encodeURIComponent(v.name)}.zip`});
   b('#hfRecheck',()=>pollHf(true));
   b('#anBtn',()=>act('/api/analyze',{voice:v.name},'an'));
+  b('#anBtn2',()=>act('/api/analyze',{voice:v.name},'cl'));
   b('#spBtn',()=>act('/api/speakers',{voice:v.name,num:($('#spNum')||{}).value||'',hours:0},'sp'));
   b('#keepBtn',async()=>{const ids=[...selSet(v)].sort((a,b)=>a-b);
     try{await api('/api/keep',{method:'POST',body:JSON.stringify({voice:v.name,ids})});spSel=null;say('sp',ids.length?`Saved. Building the dataset will use only ${ids.map(i=>pn(v,i)).join(', ')}.`:'Saved. All speech will be used.','ok');refresh(true)}catch(e){say('sp',e.message,'err')}});
