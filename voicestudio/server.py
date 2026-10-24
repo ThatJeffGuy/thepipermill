@@ -7,7 +7,7 @@ import json, os, re, shutil, signal, subprocess, sys, tempfile, threading, time,
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote
-from . import autostart, warm, export as export_mod, live, analyze, backup, base, compare, gpu as gpu_mod, importer, logclean, models, progress, speakers, train as train_mod, triage, trim, voices
+from . import master as _master_mod, autostart, warm, export as export_mod, live, analyze, backup, base, compare, gpu as gpu_mod, importer, logclean, models, progress, speakers, train as train_mod, triage, trim, voices
 from .config import CFG
 
 WEB = Path(__file__).parent / "web"
@@ -644,6 +644,15 @@ class H(BaseHTTPRequestHandler):
                 return self._version_zip(vn, stem)
             if u.path.startswith("/download-voice/") and u.path.endswith(".zip"):
                 return self._voice_zip(CFG.check_name(os.path.basename(unquote(u.path))[:-4]))
+            if u.path.startswith("/clean-export/") and u.path.endswith(".zip"):
+                n = CFG.check_name(os.path.basename(unquote(u.path))[:-4])
+                spool = tempfile.SpooledTemporaryFile(max_size=64 << 20)
+                try: _master_mod.export_zip(n, spool)
+                except ValueError as e: return self._err(str(e), 404)
+                size = spool.tell(); spool.seek(0)
+                self.send_response(200); self.send_header("Content-Type", "application/zip"); self.send_header("Content-Length", str(size))
+                self.send_header("Content-Disposition", f'attachment; filename="{n}-cleaned-recordings.zip"'); self.send_header("Cache-Control", "no-store"); self.end_headers()
+                shutil.copyfileobj(spool, self.wfile); spool.close(); return
             if u.path.startswith("/dataset/") and u.path.endswith(".zip"):
                 return self._dataset(CFG.check_name(os.path.basename(unquote(u.path))[:-4]))
             if u.path.startswith("/audio/"):
@@ -775,6 +784,12 @@ class H(BaseHTTPRequestHandler):
             elif u.path == "/api/fast/run":
                 if not (CFG.runs / n / "fast" / "ref.wav").exists(): raise ValueError("Choose the reference clip first.")
                 start_job(n, "fast", ["fast", n, "--minutes", str(voices.read(n).get("fast_minutes") or 40)])
+            elif u.path == "/api/clean/use":
+                b = busy()
+                if b: raise RuntimeError(f"'{b[0]}' is busy ({b[1]}).")
+                p = Path(str(d.get("path") or "")).expanduser()
+                if not (p.is_file() and p.suffix.lower() == ".zip"): raise ValueError("Choose the .zip you exported from the Prepare step.")
+                _master_mod.restore_zip(n, p)
             elif u.path == "/api/clean/master":
                 start_job(n, "master", ["clean-master", n])
             elif u.path == "/api/oneperson":

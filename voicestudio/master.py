@@ -104,3 +104,37 @@ def info(name):
     try: j = json.loads((master_dir(name) / "master.json").read_text())
     except (OSError, ValueError): return None
     return {"files": len(j["files"]), "minutes": round(sum(f.get("minutes", 0) for f in j["files"]), 1)}
+
+
+# ---------------------------------------------------------------- keep / reuse the cleaned recordings
+def export_zip(name, fileobj):
+    """Write the finished master (cleaned wavs + master.json) to `fileobj` as a zip, so cleaning never has to be run again for these recordings."""
+    import zipfile
+    d = master_dir(name)
+    if not (d / "master.json").exists(): raise ValueError("The recordings have not been cleaned yet.")
+    with zipfile.ZipFile(fileobj, "w", zipfile.ZIP_STORED) as z:
+        z.write(d / "master.json", "master.json")
+        for f in sorted(d.glob("*.wav")): z.write(f, f"master/{f.name}")
+        z.writestr("README.txt", "Cleaned recordings made with The Piper Mill (Prepare the audio).\n\nmaster/*.wav  mono, 16-bit, 22.05 kHz, voices only, one even volume\n"
+                   "master.json   which original recording each file came from, and the settings used\n\n"
+                   "In The Piper Mill: make a voice with the SAME recordings folder, then on the Prepare step press 'Use cleaned recordings' and pick this zip.\n")
+
+
+def restore_zip(name, path):
+    """Install an exported master zip as this voice's cleaned recordings (the recordings folder must be the same one the zip was made from)."""
+    import zipfile
+    zf = zipfile.ZipFile(path); names = set(zf.namelist())
+    if "master.json" not in names: raise ValueError("That zip is not an export of cleaned recordings (no master.json).")
+    j = json.loads(zf.read("master.json")); out = master_dir(name)
+    files = speakers.audio_files(name)
+    keys = {speakers.rel(name, f).replace("/", "__").rsplit(".", 1)[0] + ".wav" for f in files}
+    have = {f["master"] for f in j["files"] if f"master/{f['master']}" in names}
+    missing = keys - have
+    if not files: raise ValueError("Choose the recordings folder first.")
+    if missing: raise ValueError(f"This export does not match the recordings folder: {len(missing)} of {len(keys)} recordings have no cleaned copy in it (for example {sorted(missing)[0]}).")
+    shutil.rmtree(out, ignore_errors=True); out.mkdir(parents=True)
+    for n in have:
+        with zf.open(f"master/{n}") as src, open(out / n, "wb") as dst: shutil.copyfileobj(src, dst)
+    (out / "master.json").write_text(json.dumps(j))
+    voices.write(name, clean_opts=j.get("options") or {}, master=True)
+    return len(have)
