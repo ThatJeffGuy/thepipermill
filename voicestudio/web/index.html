@@ -510,15 +510,21 @@ function render(){
     `}
   </div>`,
 
-  ()=>{const mj=jobRun&&v.job.kind==='master'?v.job:null,mi=v.clean&&v.clean.info;
+  ()=>{const mj=jobRun&&v.job.kind==='master',aj=jobRun&&v.job.kind==='analyze',mi=v.clean&&v.clean.info,st=v.analysis&&v.analysis.stale;   // progress and the one Stop button live in the status bar at the top
+    const state=!v.files.length?'<div class="msg err">Choose your recordings folder on the first step.</div>'
+      :mj?'<div class="msg">Cleaning your recordings… Progress and the Stop button are in the bar at the top.</div>'
+      :aj?'<div class="msg">Analyzing your recordings… Progress and the Stop button are in the bar at the top. Preparing the audio starts by itself when it finishes.</div>'
+      :prepOk?`<div class="row inl"><span class="pill ok">prepared${mi?` · ${mi.files} recording${mi.files===1?'':'s'}, ${mi.minutes} min`:''}</span></div>`
+      :!anOk?`<div class="msg">${st?'Your recordings have changed since they were last analyzed.':'Your recordings have not been analyzed yet.'} Analyze them first; it can take a while for a lot of audio. Preparing the audio then starts by itself.</div>
+        <div class="row inl" style="margin-top:8px"><button id="anBtn2" ${S.busy?'disabled':''}>Analyze recordings</button></div>`
+      :`<div class="row inl"><button id="mastGo" ${S.busy?'disabled':''}>Prepare the audio</button></div>`;
+    const tools=v.imported||mj||aj||!v.files.length?'':`<details class="vs soft" style="margin-top:12px"><summary>Keep or reuse the cleaned recordings</summary>
+      <p class="hint" style="margin:8px 0">The cleaned recordings can be saved as one zip. If you ever make this voice again from the same recordings folder, use that zip and the cleaning does not have to run a second time.</p>
+      <div class="row inl">${prepOk?`<button class="sec" type="button" id="mastExp">Export cleaned recordings</button><button class="linkbtn" type="button" id="mastGo" ${S.busy?'disabled':''}>Clean them again</button>`:''}${!prepOk&&anOk?`<button class="sec" type="button" id="mastUse" ${S.busy?'disabled':''}>Use cleaned recordings…</button>`:''}</div></details>`;
     return `<div class="card">${hd(2,prepOk,'Prepare the audio')}
     ${v.imported?'<div class="msg">This voice was started from a prepared dataset, so there are no recordings to prepare. Press <b>Next</b>.</div>':`
-    <p class="hint">Every recording is cleaned once, whole, before anything else happens to it: music, effects and background are removed so only the voices are left, hiss is reduced, the voice is brought forward, and everything is set to one even volume. Every later step (finding speakers, cutting clips, transcripts, training) uses this cleaned copy. Your original recordings are never changed. This starts by itself and can take a while for long recordings.</p>
-    <div class="sub" style="margin-top:12px"><div class="row inl">${mj?`<button class="bad stopjob">Stop</button><div style="flex:1;min-width:240px">${pbar(mj)}</div>`:prepOk?`<span class="pill ok">prepared${mi?` · ${mi.files} recording${mi.files===1?'':'s'}, ${mi.minutes} min`:''}</span><button class="linkbtn" type="button" id="mastGo" ${S.busy?'disabled':''}>Run again</button><button class="sec" type="button" id="mastExp" title="All your cleaned recordings as one zip. Keep it: if you need to prepare this voice again, you can use it instead of cleaning everything a second time.">Export cleaned recordings</button>`:`<button id="mastGo" ${(!v.files.length||!anOk||S.busy)?'disabled':''}>Prepare the audio</button>`}</div>
-    ${!v.files.length?'<div class="msg err">Choose your recordings folder on the first step.</div>':!anOk?(()=>{const aj=jobRun&&v.job.kind==='analyze'?v.job:null,st=v.analysis&&v.analysis.stale;return `<div class="msg">${st?'Your recordings have changed since they were last analyzed.':'Your recordings have not been analyzed yet.'} Analyze them first (this can take a while for a lot of audio). Preparing the audio then starts by itself.</div>
-      <div class="row inl" style="margin-top:8px">${aj?`<button class="bad stopjob">Stop</button><div style="flex:1;min-width:240px">${pbar(aj)}</div>`:`<button id="anBtn2" ${S.busy?'disabled':''}>Analyze recordings</button>`}</div>${jobNote(v,'analyze',true)}`})():''}
-    ${!prepOk&&anOk&&!mj?`<div class="hint" style="margin-top:10px">Already cleaned these recordings before? <button class="linkbtn" type="button" id="mastUse" ${S.busy?'disabled':''}>Use cleaned recordings</button> and pick the zip you exported from this step. The recordings folder must be the same one.</div>`:''}
-    ${jobNote(v,'master',true)}${f('cl')}</div>`}</div>`},
+    <p class="hint">Each recording is cleaned once, whole, before anything else happens to it: music and background are removed so only the voices are left, hiss is reduced, and everything is set to one even volume. Every later step uses this cleaned copy. Your original recordings are never changed.</p>
+    <div class="sub" style="margin-top:12px">${state}${jobNote(v,'analyze',true)}${jobNote(v,'master',true)}${f('cl')}${tools}</div>`}</div>`},
 
   ()=>`<div class="card">${hd(3,v.people,'Diarization: who is speaking? <span class="pill">optional</span>')}
     ${v.imported?'<div class="msg">This voice was started from a prepared dataset, so there are no recordings to scan. Press <b>Skip</b>.</div>':''}
