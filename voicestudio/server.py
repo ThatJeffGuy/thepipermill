@@ -24,11 +24,29 @@ def alive(pid):
         return False
 
 
+def _find_trainer(n):
+    """A live 'voicestudio train <voice>' process found by its command line, whoever started it (the pid file can be lost or overwritten)."""
+    for d in os.listdir("/proc"):
+        if not d.isdigit(): continue
+        try:
+            with open(f"/proc/{d}/cmdline", "rb") as f: a = f.read().split(b"\0")
+        except OSError: continue
+        if b"voicestudio" in a and b"train" in a and n.encode() in a and a.index(b"train") + 1 < len(a) and a[a.index(b"train") + 1] == n.encode():
+            if alive(int(d)): return int(d)
+    return None
+
+
 def train_pid(n):
     try:
-        pid = int((CFG.runs / n / "train.pid").read_text().strip()); return pid if alive(pid) else None
+        pid = int((CFG.runs / n / "train.pid").read_text().strip())
+        if alive(pid): return pid
     except (OSError, ValueError):
-        return None
+        pass
+    pid = _find_trainer(n)
+    if pid:                                                      # the pid file was stale: repair it so Stop and Resume see the real run
+        try: (CFG.runs / n / "train.pid").write_text(str(pid))
+        except OSError: pass
+    return pid
 
 
 JOB_KINDS = ("speakers", "match", "score", "prep", "trim", "export", "compare", "import", "restore", "master")
@@ -47,8 +65,8 @@ def job_pids(n):
 
 def busy():
     if CFG.runs.exists():
-        for pf in CFG.runs.glob("*/train.pid"):
-            if train_pid(pf.parent.name): return pf.parent.name, "training"
+        for d in CFG.runs.iterdir():
+            if d.is_dir() and train_pid(d.name): return d.name, "training"
         for d in CFG.runs.iterdir():
             j = job_pids(d.name) if d.is_dir() else []
             if j: return d.name, j[0][0]
@@ -191,7 +209,10 @@ def _read_metrics(n, m):
         m["mos"] = pts[-1][1] if pts else None; m["first"] = pts[0][1] if pts else None
         last = max(m["files"], key=lambda k: m["files"][k][0][1], default=None)             # the newest event file = the current run
         run_pts = sorted(m["files"][last][1]) if last else []
-        m["rate"] = ((len(run_pts) - 1) / ((run_pts[-1][0] - run_pts[0][0]) / 60)) if len(run_pts) >= 3 and run_pts[-1][0] > run_pts[0][0] else None   # rounds per minute
+        m["rate"] = ((len(run_pts) - 1) / ((run_pts[-1][0] - run_pts[0][0]) / 60)) if len(run_pts) >= 3 and run_pts[-1][0] > run_pts[0][0] else None   # scores per minute
+        if m["rate"] and last:                                                                    # one score is written per validation, i.e. every `check_val_every_n_epoch` rounds
+            try: m["rate"] *= int(re.search(r"check_val_every_n_epoch:\s*(\d+)", (Path(last).parent / "config.yaml").read_text()).group(1))
+            except (OSError, AttributeError, ValueError): pass
     except Exception: pass
     finally: m["t"] = time.time(); m["busy"] = False
 
