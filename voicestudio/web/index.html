@@ -537,9 +537,12 @@ function render(){
 
   ()=>`<div class="card">${hd(3,v.people,'Identify: who is speaking? <span class="pill">optional</span>')}
     ${v.imported?'<div class="msg">This voice was started from a prepared dataset, so there are no recordings to scan. Press <b>Skip</b>.</div>':''}
-    <p class="hint">Use this step when your recordings contain more than one person, such as a conversation, a call or an interview. The scan finds each voice so you can listen to samples and choose whose voice to train on. If it is only you speaking, press <b>Skip</b>. You can also name several people and make a separate voice for each of them from this same scan, which saves scanning again: only name the people you actually want a voice for.</p>
+    <p class="hint">This is an optional step for when your recordings contain more than one speaker, such as a recorded meeting or a group chat.</p>
+    <p class="hint">The process is called <b>speaker diarization</b>. It uses <a href="https://github.com/pyannote/pyannote-audio" target="_blank" rel="noopener">pyannote.audio</a> (its <i>speaker-diarization-community-1</i> model) running on <a href="https://pytorch.org" target="_blank" rel="noopener">PyTorch</a> to find each voice, then groups the same person across your files so you can choose your target speaker.</p>
+    <p class="hint">If there is only one speaker in all of your source data, you can skip this step.</p>
     <details class="vs soft"><summary>What does "diarization" mean?</summary>
       <p class="hint" style="margin:8px 0 6px"><b>To diarize audio is to work out who spoke when.</b> The program listens to the whole recording, notices where the voice changes, and groups all the stretches that sound like the same person. The result is "person 1 speaks here, person 2 speaks here, person 1 again", without knowing anyone's name.</p>
+      <p class="hint" style="margin:0 0 6px"><b>Several people?</b> You can name more than one person and make a separate voice for each of them from this same scan, which saves scanning again. Only name the people you actually want a voice for.</p>
       <p class="hint" style="margin:0 0 6px"><b>Why it matters here:</b> a voice can only be trained on <i>one</i> person. If a second person is mixed into the training clips, the voice learns a blend of both. After the scan you listen to a few samples of each person it found and choose whose voice to keep.</p>
       <p class="hint" style="margin:0"><b>It runs on your graphics card (GPU)</b> using a speaker-recognition model, so it is much faster than on the processor. A big folder can still take a while, which is why it scans an even sample (you choose how much) and shows a progress bar. You can press <b>Stop</b> at any time.</p></details>
     ${hfCard('speakers')}
