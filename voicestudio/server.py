@@ -49,7 +49,7 @@ def train_pid(n):
     return pid
 
 
-JOB_KINDS = ("speakers", "match", "score", "prep", "trim", "export", "compare", "import", "restore", "master")
+JOB_KINDS = ("speakers", "match", "score", "prep", "trim", "export", "compare", "import", "restore", "master", "cleanpreview")
 
 
 def job_pids(n):
@@ -236,7 +236,7 @@ def gpu_stats():
 
 
 _NOTE = {}      # (voice, job) -> was it running when we last looked
-JOBWORDS = {"silence": "trimming silence", "verify": "checking the transcripts", "fastref": "preparing the reference clip", "fast": "cloning the voice", "master": "preparing the audio", "import": "importing the dataset", "restore": "restoring the backup", "compare": "comparing versions", "speakers": "speaker identification", "match": "matching your voice", "score": "checking your clips", "prep": "building the dataset",
+JOBWORDS = {"silence": "trimming silence", "verify": "checking the transcripts", "fastref": "preparing the reference clip", "fast": "cloning the voice", "master": "cleaning the recordings", "cleanpreview": "cleaning a sample", "import": "importing the dataset", "restore": "restoring the backup", "compare": "comparing versions", "speakers": "speaker identification", "match": "matching your voice", "score": "checking your clips", "prep": "building the dataset",
             "trim": "cutting the edited clips", "export": "making the test clip", "training": "training"}
 
 
@@ -391,7 +391,7 @@ def need_master(n):
     m = voices.read(n)
     if m.get("imported") or master.available(n): return
     if speakers.load(n) or (CFG.data / n / "metadata.csv").exists() or train_mod.all_ckpts(n): return
-    raise ValueError("Prepare the audio first (step 2). It cleans your recordings so every later step works from clean sound.")
+    raise ValueError("Clean the recordings first (step 2). It cleans your recordings so every later step works from clean sound.")
 
 
 def need_hf():
@@ -456,7 +456,7 @@ def info(n):
           "minutes": m.get("fast_minutes") or 40, "report": m.get("fast_report")}
     from . import verify as _verify
     _cf = _verify.read(n)
-    cl = {"master": _master.available(n), "info": _master.info(n), "opts": _master.options(n)}
+    cl = {"master": _master.available(n), "info": _master.info(n), "opts": _master.options(n), "preview": _master.preview_info(n)}
     return {"verified": _cf is not None, "fast_mode": fm, "fast": fa, "clean": cl, "one_person": bool(m.get("one_person")), "coverage": cov, "name": n, "base": m.get("base"), "base_used": m.get("base_used"),
             "people": sp["people"] if sp else None, "keep": m.get("keep_people") or [], 
             "scored": speakers.score_path(n).exists(), "imported": bool(m.get("imported")) or fm, "restoring": bool(m.get("restoring")), "words_seen": bool(m.get("words_seen")), "people_names": m.get("people_names") or {}, "people_voices": m.get("people_voices") or {}, "voice_type": "", "ref_yes": m.get("ref_yes") or [], "ref_no": m.get("ref_no") or [], "strict": m.get("strict") or "normal", "use_match": bool(m.get("use_match")),
@@ -653,6 +653,9 @@ class H(BaseHTTPRequestHandler):
                 self.send_response(200); self.send_header("Content-Type", "application/zip"); self.send_header("Content-Length", str(size))
                 self.send_header("Content-Disposition", f'attachment; filename="{n}-cleaned-recordings.zip"'); self.send_header("Cache-Control", "no-store"); self.end_headers()
                 shutil.copyfileobj(spool, self.wfile); spool.close(); return
+            if u.path.startswith("/clean-preview/"):
+                _, _, n, f = u.path.split("/", 3)
+                return self._file(_master_mod.preview_dir(CFG.check_name(n)) / os.path.basename(unquote(f)), "audio/wav")
             if u.path.startswith("/dataset/") and u.path.endswith(".zip"):
                 return self._dataset(CFG.check_name(os.path.basename(unquote(u.path))[:-4]))
             if u.path.startswith("/audio/"):
@@ -784,17 +787,20 @@ class H(BaseHTTPRequestHandler):
             elif u.path == "/api/fast/run":
                 if not (CFG.runs / n / "fast" / "ref.wav").exists(): raise ValueError("Choose the reference clip first.")
                 start_job(n, "fast", ["fast", n, "--minutes", str(voices.read(n).get("fast_minutes") or 40)])
+            elif u.path == "/api/clean/preview":
+                if d.get("newsample"):
+                    voices.write(n, clean_sample=int(voices.read(n).get("clean_sample") or 0) + 1)
+                start_job(n, "cleanpreview", ["clean-preview", n, "compare" if d.get("mode") == "compare" else "current", "--opts", json.dumps(_master_mod.sanitize(d.get("opts") or {}))])
             elif u.path == "/api/clean/options":
-                o = {k: bool(d[k]) for k in ("vocals", "highpass", "denoise", "boost", "loudness") if k in d}
-                if "target_lufs" in d: o["target_lufs"] = max(-30, min(-14, float(d["target_lufs"])))
-                voices.write(n, clean_opts={**_master_mod.options(n), **o})
+                voices.write(n, clean_opts={**_master_mod.options(n), **_master_mod.sanitize(d)})
             elif u.path == "/api/clean/use":
                 b = busy()
                 if b: raise RuntimeError(f"'{b[0]}' is busy ({b[1]}).")
                 p = Path(str(d.get("path") or "")).expanduser()
-                if not (p.is_file() and p.suffix.lower() == ".zip"): raise ValueError("Choose the .zip you exported from the Prepare step.")
+                if not (p.is_file() and p.suffix.lower() == ".zip"): raise ValueError("Choose the .zip you exported from the Clean step.")
                 _master_mod.restore_zip(n, p)
             elif u.path == "/api/clean/master":
+                if d.get("opts"): voices.write(n, clean_opts={**_master_mod.options(n), **_master_mod.sanitize(d["opts"])})   # what is selected when Clean is pressed is what is used
                 start_job(n, "master", ["clean-master", n])
             elif u.path == "/api/oneperson":
                 on = bool(d.get("on"))

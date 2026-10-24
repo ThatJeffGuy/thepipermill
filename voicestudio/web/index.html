@@ -163,6 +163,7 @@ html.small .wrap{display:none}#tooSmall{position:fixed;inset:0;z-index:1000;back
 .lockbar{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:8px 0 12px;padding:10px 14px;border:1px solid var(--line);border-left:4px solid var(--warn);border-radius:10px;background:var(--bg);font-size:14px}
 .card .msg{padding:10px 14px;border:1px solid var(--line);border-left:4px solid var(--mute);border-radius:10px;background:var(--bg);margin-top:10px}.card .msg:empty{display:none}.card>.msg,.card>.lockbar{margin:8px 0 12px}.card>.msg+p.hint,.card>.lockbar+p.hint,.card>.msg+details.vs,.card>.lockbar+details.vs{margin-top:12px}.rvbtns{align-items:flex-start;gap:8px}.rvbtns button{height:34px;padding:0 14px;min-height:0}.rvbtns label{height:34px;display:flex;align-items:center;gap:6px}.rvmid{flex:1;min-width:220px;margin:0 4px;text-align:center}.card .rvmid .msg{margin:0;height:34px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;padding:0 12px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rvmid .msg b{margin:0 5px 0 6px}.rvwhy,.whyhint{margin:8px 0 0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rvmid .rvprog{margin:0}.rvmid .msg{padding:8px 12px;font-size:13px}.card .msg.err{border-left-color:var(--bad)}.card .msg.ok{border-left-color:var(--ok)}.card .msg[style*="warn"]{border-left-color:var(--warn)}
 .chk{display:inline-flex;align-items:center;gap:6px;font-size:14px}
+.pvlist{display:grid;gap:6px}.pvrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.pvrow span{min-width:220px;font-size:14px}.pvrow audio{flex:1;min-width:240px;height:34px}
 </style>
 </head>
 <body>
@@ -278,8 +279,8 @@ function watchJobs(n){
   if(notifyOn&&prevRun)Object.keys(run).forEach(k=>{const was=prevRun[k];if(was&&run[k]!==was){const v=n.voices.find(x=>x.name===k.split('|')[0]);if(!v)return;
     const j=v.job&&v.job.kind===was?v.job:null,how=j&&j.rc?(j.rc<0?'was stopped':'did not finish'):'finished';tell(`${v.name}: ${jobName(was)} ${how}`)}});
   prevRun=run}
-const cmAuto={};
-const JOBNAME={import:'importing the dataset',cull:'choosing the best clips',analyze:'analyzing the recordings',silence:'trimming silence',verify:'checking the transcripts',fastref:'preparing the reference clip',fast:'cloning the voice',master:'cleaning the recordings',restore:'restoring the backup',compare:'comparing versions',score:'checking your clips',speakers:'speaker identification',match:'matching your voice',prep:'building the dataset',trim:'cutting the edited clips',export:'making the test clip',training:'training'};
+const cmAuto={},cleanDraft={};     // cleanDraft: the cleaning switches as chosen on the page, until they are saved
+const JOBNAME={import:'importing the dataset',cull:'choosing the best clips',analyze:'analyzing the recordings',silence:'trimming silence',verify:'checking the transcripts',fastref:'preparing the reference clip',fast:'cloning the voice',master:'cleaning the recordings',cleanpreview:'cleaning a sample',restore:'restoring the backup',compare:'comparing versions',score:'checking your clips',speakers:'speaker identification',match:'matching your voice',prep:'building the dataset',trim:'cutting the edited clips',export:'making the test clip',training:'training'};
 const jobName=k=>JOBNAME[k]||k;
 const logBox=()=>'';          // the console lives in the permanent status bar (Show Console)
 // Beginner mode has no console: a job that failed gets one plain line instead (a job you stopped says so)
@@ -405,8 +406,8 @@ function openReset(v){
 const LOCKS={
   0:{sel:'#srcIn,#browseSrc,[data-vpath],#anBtn,#fastFile,#fastBrowse,#fastText,#fastRef,#fastMin,#fastGo',
      what:'the recordings folder',
-     warn:'Everything after this step was built from these recordings and settings.\n\nChanging them means: analyzing again, preparing the audio again, then the speaker scan, Refine, building the dataset and any corrections, and then training again. Clips you already corrected would be replaced.'},
-  1:{sel:'#mastGo',
+     warn:'Everything after this step was built from these recordings and settings.\n\nChanging them means: analyzing again, cleaning the recordings again, then the speaker scan, Refine, building the dataset and any corrections, and then training again. Clips you already corrected would be replaced.'},
+  1:{sel:'#mastGo,[data-co],#coLufs,#coSave,#pvCur,#pvCmp,#pvNew',
      what:'the prepared audio',
      warn:'Every later step was built from this cleaned audio.\n\nRunning it again means: finding the speakers again, Refine, building the dataset again and any corrections, then training again.'},
   2:{sel:'#spNum,#spBtn,#keepBtn,.pk,.pedit,[data-next]',
@@ -511,22 +512,28 @@ function render(){
     `}
   </div>`,
 
-  ()=>{const mj=jobRun&&v.job.kind==='master',aj=jobRun&&v.job.kind==='analyze',mi=v.clean&&v.clean.info,st=v.analysis&&v.analysis.stale,o=(v.clean&&v.clean.opts)||{vocals:1,highpass:1,denoise:1,boost:1,loudness:1,target_lufs:-20};   // progress and the one Stop button live in the status bar at the top
-    const line=!v.files.length?'Choose your recordings folder on the first step.'
-      :mj?'Cleaning your recordings…':aj?'Analyzing your recordings… cleaning starts by itself when it finishes.'
-      :prepOk?'':!anOk?`${st?'Your recordings have changed since they were last analyzed.':'Your recordings have not been analyzed yet.'} Analyze them first; it can take a while for a lot of audio. Cleaning then starts by itself.`:'';
-    const act1=prepOk||mj||aj||!v.files.length?'':!anOk?`<button id="anBtn2" ${S.busy?'disabled':''}>Analyze recordings</button>`:`<button id="mastGo" ${S.busy?'disabled':''}>Prepare the audio</button>`;
-    const sw=(k,t,tip)=>`<label class="chk" title="${tip}"><input type="checkbox" data-co="${k}" ${o[k]?'checked':''} ${mj||aj?'disabled':''}> ${t}</label>`;
-    const tools=v.imported||!v.files.length?'':`<div class="sub" style="margin-top:12px"><b>Cleaning</b>
+  ()=>{const mj=jobRun&&v.job.kind==='master',aj=jobRun&&v.job.kind==='analyze',pj=jobRun&&v.job.kind==='cleanpreview',any=mj||aj||pj,mi=v.clean&&v.clean.info,st=v.analysis&&v.analysis.stale,pv=v.clean&&v.clean.preview,
+      saved=(v.clean&&v.clean.opts)||{vocals:1,highpass:1,denoise:1,boost:1,loudness:1,target_lufs:-20},o=cleanDraft[v.name]||saved,dirty=JSON.stringify(o)!==JSON.stringify(saved);   // progress and the one Stop button live in the status bar at the top
+    const need=!v.files.length?'Choose your recordings folder on the first step.':!anOk?`${st?'Your recordings have changed since they were last analyzed.':'Your recordings have not been analyzed yet.'} Analyze them first; it can take a while for a lot of audio.`:'';
+    const sw=(k,t,tip)=>`<label class="chk" title="${tip}"><input type="checkbox" data-co="${k}" ${o[k]?'checked':''} ${any?'disabled':''}> ${t}</label>`;
+    const items=pv&&pv.items||[];
+    const body=v.imported?'<div class="msg">This voice was started from a prepared dataset, so there are no recordings to clean. Press <b>Next</b>.</div>':`
+    <p class="hint">Each recording is cleaned once, whole, before anything else happens to it, and every later step uses that cleaned copy. Your original recordings are never changed. Choose how to clean, listen to a short sample, then clean the recordings. Whatever is selected when you press Clean is what is used.</p>
+    ${need?`<div class="row inl" style="margin-top:10px"><span class="hint">${need}</span>${!v.files.length?'':`<button id="anBtn2" ${S.busy?'disabled':''}>Analyze recordings</button>`}</div>`:`
+    <div class="sub" style="margin-top:12px"><b>1. Choose how to clean</b>
       <div class="row" style="margin-top:8px;gap:6px 18px">${sw('vocals','Keep only the voices','Removes music, effects and background sound (the slowest part)')}${sw('highpass','Remove rumble','Cuts everything below 70 Hz')}${sw('denoise','Reduce hiss','Steady hiss and hum')}${sw('boost','Bring the voice forward','A little presence and light compression so quiet words are not lost')}${sw('loudness','Even volume','One consistent loudness')}
-        <label class="chk">Loudness <input type="number" id="coLufs" min="-30" max="-14" step="1" value="${o.target_lufs}" style="width:70px" ${mj||aj?'disabled':''}> LUFS</label></div>
-      <div class="hint" style="margin-top:6px">${prepOk?'Changes apply the next time you clean the recordings.':'Used when the cleaning runs.'}</div>
-      <div class="row inl" style="margin-top:10px">${prepOk&&!mj?`<button class="sec" type="button" id="mastExp" title="All the cleaned recordings as one zip. Use it later instead of cleaning again.">Export cleaned recordings</button><button class="linkbtn" type="button" id="mastGo" ${S.busy?'disabled':''}>Clean them again</button>`:''}${!prepOk&&anOk&&!mj&&!aj?`<button class="sec" type="button" id="mastUse" ${S.busy?'disabled':''}>Use cleaned recordings…</button><span class="hint">Pick a zip you exported earlier from this step (same recordings folder) to skip the cleaning.</span>`:''}</div></div>`;
-    return `<div class="card">${hd(2,prepOk,'Prepare the audio')}
-    ${v.imported?'<div class="msg">This voice was started from a prepared dataset, so there are no recordings to prepare. Press <b>Next</b>.</div>':`
-    <p class="hint">Each recording is cleaned once, whole, before anything else happens to it. Every later step uses this cleaned copy. Your original recordings are never changed.</p>
-    <div class="row inl" style="margin-top:10px">${prepOk?`<span class="pill ok">prepared${mi?` · ${mi.files} recording${mi.files===1?'':'s'}, ${mi.minutes} min`:''}</span>`:''}${act1}${line?`<span class="hint">${line}</span>`:''}</div>
-    ${jobNote(v,'analyze',true)}${jobNote(v,'master',true)}${f('cl')}${tools}`}</div>`},
+        <label class="chk">Loudness <input type="number" id="coLufs" min="-30" max="-14" step="1" value="${o.target_lufs}" style="width:70px" ${any?'disabled':''}> LUFS</label></div></div>
+    <div class="sub" style="margin-top:12px"><b>2. Listen first</b> <span class="pill">optional</span>
+      <p class="hint" style="margin:6px 0 8px">Picks one random clip of your recordings (${pv?pv.seconds:'15 to 30'} seconds) to play with, so you can decide by ear. Nothing here changes your recordings. <b>Preview my settings</b> uses the switches above exactly as they are now. <b>Compare the parts</b> also makes the sample with each part alone and with everything together.</p>
+      <div class="row inl"><button class="sec" id="pvCur" ${any||S.busy?'disabled':''}>Preview my settings</button><button class="sec" id="pvCmp" ${any||S.busy?'disabled':''}>Compare the parts</button><button class="linkbtn" id="pvNew" ${any||S.busy?'disabled':''}>Pick another random clip</button></div>
+      ${items.length?`<div class="hint" style="margin:8px 0 4px">Sample from ${esc(pv.source)}</div><div class="pvlist">${items.map(i=>`<div class="pvrow"><span>${esc(i.label)}</span><audio controls preload="none" src="/clean-preview/${encodeURIComponent(v.name)}/${encodeURIComponent(i.file)}"></audio></div>`).join('')}</div>`:''}</div>
+    <div class="sub" style="margin-top:12px"><b>3. Save and clean</b>
+      <div class="row inl" style="margin-top:8px"><span class="pill ${dirty?'':'ok'}" id="coState">${dirty?'not saved yet':'settings saved'}</span><button class="sec" id="coSave" ${dirty&&!any?'':'disabled'}>Save settings</button></div>
+      <div class="row inl" style="margin-top:10px">${prepOk?`<span class="pill ok">cleaned${mi?` · ${mi.files} recording${mi.files===1?'':'s'}, ${mi.minutes} min`:''}</span>`:''}<button id="mastGo" class="${prepOk?'sec':''}" ${any||S.busy?'disabled':''}>${prepOk?'Clean again with these settings':'Clean the recordings with these settings'}</button>${mj?'<span class="hint">Cleaning… progress is in the bar at the top.</span>':aj?'<span class="hint">Analyzing…</span>':''}</div>
+      ${prepOk&&!any?'<div class="hint" style="margin-top:6px">Press <b>Next</b> to carry on with the cleaned recordings.</div>':''}
+      <div class="row inl" style="margin-top:10px">${prepOk&&!any?'<button class="sec" type="button" id="mastExp" title="All the cleaned recordings as one zip. Use it later instead of cleaning again.">Export cleaned recordings</button>':''}${!prepOk&&!any?`<button class="sec" type="button" id="mastUse" ${S.busy?'disabled':''}>Use cleaned recordings…</button><span class="hint">Pick a zip you exported earlier from this step (same recordings folder) to skip the cleaning.</span>`:''}</div></div>`}
+    ${jobNote(v,'analyze',true)}${jobNote(v,'master',true)}${jobNote(v,'cleanpreview',true)}${f('cl')}`;
+    return `<div class="card">${hd(2,prepOk,'Clean')}${body}</div>`},
 
   ()=>`<div class="card">${hd(3,v.people,'Diarization: who is speaking? <span class="pill">optional</span>')}
     ${v.imported?'<div class="msg">This voice was started from a prepared dataset, so there are no recordings to scan. Press <b>Skip</b>.</div>':''}
@@ -637,7 +644,7 @@ function render(){
       <p class="hint">Some stretches of a recording have several voices at once, which makes them hard to tell apart. Here you teach the program what your speaker sounds like: listen to the samples and mark each with the coloured square. <b>Green ✓</b> means it is only your speaker, <b>red ✗</b> means it is someone else, and <b>grey ?</b> means unsure or mixed, so it is left out. Then press <b>Find more like these</b> to search the whole recording for similar speech. You can repeat this as often as you like, and it tells you when nothing new turns up.</p>
       ${hfCard('refine')}${v.imported?'':matchHtml(v,jobRun,true)}</div>`;
     const wcards=[cards[0],cards[1],cards[2],refineCard,cards[3],cards[4],cards[5],cards[6]];
-    const names=['Sources','Prepare','Diarization','Refine','Build','Correct','Train','Listen'];
+    const names=['Sources','Clean','Diarization','Refine','Build','Correct','Train','Listen'];
     const hfOk=!HF||HF.state==='ready'||HF.state==='error';        // access to the gated speaker model (when Hugging Face cannot be reached it does not lock you out)
     const prepOk=!!(v.clean&&v.clean.master)||v.imported||!!v.people||prepDone||t.checkpoints>0;      // older voices that are already past this step keep working from their raw recordings
     const anOk=!!(v.analysis&&!v.analysis.stale)||!!v.people||!!v.prepared;      // earlier voices that are already past this step do not need analyzing again
@@ -647,21 +654,21 @@ function render(){
     const run=k=>jobRun&&v.job.kind===k;
     const gate=[
       run('fast')||run('fastref')?'Cloning… please wait.':(v.fast_mode&&!prepDone)?'Choose the reference clip and create the voice dataset to continue.':run('analyze')?'Analyzing your recordings… please wait.':run('import')||run('restore')?'Working on it… please wait.':(v.restoring&&!v.imported)?'Restoring the backup… please wait.':!(v.imported||(v.files.length&&v.folder_ok))?'Choose a folder that has audio files to continue.':!(v.imported||hfOk)?'Give the speaker model access to continue (see the buttons above).':!(v.imported||anOk)?'Analyze your recordings to continue.':'',
-      run('master')?'Preparing the audio… please wait.':!prepOk?'The audio is being prepared: it starts by itself once your recordings are analyzed.':'',
+      run('master')?'Cleaning the recordings… please wait.':run('cleanpreview')?'Cleaning a sample… please wait.':!prepOk?'Clean the recordings to continue (you can listen to a sample first).':'',
       run('speakers')?'Finding the speakers… please wait.':v.imported?'This voice has no recordings to scan: press Skip.':!v.people?'Find the speakers, or press Skip if it is just you.':'',
       run('match')?'Matching your voice… please wait.':'',
       run('prep')||run('cull')?'Building the dataset… please wait.':!prepDone?'Build the dataset to continue.':'',
       dirty?'Save your changes first, or press Skip.':run('score')||run('verify')?'Checking your clips… please wait.':run('trim')?'Cutting the edited clips… please wait.':!wordsDone?'Open your clips to check them, or press Skip.':'',
       t.running?`${v.name} is training on the GPU…`:!t.checkpoints?'Start training to continue.':'',
       ''];
-    const working=[run('analyze')?'Analyzing your recordings… please wait.':run('import')?'Importing the dataset… please wait.':run('restore')?'Restoring the backup… please wait.':null,run('master')?'Preparing the audio… please wait.':null,run('speakers')?'Finding the speakers… please wait.':null,run('match')?'Finding more like your ticked clips… please wait.':null,run('prep')||run('cull')?'Building the dataset… please wait.':null,run('trim')?'Cutting the edited clips… please wait.':run('score')||run('verify')?'Checking your clips… please wait.':null,
+    const working=[run('analyze')?'Analyzing your recordings… please wait.':run('import')?'Importing the dataset… please wait.':run('restore')?'Restoring the backup… please wait.':null,run('master')?'Cleaning the recordings… please wait.':run('cleanpreview')?'Cleaning a sample… please wait.':null,run('speakers')?'Finding the speakers… please wait.':null,run('match')?'Finding more like your ticked clips… please wait.':null,run('prep')||run('cull')?'Building the dataset… please wait.':null,run('trim')?'Cutting the edited clips… please wait.':run('score')||run('verify')?'Checking your clips… please wait.':null,
       t.running?`${v.name} is training on the GPU…`:null,run('export')?'Making the test clip… please wait.':run('compare')?'Making a sample of each version… please wait.':null];
     const stepNo=wizStep(v,{prepDone,finished});
     const tr=t.checkpoints>0,downstream=[!!v.people||!!v.match||prepDone||tr||!!v.exported,!!v.people||!!v.match||prepDone||tr||!!v.exported,!!v.match||prepDone||tr||!!v.exported,prepDone||tr||!!v.exported,tr||!!v.exported,tr||!!v.exported,false];   // Train is never locked: you can always resume or train more; a new test clip is made on the Listen step
     const isLocked=i=>(i===7&&!t.checkpoints)||(!!LOCKS[i]&&!!downstream[i]&&!jobRun&&!UNLOCKED[v.name+':'+i]);
     $('#main').innerHTML=`
     <div class="strip">${names.map((n,i)=>{
-      const busyNow=[run('import')||run('restore')||run('analyze')||run('fast')||run('fastref'),run('master'),run('speakers'),run('match'),run('prep')||run('cull'),run('trim')||run('score')||run('verify')||run('silence'),!!t.running,run('export')||run('compare')][i];
+      const busyNow=[run('import')||run('restore')||run('analyze')||run('fast')||run('fastref'),run('master')||run('cleanpreview'),run('speakers'),run('match'),run('prep')||run('cull'),run('trim')||run('score')||run('verify')||run('silence'),!!t.running,run('export')||run('compare')][i];
       const st=busyNow?(i===stepNo?'cur run':'run'):i===stepNo?(shownDone[i]?'cur ok':'cur'):shownDone[i]?'ok':i<stepNo?(optional[i]?'ok':'warn'):(i===6&&t.checkpoints>0&&!t.running)?'part':'todo';
       const mark=busyNow?'':st.includes('ok')?'✓':st==='skip'?'–':st==='warn'?'!':st==='part'?'…':i+1;
       const locked=i===7&&!t.checkpoints;
@@ -720,8 +727,7 @@ function wire(v){
   const mm2=$('#mMax');if(mm2)mm2.onchange=()=>saveMax(v,mm2.value);const ms=$('#mStrict');if(ms){ms.value=window._mStrict||v.strict||'normal';ms.onchange=()=>{window._mStrict=ms.value}}
   b('#matchBtn',()=>act('/api/match',{voice:v.name,yes:markRanges(v,'y'),no:markRanges(v,'n'),strict:$('#mStrict').value,max_minutes:+$('#mMax').value},'match'));
   b('#oneBtn',async()=>{if(!confirm('This uses everything in your recordings and replaces the current clips, including any transcript edits you made. Continue?'))return;try{await api('/api/oneperson',{method:'POST',body:JSON.stringify({voice:v.name,on:true})})}catch(e){say('prep',e.message,'err');return}act('/api/prep',{voice:v.name},'prep')});
-  b('#mastGo',()=>{cmAuto[v.name+':'+v.files.length]=1;act('/api/clean/master',{voice:v.name},'cl')});
-  if(wiz[v.name]===1&&!(v.clean&&v.clean.master)&&!v.people&&!v.prepared&&!(v.train&&v.train.checkpoints>0)&&v.files.length&&!v.imported&&!S.busy&&v.analysis&&!v.analysis.stale&&!cmAuto[v.name+':'+v.files.length]){cmAuto[v.name+':'+v.files.length]=1;act('/api/clean/master',{voice:v.name},'cl')}   // the audio is prepared by itself
+  b('#mastGo',()=>{cmAuto[v.name+':'+v.files.length]=1;const o=document.querySelector('[data-co]')?coNow():null;delete cleanDraft[v.name];act('/api/clean/master',o?{voice:v.name,opts:o}:{voice:v.name},'cl')});
   document.querySelectorAll('[data-vpath]').forEach(el=>el.onclick=async()=>{try{await api('/api/path',{method:'POST',body:JSON.stringify({voice:v.name,path:el.dataset.vpath})})}catch(e){say('up',e.message,'err')}refresh(true)});
   b('#fastBrowse',()=>pickFolder(($('#fastFile').value||'').replace(/[^/]*$/,''),p=>{$('#fastFile').value=p},'audio'));
   b('#fastRef',()=>act('/api/fast/ref',{voice:v.name,file:$('#fastFile').value.trim(),text:$('#fastText').value},'fa'));
@@ -731,8 +737,14 @@ function wire(v){
   b('#dsBtn',()=>{location.href=`/dataset/${encodeURIComponent(v.name)}.zip`});
   b('#hfRecheck',()=>pollHf(true));
   b('#anBtn',()=>act('/api/analyze',{voice:v.name},'an'));
-  document.querySelectorAll('[data-co]').forEach(el=>el.onchange=()=>api('/api/clean/options',{method:'POST',body:JSON.stringify({voice:v.name,[el.dataset.co]:el.checked})}).catch(()=>{}));
-  const cl=$('#coLufs');if(cl)cl.onchange=()=>api('/api/clean/options',{method:'POST',body:JSON.stringify({voice:v.name,target_lufs:+cl.value})}).catch(()=>{});
+  const coNow=()=>{const o={target_lufs:+(($('#coLufs')||{}).value||-20)};document.querySelectorAll('[data-co]').forEach(x=>o[x.dataset.co]=x.checked);return o};
+  const coMark=()=>{cleanDraft[v.name]=coNow();const sv=(v.clean&&v.clean.opts)||{},d=cleanDraft[v.name],dirty=Object.keys(d).some(k=>(+sv[k])!==(+d[k]));
+    const st=$('#coState'),sb=$('#coSave');if(st){st.textContent=dirty?'not saved yet':'settings saved';st.className='pill'+(dirty?'':' ok')}if(sb)sb.disabled=!dirty};
+  document.querySelectorAll('[data-co],#coLufs').forEach(el=>el.onchange=coMark);
+  b('#coSave',async()=>{try{await api('/api/clean/options',{method:'POST',body:JSON.stringify({voice:v.name,...coNow()})});delete cleanDraft[v.name]}catch(e){say('cl',e.message,'err')}refresh(true)});
+  b('#pvCur',()=>act('/api/clean/preview',{voice:v.name,mode:'current',opts:coNow()},'cl'));
+  b('#pvCmp',()=>act('/api/clean/preview',{voice:v.name,mode:'compare',opts:coNow()},'cl'));
+  b('#pvNew',()=>act('/api/clean/preview',{voice:v.name,mode:'current',newsample:true,opts:coNow()},'cl'));
   b('#mastExp',()=>{location.href=`/clean-export/${encodeURIComponent(v.name)}.zip`});
   b('#mastUse',()=>pickFolder('',p=>act('/api/clean/use',{voice:v.name,path:p},'cl'),'zip'));
   b('#anBtn2',()=>act('/api/analyze',{voice:v.name},'cl'));
@@ -974,9 +986,9 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&menuOpen)closeMenu(
 let sbLogKey='';
 function paintStatus(v,t,jobRun,stepNo){
   const box=$('#statusbar');if(!box)return;
-  const where={silence:5,verify:5,import:0,restore:0,analyze:0,fastref:0,fast:0,master:1,speakers:2,match:3,prep:4,cull:4,score:5,trim:5,export:7,compare:7},
-    nm={import:'Importing the dataset',restore:'Restoring the backup',analyze:'Analyzing your recordings',silence:'Trimming silence',verify:'Checking the transcripts',fastref:'Preparing the reference clip',fast:'Cloning the voice',master:'Preparing the audio',speakers:'Diarization (who is speaking)',match:'Finding more of your speaker',prep:'Building the dataset',cull:'Keeping the best clips',score:'Checking the clips',trim:'Cutting the edited clips',export:'Making the test clip',compare:'Comparing versions'},
-    steps=['Sources','Prepare','Diarization','Refine','Build','Correct','Train','Listen'];
+  const where={silence:5,verify:5,import:0,restore:0,analyze:0,fastref:0,fast:0,master:1,cleanpreview:1,speakers:2,match:3,prep:4,cull:4,score:5,trim:5,export:7,compare:7},
+    nm={import:'Importing the dataset',restore:'Restoring the backup',analyze:'Analyzing your recordings',silence:'Trimming silence',verify:'Checking the transcripts',fastref:'Preparing the reference clip',fast:'Cloning the voice',master:'Cleaning the recordings',cleanpreview:'Cleaning a sample',speakers:'Diarization (who is speaking)',match:'Finding more of your speaker',prep:'Building the dataset',cull:'Keeping the best clips',score:'Checking the clips',trim:'Cutting the edited clips',export:'Making the test clip',compare:'Comparing versions'},
+    steps=['Sources','Clean','Diarization','Refine','Build','Correct','Train','Listen'];
   let label='Idle',sub='Nothing is running.',pct=0,ind=false,step=null,stop='',log='',cls='idle',detail='';
   if(v&&t&&t.running){cls='';label='Training';step=5;stop='stopTrain';ind=t.done==null;pct=t.total&&t.done!=null?Math.min(100,Math.round(100*t.done/t.total)):0;
     detail=t.done!=null?`${t.done} of ${t.total} rounds (${pct}%)${t.eta!=null?' · about '+fmt(t.eta)+' left':''}`:'Starting up: getting your clips ready for training…';log=(t.log||[]).join('\n')}

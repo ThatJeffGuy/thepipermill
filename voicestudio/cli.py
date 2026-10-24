@@ -22,6 +22,7 @@ def main(argv=None):
     p = sub.add_parser("fast-ref", help="fast path: choose the reference clip (5 to 12 s of one clean voice)"); p.add_argument("name"); p.add_argument("audio"); p.add_argument("--text", default=None, help="what is said (default: Whisper writes it down)")
     p = sub.add_parser("fast", help="fast path: clone the reference voice into a clean dataset"); p.add_argument("name"); p.add_argument("--minutes", type=float, default=None); p.add_argument("--device", choices=["cuda", "cpu"], default=None)
     p = sub.add_parser("clean-master", help="clean all recordings into one master (vocals only, dehissed, boosted, one level); every later step reads it"); p.add_argument("name")
+    p = sub.add_parser("clean-preview", help="clean a short sample with the chosen settings to compare by ear"); p.add_argument("name"); p.add_argument("mode", nargs="?", default="current"); p.add_argument("--opts", default="{}")
     p = sub.add_parser("verify", help="listen to every clip again and compare with the text (finds clips that need correction)"); p.add_argument("name")
     p = sub.add_parser("silence", help="trim silence from the clips (edges, and optionally long pauses inside)"); p.add_argument("name"); p.add_argument("--lead", type=float, default=0.15); p.add_argument("--tail", type=float, default=0.25); p.add_argument("--pauses", action="store_true", help="also shorten long pauses inside clips"); p.add_argument("--max-pause", type=float, default=0.6)
     p = sub.add_parser("restore", help="restore a voice from a backup zip, under this name"); p.add_argument("name"); p.add_argument("path")
@@ -80,6 +81,8 @@ def main(argv=None):
         from . import fast; fast.reference(n, a.audio, a.text)
     elif a.cmd == "fast":
         from . import fast; fast.run(n, a.minutes, device=a.device)
+    elif a.cmd == "clean-preview":
+        from . import master; import json as _j; master.preview_run(n, a.mode, _j.loads(a.opts))
     elif a.cmd == "clean-master":
         from . import master; master.run(n)
     elif a.cmd == "verify":

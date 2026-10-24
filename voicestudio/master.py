@@ -115,9 +115,9 @@ def export_zip(name, fileobj):
     with zipfile.ZipFile(fileobj, "w", zipfile.ZIP_STORED) as z:
         z.write(d / "master.json", "master.json")
         for f in sorted(d.glob("*.wav")): z.write(f, f"master/{f.name}")
-        z.writestr("README.txt", "Cleaned recordings made with The Piper Mill (Prepare the audio).\n\nmaster/*.wav  mono, 16-bit, 22.05 kHz, voices only, one even volume\n"
+        z.writestr("README.txt", "Cleaned recordings made with The Piper Mill (the Clean step).\n\nmaster/*.wav  mono, 16-bit, 22.05 kHz, voices only, one even volume\n"
                    "master.json   which original recording each file came from, and the settings used\n\n"
-                   "In The Piper Mill: make a voice with the SAME recordings folder, then on the Prepare step press 'Use cleaned recordings' and pick this zip.\n")
+                   "In The Piper Mill: make a voice with the SAME recordings folder, then on the Clean step press 'Use cleaned recordings' and pick this zip.\n")
 
 
 def restore_zip(name, path):
@@ -138,3 +138,83 @@ def restore_zip(name, path):
     (out / "master.json").write_text(json.dumps(j))
     voices.write(name, clean_opts=j.get("options") or {}, master=True)
     return len(have)
+
+
+# ---------------------------------------------------------------- listen before you clean
+PV_SECONDS = 20
+STEPS = ("vocals", "highpass", "denoise", "boost", "loudness")
+
+
+def preview_dir(name): return CFG.runs / name / "clean-preview"
+
+
+def preview_info(name):
+    try: return json.loads((preview_dir(name) / "index.json").read_text())
+    except (OSError, ValueError): return None
+
+
+def _spot(f, start, secs):
+    import io, soundfile as sf
+    r = subprocess.run(["ffmpeg", "-loglevel", "error", "-ss", f"{start:.2f}", "-t", str(secs), "-i", str(f), "-map", "0:a:0", "-ac", "1", "-ar", str(SR), "-f", "wav", "-"], capture_output=True)
+    if r.returncode != 0 or not r.stdout: return None
+    y, _ = sf.read(io.BytesIO(r.stdout), dtype="float32"); return y
+
+
+def sanitize(d):
+    """Only the known cleaning switches from a request, as clean values."""
+    o = {k: bool(d[k]) for k in STEPS if k in d}
+    if "target_lufs" in d: o["target_lufs"] = max(-30.0, min(-14.0, float(d["target_lufs"])))
+    return o
+
+
+def excerpt(name, sample):
+    """One random 15-30 s clip of real speech from the raw recordings. The same `sample` number always gives the same clip; the next number gives a different one."""
+    import random, numpy as np
+    files = speakers.audio_files(name)
+    if not files: raise SystemExit("No audio files found. Choose your recordings folder first.")
+    rng = random.Random(f"{name}:{sample}"); f = rng.choice(files); d = audio.duration(f); best = None
+    for _ in range(6):
+        secs = rng.uniform(15, 30); start = rng.uniform(0, max(0.0, d - secs)) if d > secs else 0.0
+        y = _spot(f, start, secs)
+        if y is None or not len(y): continue
+        rms = float(np.sqrt(np.mean(y ** 2)))
+        if best is None or rms > best[0]: best = (rms, y)
+        if rms > 0.01: break                         # loud enough to be speech, not a gap
+    if best is None: raise SystemExit(f"Could not read a sample from {speakers.rel(name, f)}.")
+    return speakers.rel(name, f), best[1]
+
+
+def preview_variants(name, mode, opts=None):
+    cur = {**options(name), **(opts or {})}; t = cur.get("target_lufs", -20)
+    only = lambda *k: {**{s: False for s in STEPS}, **{s: True for s in k}, "target_lufs": t}
+    mine = ("Your settings", cur)
+    if mode == "current": return [mine]
+    return [("Voices only", only("vocals")), ("Hiss and rumble only", only("highpass", "denoise")),
+            ("Presence and even volume only", only("boost", "loudness")), ("Everything", only(*STEPS)), mine]
+
+
+def preview_run(name, mode="current", opts=None, log=print):
+    """Cut a ~20 s sample and clean it with the chosen settings (or with each part and some combinations) so they can be compared by ear."""
+    import re, time, soundfile as sf
+    d = preview_dir(name); d.mkdir(parents=True, exist_ok=True)
+    sample = int(voices.read(name).get("clean_sample") or 0); info = preview_info(name) or {}
+    if info.get("sample") != sample: [p.unlink() for p in d.glob("*")]; info = {}
+    key, y = excerpt(name, sample); items = [i for i in info.get("items", [])]
+    variants = preview_variants(name, mode, opts); prog = Progress(name, "cleanpreview")
+    slug = lambda s: re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
+    def put(label, arr, o):
+        for p in d.glob(slug(label) + "-*.wav"): p.unlink()
+        fn = f"{slug(label)}-{int(time.time() * 1000) % 10**9}.wav"; sf.write(d / fn, arr, SR, subtype="PCM_16")
+        items[:] = [i for i in items if i["label"] != label] + [{"label": label, "file": fn, "opts": o}]
+    if not any(i["label"] == "Original" for i in items): put("Original", y, None)
+    sep = clean.Separator(log) if any(o.get("vocals") for _, o in variants) else None
+    try:
+        for k, (label, o) in enumerate(variants, 1):
+            prog.update("Cleaning the sample", k - 1, len(variants), label, frac=(k - 1) / len(variants))
+            put(label, process_array(y, o, sep), o); log(f"{label}: done")
+    finally:
+        if sep: sep.close()
+    order = ["Original", "Voices only", "Hiss and rumble only", "Presence and even volume only", "Everything", "Your settings"]
+    items.sort(key=lambda i: order.index(i["label"]) if i["label"] in order else 99)
+    (d / "index.json").write_text(json.dumps({"sample": sample, "source": key, "seconds": round(len(y) / SR), "items": items}))
+    prog.finish(f"{len(variants)} sample(s)")
