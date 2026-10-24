@@ -644,7 +644,10 @@ function render(){
     // wizard: one step at a time, Prev / Next, and Skip on the optional steps
     const refineCard=()=>`<div class="card"><h2><span class="step ${v.match?'done':''}">4</span>Refine your voice <span class="pill">optional</span></h2>
       ${v.imported?'<div class="msg">This voice was started from a prepared dataset, so there are no recordings to search. Press <b>Skip</b>.</div>':''}
-      <p class="hint">Some stretches of a recording have several voices at once, which makes them hard to tell apart. Here you teach the program what your speaker sounds like: listen to the samples and mark each with the coloured square. <b>Green ✓</b> means it is only your speaker, <b>red ✗</b> means it is someone else, and <b>grey ?</b> means unsure or mixed, so it is left out. Then press <b>Find more like these</b> to search the whole recording for similar speech. You can repeat this as often as you like, and it tells you when nothing new turns up.</p>
+      <p class="hint">Refine your dataset further by removing obvious data that isn't your target. For example, if you're trying to find a masculine voice, this stage lets you remove the feminine voices. This makes sure the dataset is trained only on who you identify and refine.</p>
+      <p class="hint">Run this 2 or 3 times to teach the program what you're looking for. Mark each sample it finds with a <b>green ✓</b> <b>only if it is entirely your speaker</b>. If it is mixed together with another voice, skip it and leave it unchecked.</p>
+      <p class="hint">If a sample is entirely someone else, with none of your target speaker, mark it with a <b>red ✗</b> the same way.</p>
+      <p class="hint">Once you've been through all the samples, press <b>Find more like these</b> below to search again. Do this a few times. It tells you when to move on.</p>
       ${hfCard('refine')}${v.imported?'':matchHtml(v,jobRun,true)}</div>`;
     const wcards=[cards[0],cards[1],cards[2],refineCard,cards[3],cards[4],cards[5],cards[6]];
     const names=['Source','Clean','Identify','Refine','Build','Correct','Train','Listen'];
