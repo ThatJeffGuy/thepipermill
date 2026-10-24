@@ -456,7 +456,7 @@ def info(n):
           "minutes": m.get("fast_minutes") or 40, "report": m.get("fast_report")}
     from . import verify as _verify
     _cf = _verify.read(n)
-    cl = {"master": _master.available(n), "info": _master.info(n)}
+    cl = {"master": _master.available(n), "info": _master.info(n), "opts": _master.options(n)}
     return {"verified": _cf is not None, "fast_mode": fm, "fast": fa, "clean": cl, "one_person": bool(m.get("one_person")), "coverage": cov, "name": n, "base": m.get("base"), "base_used": m.get("base_used"),
             "people": sp["people"] if sp else None, "keep": m.get("keep_people") or [], 
             "scored": speakers.score_path(n).exists(), "imported": bool(m.get("imported")) or fm, "restoring": bool(m.get("restoring")), "words_seen": bool(m.get("words_seen")), "people_names": m.get("people_names") or {}, "people_voices": m.get("people_voices") or {}, "voice_type": "", "ref_yes": m.get("ref_yes") or [], "ref_no": m.get("ref_no") or [], "strict": m.get("strict") or "normal", "use_match": bool(m.get("use_match")),
@@ -784,6 +784,10 @@ class H(BaseHTTPRequestHandler):
             elif u.path == "/api/fast/run":
                 if not (CFG.runs / n / "fast" / "ref.wav").exists(): raise ValueError("Choose the reference clip first.")
                 start_job(n, "fast", ["fast", n, "--minutes", str(voices.read(n).get("fast_minutes") or 40)])
+            elif u.path == "/api/clean/options":
+                o = {k: bool(d[k]) for k in ("vocals", "highpass", "denoise", "boost", "loudness") if k in d}
+                if "target_lufs" in d: o["target_lufs"] = max(-30, min(-14, float(d["target_lufs"])))
+                voices.write(n, clean_opts={**_master_mod.options(n), **o})
             elif u.path == "/api/clean/use":
                 b = busy()
                 if b: raise RuntimeError(f"'{b[0]}' is busy ({b[1]}).")

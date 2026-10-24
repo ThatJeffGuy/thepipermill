@@ -162,6 +162,7 @@ html.small .wrap{display:none}#tooSmall{position:fixed;inset:0;z-index:1000;back
 .card{overflow:auto;scrollbar-width:thin;scrollbar-color:var(--line) transparent;clip-path:inset(0 round 14px)}.card::-webkit-scrollbar{width:8px;height:8px}.card::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px}
 .lockbar{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:8px 0 12px;padding:10px 14px;border:1px solid var(--line);border-left:4px solid var(--warn);border-radius:10px;background:var(--bg);font-size:14px}
 .card .msg{padding:10px 14px;border:1px solid var(--line);border-left:4px solid var(--mute);border-radius:10px;background:var(--bg);margin-top:10px}.card .msg:empty{display:none}.card>.msg,.card>.lockbar{margin:8px 0 12px}.card>.msg+p.hint,.card>.lockbar+p.hint,.card>.msg+details.vs,.card>.lockbar+details.vs{margin-top:12px}.rvbtns{align-items:flex-start;gap:8px}.rvbtns button{height:34px;padding:0 14px;min-height:0}.rvbtns label{height:34px;display:flex;align-items:center;gap:6px}.rvmid{flex:1;min-width:220px;margin:0 4px;text-align:center}.card .rvmid .msg{margin:0;height:34px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;padding:0 12px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rvmid .msg b{margin:0 5px 0 6px}.rvwhy,.whyhint{margin:8px 0 0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rvmid .rvprog{margin:0}.rvmid .msg{padding:8px 12px;font-size:13px}.card .msg.err{border-left-color:var(--bad)}.card .msg.ok{border-left-color:var(--ok)}.card .msg[style*="warn"]{border-left-color:var(--warn)}
+.chk{display:inline-flex;align-items:center;gap:6px;font-size:14px}
 </style>
 </head>
 <body>
@@ -510,21 +511,22 @@ function render(){
     `}
   </div>`,
 
-  ()=>{const mj=jobRun&&v.job.kind==='master',aj=jobRun&&v.job.kind==='analyze',mi=v.clean&&v.clean.info,st=v.analysis&&v.analysis.stale;   // progress and the one Stop button live in the status bar at the top
-    const state=!v.files.length?'<div class="msg err">Choose your recordings folder on the first step.</div>'
-      :mj?'<div class="msg">Cleaning your recordings… Progress and the Stop button are in the bar at the top.</div>'
-      :aj?'<div class="msg">Analyzing your recordings… Progress and the Stop button are in the bar at the top. Preparing the audio starts by itself when it finishes.</div>'
-      :prepOk?`<div class="row inl"><span class="pill ok">prepared${mi?` · ${mi.files} recording${mi.files===1?'':'s'}, ${mi.minutes} min`:''}</span></div>`
-      :!anOk?`<div class="msg">${st?'Your recordings have changed since they were last analyzed.':'Your recordings have not been analyzed yet.'} Analyze them first; it can take a while for a lot of audio. Preparing the audio then starts by itself.</div>
-        <div class="row inl" style="margin-top:8px"><button id="anBtn2" ${S.busy?'disabled':''}>Analyze recordings</button></div>`
-      :`<div class="row inl"><button id="mastGo" ${S.busy?'disabled':''}>Prepare the audio</button></div>`;
-    const tools=v.imported||mj||aj||!v.files.length?'':`<details class="vs soft" style="margin-top:12px"><summary>Keep or reuse the cleaned recordings</summary>
-      <p class="hint" style="margin:8px 0">The cleaned recordings can be saved as one zip. If you ever make this voice again from the same recordings folder, use that zip and the cleaning does not have to run a second time.</p>
-      <div class="row inl">${prepOk?`<button class="sec" type="button" id="mastExp">Export cleaned recordings</button><button class="linkbtn" type="button" id="mastGo" ${S.busy?'disabled':''}>Clean them again</button>`:''}${!prepOk&&anOk?`<button class="sec" type="button" id="mastUse" ${S.busy?'disabled':''}>Use cleaned recordings…</button>`:''}</div></details>`;
+  ()=>{const mj=jobRun&&v.job.kind==='master',aj=jobRun&&v.job.kind==='analyze',mi=v.clean&&v.clean.info,st=v.analysis&&v.analysis.stale,o=(v.clean&&v.clean.opts)||{vocals:1,highpass:1,denoise:1,boost:1,loudness:1,target_lufs:-20};   // progress and the one Stop button live in the status bar at the top
+    const line=!v.files.length?'Choose your recordings folder on the first step.'
+      :mj?'Cleaning your recordings…':aj?'Analyzing your recordings… cleaning starts by itself when it finishes.'
+      :prepOk?'':!anOk?`${st?'Your recordings have changed since they were last analyzed.':'Your recordings have not been analyzed yet.'} Analyze them first; it can take a while for a lot of audio. Cleaning then starts by itself.`:'';
+    const act1=prepOk||mj||aj||!v.files.length?'':!anOk?`<button id="anBtn2" ${S.busy?'disabled':''}>Analyze recordings</button>`:`<button id="mastGo" ${S.busy?'disabled':''}>Prepare the audio</button>`;
+    const sw=(k,t,tip)=>`<label class="chk" title="${tip}"><input type="checkbox" data-co="${k}" ${o[k]?'checked':''} ${mj||aj?'disabled':''}> ${t}</label>`;
+    const tools=v.imported||!v.files.length?'':`<div class="sub" style="margin-top:12px"><b>Cleaning</b>
+      <div class="row" style="margin-top:8px;gap:6px 18px">${sw('vocals','Keep only the voices','Removes music, effects and background sound (the slowest part)')}${sw('highpass','Remove rumble','Cuts everything below 70 Hz')}${sw('denoise','Reduce hiss','Steady hiss and hum')}${sw('boost','Bring the voice forward','A little presence and light compression so quiet words are not lost')}${sw('loudness','Even volume','One consistent loudness')}
+        <label class="chk">Loudness <input type="number" id="coLufs" min="-30" max="-14" step="1" value="${o.target_lufs}" style="width:70px" ${mj||aj?'disabled':''}> LUFS</label></div>
+      <div class="hint" style="margin-top:6px">${prepOk?'Changes apply the next time you clean the recordings.':'Used when the cleaning runs.'}</div>
+      <div class="row inl" style="margin-top:10px">${prepOk&&!mj?`<button class="sec" type="button" id="mastExp" title="All the cleaned recordings as one zip. Use it later instead of cleaning again.">Export cleaned recordings</button><button class="linkbtn" type="button" id="mastGo" ${S.busy?'disabled':''}>Clean them again</button>`:''}${!prepOk&&anOk&&!mj&&!aj?`<button class="sec" type="button" id="mastUse" ${S.busy?'disabled':''}>Use cleaned recordings…</button><span class="hint">Pick a zip you exported earlier from this step (same recordings folder) to skip the cleaning.</span>`:''}</div></div>`;
     return `<div class="card">${hd(2,prepOk,'Prepare the audio')}
     ${v.imported?'<div class="msg">This voice was started from a prepared dataset, so there are no recordings to prepare. Press <b>Next</b>.</div>':`
-    <p class="hint">Each recording is cleaned once, whole, before anything else happens to it: music and background are removed so only the voices are left, hiss is reduced, and everything is set to one even volume. Every later step uses this cleaned copy. Your original recordings are never changed.</p>
-    <div class="sub" style="margin-top:12px">${state}${jobNote(v,'analyze',true)}${jobNote(v,'master',true)}${f('cl')}${tools}</div>`}</div>`},
+    <p class="hint">Each recording is cleaned once, whole, before anything else happens to it. Every later step uses this cleaned copy. Your original recordings are never changed.</p>
+    <div class="row inl" style="margin-top:10px">${prepOk?`<span class="pill ok">prepared${mi?` · ${mi.files} recording${mi.files===1?'':'s'}, ${mi.minutes} min`:''}</span>`:''}${act1}${line?`<span class="hint">${line}</span>`:''}</div>
+    ${jobNote(v,'analyze',true)}${jobNote(v,'master',true)}${f('cl')}${tools}`}</div>`},
 
   ()=>`<div class="card">${hd(3,v.people,'Diarization: who is speaking? <span class="pill">optional</span>')}
     ${v.imported?'<div class="msg">This voice was started from a prepared dataset, so there are no recordings to scan. Press <b>Skip</b>.</div>':''}
@@ -729,6 +731,8 @@ function wire(v){
   b('#dsBtn',()=>{location.href=`/dataset/${encodeURIComponent(v.name)}.zip`});
   b('#hfRecheck',()=>pollHf(true));
   b('#anBtn',()=>act('/api/analyze',{voice:v.name},'an'));
+  document.querySelectorAll('[data-co]').forEach(el=>el.onchange=()=>api('/api/clean/options',{method:'POST',body:JSON.stringify({voice:v.name,[el.dataset.co]:el.checked})}).catch(()=>{}));
+  const cl=$('#coLufs');if(cl)cl.onchange=()=>api('/api/clean/options',{method:'POST',body:JSON.stringify({voice:v.name,target_lufs:+cl.value})}).catch(()=>{});
   b('#mastExp',()=>{location.href=`/clean-export/${encodeURIComponent(v.name)}.zip`});
   b('#mastUse',()=>pickFolder('',p=>act('/api/clean/use',{voice:v.name,path:p},'cl'),'zip'));
   b('#anBtn2',()=>act('/api/analyze',{voice:v.name},'cl'));
