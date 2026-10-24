@@ -484,7 +484,7 @@ function render(){
   const hd=(n,done,title)=>`<h2><span class="step ${done?'done':''}">${n}</span>${title}</h2>`;
   const rowsLoaded=!!(rows&&rowsFor===v.name), wordsDone=rowsLoaded||!!v.words_seen;      // seen this session, or at any time before (remembered by the server)
   const cards=[
-  ()=>`<div class="card">${hd(1,(v.files.length>0&&anOk&&hfOk)||(v.imported&&(!v.fast_mode||prepDone)),v.fast_mode?'Make the voice (fast path)':'Sources')}
+  ()=>`<div class="card">${hd(1,(v.files.length>0&&anOk&&hfOk)||(v.imported&&(!v.fast_mode||prepDone)),v.fast_mode?'Make the voice (fast path)':'Source')}
     ${pathChooser(v)}
     ${v.fast_mode?fastHtml(v):v.imported||v.restoring?`<div class="msg">${v.restoring&&!v.imported?'This voice is being restored from a backup.':'This voice was started from a prepared dataset, so there are no recordings to choose. The steps that work on recordings are skipped.'}</div>
       <div class="sub" style="margin-top:12px"><b>${v.restoring&&!v.imported?'Restoring a backup':'Imported dataset'}</b> <span class="pill ${v.imported&&v.prepared?'ok':''}">${v.imported&&v.prepared?'ready':'in progress'}</span>
@@ -535,7 +535,7 @@ function render(){
     ${jobNote(v,'analyze',true)}${jobNote(v,'master',true)}${jobNote(v,'cleanpreview',true)}${f('cl')}`;
     return `<div class="card">${hd(2,prepOk,'Clean')}${body}</div>`},
 
-  ()=>`<div class="card">${hd(3,v.people,'Diarization: who is speaking? <span class="pill">optional</span>')}
+  ()=>`<div class="card">${hd(3,v.people,'Identify: who is speaking? <span class="pill">optional</span>')}
     ${v.imported?'<div class="msg">This voice was started from a prepared dataset, so there are no recordings to scan. Press <b>Skip</b>.</div>':''}
     <p class="hint">Use this step when your recordings contain more than one person, such as a conversation, a call or an interview. The scan finds each voice so you can listen to samples and choose whose voice to train on. If it is only you speaking, press <b>Skip</b>. You can also name several people and make a separate voice for each of them from this same scan, which saves scanning again: only name the people you actually want a voice for.</p>
     <details class="vs soft"><summary>What does "diarization" mean?</summary>
@@ -644,7 +644,7 @@ function render(){
       <p class="hint">Some stretches of a recording have several voices at once, which makes them hard to tell apart. Here you teach the program what your speaker sounds like: listen to the samples and mark each with the coloured square. <b>Green ✓</b> means it is only your speaker, <b>red ✗</b> means it is someone else, and <b>grey ?</b> means unsure or mixed, so it is left out. Then press <b>Find more like these</b> to search the whole recording for similar speech. You can repeat this as often as you like, and it tells you when nothing new turns up.</p>
       ${hfCard('refine')}${v.imported?'':matchHtml(v,jobRun,true)}</div>`;
     const wcards=[cards[0],cards[1],cards[2],refineCard,cards[3],cards[4],cards[5],cards[6]];
-    const names=['Sources','Clean','Diarization','Refine','Build','Correct','Train','Listen'];
+    const names=['Source','Clean','Identify','Refine','Build','Correct','Train','Listen'];
     const hfOk=!HF||HF.state==='ready'||HF.state==='error';        // access to the gated speaker model (when Hugging Face cannot be reached it does not lock you out)
     const prepOk=!!(v.clean&&v.clean.master)||v.imported||!!v.people||prepDone||t.checkpoints>0;      // older voices that are already past this step keep working from their raw recordings
     const anOk=!!(v.analysis&&!v.analysis.stale)||!!v.people||!!v.prepared;      // earlier voices that are already past this step do not need analyzing again
@@ -674,7 +674,7 @@ function render(){
       const locked=i===7&&!t.checkpoints;
       const tip=locked?'locked until training has saved a checkpoint':isLocked(i)?'locked: later steps were built from it. ':v.imported&&i>0&&i<5?'not needed here (this voice started from a prepared dataset). Click to look at it.':'click to open. '+{run:'working now','cur run':'working now (you are here)','cur':'you are here','cur ok':'you are here (done)',ok:'done',skip:'skipped',warn:'not finished',part:'started, not finished',todo:'not started yet'}[st];
       return `<button class="sp ${st}" data-go="${i}" title="${n}: ${tip}" aria-label="${n}: ${tip}" ${i===7&&!t.checkpoints?'disabled':''} ${i===stepNo?'aria-current="step"':''}><i>${mark}${isLocked(i)?'<b class="lk" aria-hidden="true">&#128274;</b>':''}</i><span>${n}</span></button>`}).join('')}</div>
-    <div class="nav"><span class="row" style="gap:8px;flex-wrap:nowrap"><button class="sec" id="prevBtn" ${stepNo>0?'':'disabled style="visibility:hidden" tabindex="-1" aria-hidden="true"'}>‹ ${stepNo>0?'Return to '+['Sources','Prepare','Diarization','Refine','Build','Correct','Training'][v.imported&&stepNo===5?0:stepNo-1]:'Return to Sources'}</button>${v.imported?'':`<button class="sec" id="resetBtn" title="Go back to the beginning with this voice. Your recordings are never touched." ${S.busy?'disabled':''}>Start over</button>`}</span>
+    <div class="nav"><span class="row" style="gap:8px;flex-wrap:nowrap"><button class="sec" id="prevBtn" ${stepNo>0?'':'disabled style="visibility:hidden" tabindex="-1" aria-hidden="true"'}>‹ ${stepNo>0?'Return to '+['Source','Clean','Identify','Refine','Build','Correct','Training'][v.imported&&stepNo===5?0:stepNo-1]:'Return to Source'}</button>${v.imported?'':`<button class="sec" id="resetBtn" title="Go back to the beginning with this voice. Your recordings are never touched." ${S.busy?'disabled':''}>Start over</button>`}</span>
       <div class="navmid"><div id="statusbar"></div><div id="busyBar"></div><span class="hint nm" id="navMsg">${working[stepNo]?'':esc(gate[stepNo])}</span></div>
       <span class="row">${optional[stepNo]?`<button class="sec" id="skipBtn" ${(run('speakers')||run('match')||run('trim')||run('score')||run('verify'))?'disabled':''}>Skip ›</button>`:''}${stepNo<names.length-1?`<button id="nextBtn" ${gate[stepNo]?'disabled':''}>Next ›</button>`:`<button id="newVoiceBtn" title="Start another voice. This voice stays saved exactly as it is: you can switch back to it any time from the voice menu at the top.">New voice ›</button>`}</span></div>
     <div id="consoleBox" class="consolebox" hidden></div>
@@ -987,8 +987,8 @@ let sbLogKey='';
 function paintStatus(v,t,jobRun,stepNo){
   const box=$('#statusbar');if(!box)return;
   const where={silence:5,verify:5,import:0,restore:0,analyze:0,fastref:0,fast:0,master:1,cleanpreview:1,speakers:2,match:3,prep:4,cull:4,score:5,trim:5,export:7,compare:7},
-    nm={import:'Importing the dataset',restore:'Restoring the backup',analyze:'Analyzing your recordings',silence:'Trimming silence',verify:'Checking the transcripts',fastref:'Preparing the reference clip',fast:'Cloning the voice',master:'Cleaning the recordings',cleanpreview:'Cleaning a sample',speakers:'Diarization (who is speaking)',match:'Finding more of your speaker',prep:'Building the dataset',cull:'Keeping the best clips',score:'Checking the clips',trim:'Cutting the edited clips',export:'Making the test clip',compare:'Comparing versions'},
-    steps=['Sources','Clean','Diarization','Refine','Build','Correct','Train','Listen'];
+    nm={import:'Importing the dataset',restore:'Restoring the backup',analyze:'Analyzing your recordings',silence:'Trimming silence',verify:'Checking the transcripts',fastref:'Preparing the reference clip',fast:'Cloning the voice',master:'Cleaning the recordings',cleanpreview:'Cleaning a sample',speakers:'Identify (who is speaking)',match:'Finding more of your speaker',prep:'Building the dataset',cull:'Keeping the best clips',score:'Checking the clips',trim:'Cutting the edited clips',export:'Making the test clip',compare:'Comparing versions'},
+    steps=['Source','Clean','Identify','Refine','Build','Correct','Train','Listen'];
   let label='Idle',sub='Nothing is running.',pct=0,ind=false,step=null,stop='',log='',cls='idle',detail='';
   if(v&&t&&t.running){cls='';label='Training';step=5;stop='stopTrain';ind=t.done==null;pct=t.total&&t.done!=null?Math.min(100,Math.round(100*t.done/t.total)):0;
     detail=t.done!=null?`${t.done} of ${t.total} rounds (${pct}%)${t.eta!=null?' · about '+fmt(t.eta)+' left':''}`:'Starting up: getting your clips ready for training…';log=(t.log||[]).join('\n')}
